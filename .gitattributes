@@ -1,0 +1,18 @@
+# Normalize line endings; default to LF in the repo.
+* text=auto eol=lf
+
+# Scripts must stay LF (run on Linux/RHEL).
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Windows scripts stay CRLF.
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Treat common binaries as binary.
+*.png binary
+*.jpg binary
+*.pdf binary
+*.ico binary
+*.pem binary

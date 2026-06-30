@@ -1,0 +1,40 @@
+# --- Secrets & local config (NEVER commit — repo is public) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+state/
+.setup-complete
+.update-status.json
+
+# Internal-only build prompt (contains internal paths/app references)
+CHARON_BUILD_PROMPT.md
+
+# --- Node ---
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+.npm/
+
+# --- Prisma generated client ---
+src/generated/
+
+# --- Rust / Tauri agent ---
+agent/target/
+agent/**/target/
+**/*.rs.bk
+
+# --- Editor / OS ---
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+.vscode/*
+!.vscode/extensions.json

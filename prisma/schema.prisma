@@ -1,0 +1,494 @@
+// Prisma Schema — Charon (Zero Trust Network Access)
+// Run: npx prisma migrate dev --name init
+//
+// Charon decides WHO + WHAT may reach network resources and enforces by
+// pushing dynamic tags to Fortinet, where FortiGates apply dynamic firewall
+// policies. This schema models: operators + RBAC (User/Role/GroupMapping),
+// integrations + encrypted credentials, enrolled endpoints (the Tauri agent),
+// the directory→tag pipeline (DirectoryObject/CustomGroup/Tag/TagSource), the
+// enforcement writeback state (Policy/EndpointTag/EnforcementState), and the
+// audit log (Event).
+//
+// SECURITY: secret values inside Integration.config / Credential.config are
+// AES-256-GCM envelopes (see src/utils/crypto.ts), not plaintext. Agent bearer
+// tokens are stored ONLY as a SHA-384 hash. The repo is public — no real data,
+// hostnames, or secrets ever land in a migration or seed.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+/// Lifecycle of an enrolled endpoint agent.
+enum EndpointStatus {
+  pending // invitation issued, not yet enrolled
+  enrolled // bearer issued, no telemetry connection yet
+  online // telemetry WebSocket connected + heartbeating
+  offline // enrolled but telemetry connection lost
+  revoked // bearer revoked; agent locked out
+}
+
+/// Device posture compliance, computed by the worker posture evaluator.
+enum PostureState {
+  unknown
+  compliant
+  noncompliant
+}
+
+/// Server-dictated agent login mode (also the operator-auth mode). The agent
+/// asks GET /api/v1/agent/auth-config and renders the matching flow.
+enum AuthMode {
+  local
+  saml
+  oidc
+}
+
+/// What a tag's membership is derived from.
+enum TagSourceKind {
+  directory_group // AD/Entra security group
+  directory_ou // AD organizational unit
+  custom_group // Charon-defined custom group
+  posture // a posture state (e.g. compliant)
+}
+
+/// Where a directory object came from.
+enum DirectoryObjectKind {
+  user
+  group
+  ou
+}
+
+/// Per-integration enforcement mode. dry_run (default) logs intended Fortinet
+/// changes without writing; enforce applies them. Flipping to enforce against
+/// production firewalls requires human review.
+enum EnforcementMode {
+  dry_run
+  enforce
+}
+
+/// Desired-vs-actual sync state for a Fortinet object (address group / policy /
+/// per-endpoint membership).
+enum SyncStatus {
+  pending // delta queued, not yet applied
+  in_sync // actual matches desired
+  drift // actual diverged from desired (surfaced on Integrations page)
+  error // last apply attempt failed
+  dry_run // intended change logged only (enforcement OFF)
+}
+
+// ─── Operators + RBAC ───────────────────────────────────────────────────────
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  color       String?
+  permissions Json     @default("{}") // function-key → access-level matrix (see permissions.ts)
+  isBuiltIn   Boolean  @default(false) @map("is_built_in")
+  isProtected Boolean  @default(false) @map("is_protected")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users         User[]
+  groupMappings GroupMapping[]
+
+  @@map("roles")
+}
+
+model User {
+  id           String  @id @default(uuid())
+  username     String  @unique
+  passwordHash String? @map("password_hash") // null for SSO-only operators
+  roleId       String  @map("role_id")
+  role         Role    @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  authProvider String  @default("local") @map("auth_provider") // "local" | "saml" | "oidc" | "ldap"
+  azureOid     String? @unique @map("azure_oid")
+  oidcSubject  String? @unique @map("oidc_subject")
+  ldapUid      String? @unique @map("ldap_uid")
+  ssoGroups    String[] @default([]) @map("sso_groups")
+  displayName  String? @map("display_name")
+  email        String?
+  lastLogin    DateTime? @map("last_login")
+
+  // TOTP second factor — local accounts only.
+  totpSecret      String?   @map("totp_secret")
+  totpEnabledAt   DateTime? @map("totp_enabled_at")
+  totpBackupCodes String[]  @default([]) @map("totp_backup_codes")
+
+  needsRoleReview Boolean @default(false) @map("needs_role_review")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([roleId])
+  @@map("users")
+}
+
+/// Maps a normalized IdP/directory group key → a Charon Role for SSO-provisioned
+/// operators. Highest-privilege match wins (see permissions.ts).
+model GroupMapping {
+  id        String   @id @default(uuid())
+  groupKey  String   @map("group_key") // normalized directory group identifier
+  roleId    String   @map("role_id")
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([groupKey, roleId])
+  @@index([groupKey])
+  @@map("group_mappings")
+}
+
+// ─── Settings + integrations ─────────────────────────────────────────────────
+
+model Setting {
+  key       String   @id
+  value     Json     @default("{}")
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
+}
+
+model Integration {
+  id              String    @id @default(uuid())
+  type            String // "fortimanager" | "fortigate" | "activedirectory" | "entraid" | "intune"
+  name            String
+  config          Json      @default("{}") // connection settings; secret fields are AES-256-GCM envelopes
+  enabled         Boolean   @default(true)
+  autoDiscover    Boolean   @default(true)
+  pollInterval    Int       @default(4) // hours
+  // Per-integration enforcement gate. dry_run (default) logs intended Fortinet
+  // changes without writing — flipping to enforce requires human review.
+  enforcementMode EnforcementMode @default(dry_run) @map("enforcement_mode")
+  lastTestAt      DateTime?
+  lastTestOk      Boolean?
+  lastDiscoveryAt DateTime?
+  lastSyncAt      DateTime? @map("last_sync_at")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  directoryObjects DirectoryObject[]
+  enforcementState EnforcementState[]
+
+  @@index([type])
+  @@index([enabled])
+  @@map("integrations")
+}
+
+model Credential {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  type      String // "ldap" | "restapi" | ...
+  config    Json     @default("{}") // secret fields are AES-256-GCM envelopes
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([type])
+  @@map("credentials")
+}
+
+// ─── Endpoint agents (the Tauri agent) ───────────────────────────────────────
+
+/// One-time invitation code that bootstraps an agent enrollment. The plaintext
+/// is shown once at issuance; only its SHA-384 hash is stored.
+model InvitationCode {
+  id         String    @id @default(uuid())
+  label      String? // operator note ("Q3 laptop rollout")
+  codeHash   String    @map("code_hash") // SHA-384 of the one-time code
+  codePrefix String    @map("code_prefix") // first chars for UI display
+  maxUses    Int       @default(1) @map("max_uses")
+  useCount   Int       @default(0) @map("use_count")
+  expiresAt  DateTime? @map("expires_at")
+  createdBy  String    @map("created_by")
+  createdAt  DateTime  @default(now())
+  revokedAt  DateTime? @map("revoked_at")
+
+  endpoints Endpoint[]
+
+  @@index([codePrefix])
+  @@map("invitation_codes")
+}
+
+/// An enrolled endpoint: the device + its agent enrollment, telemetry state,
+/// posture, current user binding, IP/MAC, and effective tags. Mirrors polaris's
+/// ManagedAgent security model (one-time-token→bearer swap, leaf-cert pin).
+model Endpoint {
+  id           String         @id @default(uuid())
+  hostname     String?
+  status       EndpointStatus @default(pending)
+
+  osPlatform   String? @map("os_platform") // "windows" | "macos" | "linux"
+  osVersion    String? @map("os_version")
+  arch         String?
+  agentVersion String? @map("agent_version")
+
+  // Current network identity (updated by telemetry). These feed Fortinet
+  // dynamic address-group membership.
+  currentIp  String? @map("current_ip")
+  currentMac String? @map("current_mac")
+
+  // Current verified user binding {user ↔ device ↔ IP}. boundUserKey is the
+  // directory identity (UPN / sub), set on a successful agent login.
+  boundUserKey  String?   @map("bound_user_key")
+  boundUserName String?   @map("bound_user_name")
+  boundAt       DateTime? @map("bound_at")
+
+  // Posture: raw telemetry blob + the evaluated state.
+  posture      Json         @default("{}") // OS/patch, disk encryption, AV/EDR, firewall, ...
+  postureState PostureState @default(unknown) @map("posture_state")
+  postureAt    DateTime?    @map("posture_at")
+
+  // Enrollment: invitation → one-time enrollment token → long-lived bearer.
+  invitationCodeId String?         @map("invitation_code_id")
+  invitationCode   InvitationCode? @relation(fields: [invitationCodeId], references: [id], onDelete: SetNull)
+
+  // Long-lived per-agent bearer, stored ONLY as SHA-384. Wire format
+  // `charon_<base64url>`. Bound at issuance; rotated on revoke+re-enroll.
+  bearerHash      String?   @map("bearer_hash")
+  bearerPrefix    String?   @map("bearer_prefix")
+  bearerIssuedAt  DateTime? @map("bearer_issued_at")
+  bearerRevokedAt DateTime? @map("bearer_revoked_at")
+
+  // Server leaf-cert pin(s) the agent trusts (SHA-256 hex). canonical + staged
+  // for dual-pin rotation (agents accept old+new during rollover).
+  serverCertFingerprint  String?  @map("server_cert_fingerprint")
+  additionalCertFingerprints String[] @default([]) @map("additional_cert_fingerprints")
+
+  lastSeenAt       DateTime? @map("last_seen_at")
+  lastSeenIp       String?   @map("last_seen_ip")
+  wsConnectedAt    DateTime? @map("ws_connected_at")
+  wsDisconnectedAt DateTime? @map("ws_disconnected_at")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tags             EndpointTag[]
+  enforcementState EnforcementState[]
+
+  @@index([status])
+  @@index([bearerPrefix])
+  @@index([currentIp])
+  @@index([boundUserKey])
+  @@map("endpoints")
+}
+
+// ─── Directory → ZTNA tags ────────────────────────────────────────────────────
+
+/// A user / group / OU discovered from AD / Entra / Intune. Persisted as a tag
+/// source. Read-only mirror of directory state, refreshed by the worker sync.
+model DirectoryObject {
+  id            String              @id @default(uuid())
+  integrationId String              @map("integration_id")
+  integration   Integration         @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  kind          DirectoryObjectKind
+  externalId    String              @map("external_id") // objectGUID / Entra object id
+  name          String
+  // For users: UPN/sam. For groups/OUs: distinguishedName / group id.
+  identifier    String?
+  attributes    Json                @default("{}") // raw directory attributes (for custom-group rules)
+  parentOu      String?             @map("parent_ou")
+  syncedAt      DateTime            @default(now()) @map("synced_at")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([integrationId, kind, externalId])
+  @@index([kind])
+  @@index([identifier])
+  @@map("directory_objects")
+}
+
+/// Net-new: an operator-defined group with explicit members and/or rules over
+/// directory attributes. A tag source like a directory group.
+model CustomGroup {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  // Explicit member identifiers (directory user keys), unioned with rule matches.
+  members     String[] @default([])
+  // Rule set over DirectoryObject.attributes, e.g.
+  // { "all": [ { "attr": "department", "op": "eq", "value": "OT" } ] }.
+  rules       Json     @default("{}")
+  createdBy   String   @map("created_by")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sources TagSource[]
+
+  @@map("custom_groups")
+}
+
+/// A named ZTNA tag. Its membership is the union of its TagSources, combined
+/// with device posture. The reconciler computes each endpoint's effective tag
+/// set and the enforcer mirrors it into Fortinet as `charon-<tag>` objects.
+model Tag {
+  id          String   @id @default(uuid())
+  name        String   @unique // ZTNA tag name (the `charon-` prefix is added at the Fortinet boundary)
+  description String?
+  color       String?
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sources      TagSource[]
+  endpointTags EndpointTag[]
+  policies     Policy[]
+
+  @@map("tags")
+}
+
+/// Maps a source ({directory group | OU | custom group | posture state}) → a Tag.
+model TagSource {
+  id            String        @id @default(uuid())
+  tagId         String        @map("tag_id")
+  tag           Tag           @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  kind          TagSourceKind
+  // For directory_group/ou: the DirectoryObject.externalId (or DN). For
+  // custom_group: customGroupId. For posture: the PostureState value.
+  ref           String
+  customGroupId String?       @map("custom_group_id")
+  customGroup   CustomGroup?  @relation(fields: [customGroupId], references: [id], onDelete: Cascade)
+  createdAt     DateTime      @default(now())
+
+  @@unique([tagId, kind, ref])
+  @@index([kind, ref])
+  @@map("tag_sources")
+}
+
+/// Effective tag membership for an endpoint, computed by the reconciler. The
+/// row exists while the endpoint holds the tag; removed when it no longer does.
+model EndpointTag {
+  id         String   @id @default(uuid())
+  endpointId String   @map("endpoint_id")
+  endpoint   Endpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  tagId      String   @map("tag_id")
+  tag        Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  // Why the endpoint has this tag (audit breadcrumb): list of contributing
+  // source descriptions.
+  reasons    Json     @default("[]")
+  assignedAt DateTime @default(now()) @map("assigned_at")
+
+  @@unique([endpointId, tagId])
+  @@index([tagId])
+  @@map("endpoint_tags")
+}
+
+// ─── Fortinet enforcement writeback ──────────────────────────────────────────
+
+/// A Charon-managed dynamic firewall policy. Always namespaced `charon-*` at the
+/// Fortinet boundary so Charon never touches operator-authored policies.
+model Policy {
+  id          String   @id @default(uuid())
+  name        String   @unique // Charon-side name; `charon-` prefix applied on push
+  description String?
+  tagId       String   @map("tag_id")
+  tag         Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  // Policy intent: source/destination/service/action, kept abstract here and
+  // rendered to FortiGate CMDB shape by the enforcement service.
+  spec        Json     @default("{}")
+  enabled     Boolean  @default(true)
+  createdBy   String   @map("created_by")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tagId])
+  @@map("policies")
+}
+
+/// Desired-vs-actual sync record for a Charon-owned Fortinet object on a given
+/// integration. Drives the drift surface on the Integrations page and the
+/// enforcer's idempotent delta application. ownerScope is always "charon" — the
+/// ownership invariant that keeps Charon from rewriting operator objects.
+model EnforcementState {
+  id            String      @id @default(uuid())
+  integrationId String      @map("integration_id")
+  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  // What kind of object: "addrgrp" | "address" | "policy".
+  objectType    String      @map("object_type")
+  // Charon-managed object name (always charon-*).
+  objectName    String      @map("object_name")
+  endpointId    String?     @map("endpoint_id")
+  endpoint      Endpoint?   @relation(fields: [endpointId], references: [id], onDelete: SetNull)
+  desired       Json        @default("{}")
+  actual        Json        @default("{}")
+  status        SyncStatus  @default(pending)
+  lastError     String?     @map("last_error")
+  lastAppliedAt DateTime?   @map("last_applied_at")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([integrationId, objectType, objectName])
+  @@index([status])
+  @@index([integrationId])
+  @@map("enforcement_state")
+}
+
+// ─── Verification sessions (agent user login) ────────────────────────────────
+
+/// A short-lived verification binding {user ↔ device ↔ IP} established when a
+/// user authenticates through the agent login GUI. Drives tag reconciliation.
+model VerificationSession {
+  id         String    @id @default(uuid())
+  endpointId String    @map("endpoint_id")
+  userKey    String    @map("user_key") // directory identity (UPN/sub)
+  userName   String?   @map("user_name")
+  ip         String?
+  mode       AuthMode
+  issuedAt   DateTime  @default(now()) @map("issued_at")
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+
+  @@index([endpointId])
+  @@index([userKey])
+  @@map("verification_sessions")
+}
+
+// ─── API tokens + audit log ──────────────────────────────────────────────────
+
+model ApiToken {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  tokenHash   String    @map("token_hash") // SHA-384 of the raw token
+  tokenPrefix String    @map("token_prefix")
+  scopes      String[]  @default([])
+  createdBy   String    @map("created_by")
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  lastUsedIp  String?
+  revokedAt   DateTime?
+  revokedBy   String?
+
+  @@index([tokenPrefix])
+  @@index([revokedAt])
+  @@map("api_tokens")
+}
+
+model Event {
+  id           String   @id @default(uuid())
+  timestamp    DateTime @default(now())
+  level        String   @default("info") // info, warning, error
+  levelRank    Int      @default(0) // 0=info 1=warning 2=error
+  action       String // e.g. "endpoint.enrolled", "tag.reconciled", "enforcement.applied"
+  resourceType String?
+  resourceId   String?
+  resourceName String?
+  actor        String?
+  message      String   @db.Text
+  details      Json?
+
+  @@index([timestamp])
+  @@index([action])
+  @@index([resourceType])
+  @@index([level])
+  @@index([levelRank, timestamp])
+  @@index([actor, timestamp])
+  @@map("events")
+}

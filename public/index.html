@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Charon — Dashboard</title>
+  <script src="/js/theme-init.js"></script>
+  <link rel="stylesheet" href="/css/styles.css" />
+  <link rel="stylesheet" href="/css/charon.css" />
+</head>
+<body>
+  <div class="app-layout">
+    <aside id="sidebar" class="sidebar"></aside>
+    <main class="main">
+      <header class="page-header">
+        <h1>Dashboard</h1>
+      </header>
+      <section class="dashboard-grid" id="dashGrid">
+        <div class="settings-card"><h2>Endpoints online</h2><p class="metric" id="mEndpoints">—</p></div>
+        <div class="settings-card"><h2>Active sessions</h2><p class="metric" id="mSessions">—</p></div>
+        <div class="settings-card"><h2>Tag / policy sync</h2><p class="metric" id="mSync">—</p></div>
+        <div class="settings-card"><h2>Posture summary</h2><p class="metric" id="mPosture">—</p></div>
+        <div class="settings-card"><h2>HA / leader</h2><p class="metric" id="mLeader">—</p></div>
+      </section>
+      <p class="muted" style="margin-top:1rem">
+        Scaffold dashboard. Live metrics wire up as the endpoint, tag, and
+        enforcement subsystems land (milestones 3–6).
+      </p>
+    </main>
+  </div>
+  <script src="/js/api.js"></script>
+  <script src="/js/app.js"></script>
+  <script src="/js/dashboard.js"></script>
+</body>
+</html>

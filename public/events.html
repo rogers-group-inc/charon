@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Charon — Events</title>
+  <script src="/js/theme-init.js"></script>
+  <link rel="stylesheet" href="/css/styles.css" />
+  <link rel="stylesheet" href="/css/charon.css" />
+</head>
+<body>
+  <div class="app-layout">
+    <aside id="sidebar" class="sidebar"></aside>
+    <main class="main">
+      <header class="page-header"><h1>Events</h1></header>
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr><th>Time</th><th>Level</th><th>Action</th><th>Actor</th><th>Message</th></tr>
+          </thead>
+          <tbody id="eventsBody"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+  <script src="/js/api.js"></script>
+  <script src="/js/app.js"></script>
+  <script src="/js/events.js"></script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Charon — First-Run Setup</title>
+  <script src="/js/theme-init.js"></script>
+  <link rel="stylesheet" href="/css/styles.css" />
+  <link rel="stylesheet" href="/css/charon.css" />
+</head>
+<body class="login-body">
+  <main class="login-card" style="max-width:560px">
+    <h1 class="login-title">Charon Setup</h1>
+    <p class="login-subtitle">Configure the database and the first administrator.</p>
+
+    <form id="setupForm">
+      <div class="form-group">
+        <label for="databaseUrl">PostgreSQL connection URL</label>
+        <input id="databaseUrl" type="text" placeholder="postgresql://charon:••••@localhost:5432/charon" required />
+        <button type="button" class="btn btn-ghost btn-sm" id="testDbBtn">Test connection</button>
+        <span id="testDbResult" class="muted"></span>
+      </div>
+      <div class="form-group">
+        <label for="adminUsername">Administrator username</label>
+        <input id="adminUsername" type="text" minlength="3" required />
+      </div>
+      <div class="form-group">
+        <label for="adminPassword">Administrator password (min 12 chars)</label>
+        <input id="adminPassword" type="password" minlength="12" required />
+      </div>
+      <div class="form-group">
+        <label for="publicUrl">Public URL (optional)</label>
+        <input id="publicUrl" type="url" placeholder="https://charon.example.com" />
+      </div>
+      <p id="setupError" class="form-error" role="alert" hidden></p>
+      <p id="setupOk" class="form-success" role="status" hidden></p>
+      <button type="submit" class="btn btn-primary btn-block" id="finalizeBtn">Finish setup</button>
+    </form>
+  </main>
+  <script src="/js/setup.js"></script>
+</body>
+</html>

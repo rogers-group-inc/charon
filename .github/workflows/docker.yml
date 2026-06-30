@@ -1,0 +1,45 @@
+name: Build & publish image
+
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  image:
+    name: Build & push to GHCR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so the baked commit count is correct
+
+      - name: Compute commit count
+        id: count
+        run: echo "count=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            CHARON_BUILD_COMMIT_COUNT=${{ steps.count.outputs.count }}
+          tags: |
+            ghcr.io/rogers-group-inc/charon:latest
+            ghcr.io/rogers-group-inc/charon:0.1.${{ steps.count.outputs.count }}

@@ -1,0 +1,31 @@
+# Never copy secrets, state, or build cruft into the image.
+.env
+.env.*
+!.env.example
+state/
+.setup-complete
+.update-status.json
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+node_modules/
+dist/
+build/
+coverage/
+src/generated/
+*.tsbuildinfo
+
+# Rust/Tauri agent — built in CI, never in the server image.
+agent/target/
+agent/**/target/
+
+.git/
+.github/
+.idea/
+.vscode/
+*.swp
+.DS_Store
+CHARON_BUILD_PROMPT.md

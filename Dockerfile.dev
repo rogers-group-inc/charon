@@ -1,0 +1,12 @@
+# Charon dev image — runs the TS source via tsx with --watch (no build step).
+# Used only by compose.dev.yml with a bind-mounted source tree.
+FROM node:20-bookworm
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends python3 build-essential postgresql-client && rm -rf /var/lib/apt/lists/*
+COPY package.json package-lock.json prisma.config.ts ./
+COPY prisma ./prisma
+RUN npm ci
+ENV NODE_ENV=development
+EXPOSE 3000
+# Apply migrations then run the dev server (single-process "all" role).
+CMD sh -c "npx prisma migrate deploy && node --env-file=/dev/null --import tsx/esm --watch src/index.ts"

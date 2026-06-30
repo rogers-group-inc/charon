@@ -1,0 +1,101 @@
+# Charon — production compose. Maps the role split to services behind nginx.
+#
+#   nginx     — TLS termination (443 tcp+udp, HTTP/2 + HTTP/3, PQC-hybrid KEX),
+#               routes UI/API → web and agent traffic → endpoint.
+#   migrate   — one-shot `prisma migrate deploy`, then exits.
+#   web       — UI + REST API (leader-elected schedulers).
+#   endpoint  — agent comms (enrollment, telemetry WS, posture).
+#   enforcer  — Fortinet enforcement consumers.
+#   worker    — directory sync / tag reconcile / posture eval / health checks.
+#
+# Operator config (DATABASE_URL, SESSION_SECRET, CHARON_DATA_KEY, …) lives in
+# ./state/.env and is shared via the x-charon-common anchor. Postgres is
+# expected to be external/HA (see deploy/HA.md); point DATABASE_URL at it.
+
+x-charon-common: &charon-common
+  image: ghcr.io/rogers-group-inc/charon:latest
+  env_file: ./state/.env
+  environment:
+    CHARON_IN_DOCKER: "1"
+    CHARON_STATE_DIR: /app/state
+  volumes:
+    - ./state:/app/state
+  restart: unless-stopped
+
+services:
+  nginx:
+    # PQC-hybrid KEX requires nginx linked against OpenSSL 3.5+/oqs-provider —
+    # build deploy/nginx/Dockerfile.pqc, or supply your own oqs-enabled image.
+    build:
+      context: ./deploy/nginx
+      dockerfile: Dockerfile.pqc
+    ports:
+      - "443:443/tcp"
+      - "443:443/udp"   # HTTP/3 (QUIC)
+    volumes:
+      - ./state/certs:/etc/nginx/certs:ro
+      - ./deploy/nginx/charon.conf:/etc/nginx/conf.d/charon.conf:ro
+    depends_on: [web, endpoint]
+    restart: unless-stopped
+
+  migrate:
+    <<: *charon-common
+    environment:
+      CHARON_ROLE: migrate
+      CHARON_IN_DOCKER: "1"
+      CHARON_STATE_DIR: /app/state
+    restart: "no"
+
+  web:
+    <<: *charon-common
+    environment:
+      CHARON_ROLE: web
+      CHARON_IN_DOCKER: "1"
+      CHARON_STATE_DIR: /app/state
+      PORT: "3000"
+      CHARON_BIND: "0.0.0.0"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  endpoint:
+    <<: *charon-common
+    environment:
+      CHARON_ROLE: endpoint
+      CHARON_IN_DOCKER: "1"
+      CHARON_STATE_DIR: /app/state
+      PORT: "3001"
+      CHARON_BIND: "0.0.0.0"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      replicas: 2
+
+  enforcer:
+    <<: *charon-common
+    environment:
+      CHARON_ROLE: enforcer
+      CHARON_IN_DOCKER: "1"
+      CHARON_STATE_DIR: /app/state
+      CHARON_METRICS_PORT: "9109"
+      CHARON_METRICS_BIND: "0.0.0.0"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      replicas: 1
+
+  worker:
+    <<: *charon-common
+    environment:
+      CHARON_ROLE: worker
+      CHARON_IN_DOCKER: "1"
+      CHARON_STATE_DIR: /app/state
+      CHARON_METRICS_PORT: "9109"
+      CHARON_METRICS_BIND: "0.0.0.0"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      replicas: 2

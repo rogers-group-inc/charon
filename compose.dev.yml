@@ -1,0 +1,46 @@
+# Charon — dev compose. Single-process app (CHARON_ROLE unset = "all") with a
+# bind-mounted source tree + a local Postgres. Bound to 127.0.0.1 only.
+#
+#   docker compose -f compose.dev.yml up
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: charon
+      POSTGRES_PASSWORD: charon
+      POSTGRES_DB: charon
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U charon"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - charon-dev-db:/var/lib/postgresql/data
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    environment:
+      DATABASE_URL: postgresql://charon:charon@postgres:5432/charon
+      SESSION_SECRET: dev-only-secret-change-me
+      CHARON_DATA_KEY: ZGV2LW9ubHktMzItYnl0ZS1rZXktZGV2LW9ubHktMzJ4eA==
+      NODE_ENV: development
+      CHARON_BIND: "0.0.0.0"
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./prisma:/app/prisma
+      - charon-dev-modules:/app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  charon-dev-db:
+  charon-dev-modules:

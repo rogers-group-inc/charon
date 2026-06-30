@@ -1,0 +1,77 @@
+# Charon — local Podman stack (Podman Desktop friendly).
+#
+# Self-contained: builds the production image and runs Charon as a single
+# all-in-one process (CHARON_ROLE=all) plus Postgres, over plain HTTP on
+# 127.0.0.1:3000 — no nginx/TLS needed for a local run. NOT for prod (use
+# docker-compose.yml + nginx there).
+#
+#   podman compose -f compose.podman.yml up -d --build
+#   open http://localhost:3010   →  log in as  admin / charon-admin-pw
+#
+# Ordering: migrate (one-shot) → seed (built-in roles + admin) → charon.
+# The CHARON_DATA_KEY + admin password below are throwaway dev values.
+
+x-charon-image: &charon-image
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: charon:local
+
+x-charon-env: &charon-env
+  DATABASE_URL: postgresql://charon:charon@postgres:5432/charon
+  CHARON_DATA_KEY: cG9kbWFuLWRldi0zMi1ieXRlLWtleS1wb2RtYW4tMzJ4eA==
+  SESSION_SECRET: podman-local-dev-secret-change-me-0123456789
+  NODE_ENV: production
+
+services:
+  postgres:
+    image: docker.io/library/postgres:15-alpine
+    environment:
+      POSTGRES_USER: charon
+      POSTGRES_PASSWORD: charon
+      POSTGRES_DB: charon
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U charon"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - charon-pg:/var/lib/postgresql/data
+
+  migrate:
+    <<: *charon-image
+    environment:
+      <<: *charon-env
+      CHARON_ROLE: migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  seed:
+    <<: *charon-image
+    environment:
+      <<: *charon-env
+      CHARON_SEED_ADMIN_USER: admin
+      CHARON_SEED_ADMIN_PASSWORD: charon-admin-pw
+    entrypoint: ["node", "dist/cli/seed.js"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  charon:
+    <<: *charon-image
+    environment:
+      <<: *charon-env
+      CHARON_ROLE: all
+      PORT: "3000"
+      CHARON_BIND: "0.0.0.0"
+    ports:
+      - "127.0.0.1:3010:3000"
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+
+volumes:
+  charon-pg:

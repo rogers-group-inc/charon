@@ -51,6 +51,17 @@ export async function getBoss(): Promise<PgBossType | null> {
       const instance = new PgBoss({ connectionString, max: poolSize() });
       instance.on("error", (err: any) => logger.warn({ err: err?.message }, "pg-boss error"));
       await instance.start();
+      // pg-boss v10+ requires a queue to exist before work()/send(). Create all
+      // of ours up front (idempotent) so consumers/producers never race a
+      // missing-queue error.
+      for (const q of Object.values(QUEUES)) {
+        await instance.createQueue(q).catch((err: any) => {
+          // Already-exists is fine; anything else is worth a line.
+          if (!/already exists/i.test(String(err?.message))) {
+            logger.warn({ err: err?.message, queue: q }, "pg-boss createQueue failed");
+          }
+        });
+      }
       boss = instance;
       logger.info("pg-boss started");
       return boss;

@@ -1,0 +1,10 @@
+# Groups every Charon role unit so `systemctl restart charon.target` cycles the
+# whole node (web + endpoint@* + enforcer@* + worker@*). The in-app updater and
+# the Maintenance "Restart" button target this unit.
+[Unit]
+Description=Charon ZTNA platform (all roles)
+Wants=charon-web.service
+After=network-online.target postgresql.service
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,28 @@
+# Charon enforcer role — templated, instance = replica number (charon-enforcer@1, @2, …).
+# Fortinet enforcement consumers (pg-boss). No inbound listener except metrics.
+[Unit]
+Description=Charon — enforcer role (instance %i)
+After=network-online.target postgresql.service charon-migrate.service
+Wants=network-online.target
+Requires=charon-migrate.service
+PartOf=charon.target
+
+[Service]
+Type=simple
+User=charon
+Group=charon
+WorkingDirectory=/opt/charon
+EnvironmentFile=/opt/charon/.env
+Environment=CHARON_ROLE=enforcer
+Environment=CHARON_METRICS_PORT=912%i
+Environment=CHARON_METRICS_BIND=127.0.0.1
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=charon.target

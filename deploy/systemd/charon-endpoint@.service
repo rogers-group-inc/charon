@@ -1,0 +1,31 @@
+# Charon endpoint role — templated, instance = replica number (charon-endpoint@1, @2, …).
+# Agent comms: enrollment, telemetry WebSocket, posture ingestion. Binds a
+# localhost HTTP listener that nginx fronts as the agent upstream; each instance
+# listens on 300%i so multiple replicas don't collide (matches charon.conf's
+# ENDPOINT_PORT — default 3001 = @1).
+[Unit]
+Description=Charon — endpoint role (instance %i)
+After=network-online.target postgresql.service charon-migrate.service
+Wants=network-online.target
+Requires=charon-migrate.service
+PartOf=charon.target
+
+[Service]
+Type=simple
+User=charon
+Group=charon
+WorkingDirectory=/opt/charon
+EnvironmentFile=/opt/charon/.env
+Environment=CHARON_ROLE=endpoint
+Environment=PORT=300%i
+Environment=CHARON_BIND=127.0.0.1
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=charon.target

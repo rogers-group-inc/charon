@@ -1,0 +1,33 @@
+# Charon web role — UI + REST API + leader-elected schedulers. One per node;
+# the Postgres advisory lock ensures only the leader runs schedulers/enforcement
+# scheduling, so a standby web stays read-mostly until it wins the lock.
+#
+# ExecStartPre re-renders + applies the nginx config on (re)start so a config
+# drift is healed on every cycle (the updater relies on this).
+[Unit]
+Description=Charon — web role (UI/API)
+After=network-online.target postgresql.service charon-migrate.service
+Wants=network-online.target
+Requires=charon-migrate.service
+PartOf=charon.target
+
+[Service]
+Type=simple
+User=charon
+Group=charon
+WorkingDirectory=/opt/charon
+EnvironmentFile=/opt/charon/.env
+Environment=CHARON_ROLE=web
+Environment=PORT=3000
+Environment=CHARON_BIND=127.0.0.1
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=3
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=charon.target

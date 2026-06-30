@@ -1,0 +1,21 @@
+# One-shot schema migration. Ordered before every long-running role so workers
+# never start against an un-migrated DB. RemainAfterExit so dependents see it
+# as "active (exited)" success.
+[Unit]
+Description=Charon — apply database migrations (one-shot)
+After=network-online.target postgresql.service
+Wants=network-online.target
+Before=charon-web.service charon-endpoint@.service charon-enforcer@.service charon-worker@.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=charon
+Group=charon
+WorkingDirectory=/opt/charon
+EnvironmentFile=/opt/charon/.env
+Environment=CHARON_ROLE=migrate
+ExecStart=/usr/bin/node dist/index.js
+
+[Install]
+WantedBy=charon.target

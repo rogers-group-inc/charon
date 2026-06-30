@@ -270,7 +270,10 @@ async function startConsumers(cfg: RoleConfig): Promise<void> {
   }
   if (cfg.runsEnforcement) {
     logger.info("Enforcer role — enforcement-sync consumer");
-    // TODO(milestone 6): boss.work(QUEUES.enforcementSync, ...).
+    const e = await import("./jobs/enforcementSyncJob.js");
+    await e.registerEnforcementConsumer().catch((err) =>
+      logger.warn({ err: err?.message }, "enforcement-sync consumer registration failed"),
+    );
   }
 }
 

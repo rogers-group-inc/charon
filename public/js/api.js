@@ -62,6 +62,7 @@
     get: function (p, opts) { return request("GET", p, null, opts); },
     post: function (p, body, opts) { return request("POST", p, body, opts); },
     put: function (p, body, opts) { return request("PUT", p, body, opts); },
+    patch: function (p, body, opts) { return request("PATCH", p, body, opts); },
     del: function (p, body, opts) { return request("DELETE", p, body, opts); },
     me: function () { return request("GET", "/auth/me", null, { noRedirect: true }); },
     logout: function () { return request("POST", "/auth/logout"); },

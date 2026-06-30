@@ -37,6 +37,28 @@ export async function fgGet<T = any>(c: FortiGateConfig, path: string, signal?: 
   });
 }
 
+/** Write (POST/PUT/DELETE) against a FortiGate CMDB path. Used ONLY by the
+ *  enforcement service, ONLY when the integration's enforce toggle is ON. */
+export async function fgWrite<T = any>(
+  c: FortiGateConfig,
+  method: "POST" | "PUT" | "DELETE",
+  path: string,
+  body?: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
+  const { httpRequest } = await import("./httpClient.js");
+  const res = await httpRequest(url(c, path), {
+    method,
+    headers: { Authorization: `Bearer ${c.apiToken}`, "Content-Type": "application/json" },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+    verifyTls: c.verifyTls,
+    signal,
+    label: "FortiGate",
+  });
+  // 200/424 etc. handled by httpRequest; FortiGate returns the object on success.
+  return (await res.json().catch(() => ({}))) as T;
+}
+
 export async function testConnection(config: FortiGateConfig, signal?: AbortSignal): Promise<TestResult> {
   try {
     const res = await fgGet<{ version?: string; results?: { version?: string } }>(

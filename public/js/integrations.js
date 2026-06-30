@@ -22,14 +22,17 @@
     intune: [["tenantId", "Tenant ID", "text"], ["clientId", "Client ID", "text"], ["clientSecret", "Client secret", "password", true]],
   };
   var DIRECTORY_TYPES = { activedirectory: 1, entraid: 1 };
+  var ENFORCE_TYPES = { fortigate: 1, fortimanager: 1 };
   var MASK = "••••••••";
 
   var editing = null; // integration id when editing
   var canWrite = false;
+  var canEnforce = false;
 
   document.addEventListener("DOMContentLoaded", function () {
     window.Charon.init().then(function () {
       canWrite = window.Charon.can("integrations", "write");
+      canEnforce = window.Charon.can("enforcement", "fullwrite");
       if (!canWrite) document.getElementById("addBtn").style.display = "none";
       wireModal();
       load();
@@ -54,6 +57,19 @@
     return '<span class="badge">Untested</span>';
   }
 
+  function enforcementHtml(it) {
+    if (!ENFORCE_TYPES[it.type]) return "";
+    var enforcing = it.enforcementMode === "enforce";
+    var badge = enforcing
+      ? '<span class="badge badge-error">ENFORCING (live)</span>'
+      : '<span class="badge badge-warning">dry-run</span>';
+    var toggle = canEnforce
+      ? ' <button class="btn btn-sm" data-act="enforce" data-id="' + it.id + '" data-mode="' + (enforcing ? "dry_run" : "enforce") + '">' +
+        (enforcing ? "Switch to dry-run" : "Enable enforcement") + "</button>"
+      : "";
+    return '<p class="muted">Enforcement: ' + badge + toggle + "</p>";
+  }
+
   function cardHtml(it) {
     var last = it.lastTestAt ? new Date(it.lastTestAt).toLocaleString() : "never";
     var btns = canWrite
@@ -66,6 +82,7 @@
       "<h2>" + (TYPE_LABELS[it.type] || it.type) + "</h2>" +
       "<p><strong>" + window.Charon.escapeHtml(it.name) + "</strong> " + statusBadge(it) + "</p>" +
       '<p class="muted">Last test: ' + last + "</p>" +
+      enforcementHtml(it) +
       '<div class="card-actions">' + btns + "</div>" +
       "</div>";
   }
@@ -78,8 +95,22 @@
         if (act === "delete") return doDelete(it);
         if (act === "test") return doTest(btn, it.id);
         if (act === "discover") return doDiscover(btn, it.id);
+        if (act === "enforce") return doEnforce(btn, it.id, it.name);
       });
     });
+  }
+
+  function doEnforce(btn, id, name) {
+    var mode = btn.getAttribute("data-mode");
+    if (mode === "enforce") {
+      if (!confirm('Enable LIVE Fortinet enforcement for "' + name + '"?\n\n' +
+        'Charon will begin writing charon-* address groups and policies to the ' +
+        'firewall. A human must have reviewed the intended (dry-run) changes ' +
+        'first. Continue?')) return;
+    }
+    window.api.patch("/integrations/" + id + "/enforcement", { mode: mode })
+      .then(function () { window.Charon.toast("Enforcement set to " + mode, mode === "enforce" ? "error" : "success"); load(); })
+      .catch(function (e) { window.Charon.toast(e.message, "error"); });
   }
 
   function doTest(btn, id) {

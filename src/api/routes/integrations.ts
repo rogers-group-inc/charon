@@ -98,4 +98,25 @@ router.post("/:id/discover", requirePermission("integrations", "write"), async (
   } catch (err) { next(err); }
 });
 
+// ─── Enforcement (high blast radius — separate "enforcement" key) ────────────
+// Flipping to LIVE Fortinet writes requires fullwrite on the enforcement key
+// AND human review. Default is dry_run.
+router.patch("/:id/enforcement", requirePermission("enforcement", "fullwrite"), async (req, res, next) => {
+  try {
+    const { setEnforcementMode } = await import("../../services/fortinetEnforcementService.js");
+    const { mode } = z.object({ mode: z.enum(["dry_run", "enforce"]) }).parse(req.body);
+    await setEnforcementMode(String(req.params.id), mode, req.session.username);
+    res.json({ ok: true, mode });
+  } catch (err) { next(err); }
+});
+
+// Per-object sync state (drift surface) for an integration.
+router.get("/:id/enforcement-state", requirePermission("enforcement", "read"), async (req, res, next) => {
+  try {
+    const { prisma } = await import("../../db.js");
+    const states = await prisma.enforcementState.findMany({ where: { integrationId: String(req.params.id) }, orderBy: { objectName: "asc" } });
+    res.json({ states });
+  } catch (err) { next(err); }
+});
+
 export default router;

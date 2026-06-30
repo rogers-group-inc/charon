@@ -15,6 +15,7 @@ import { Router } from "express";
 import authRouter from "./routes/auth.js";
 import agentRouter from "./routes/agent.js";
 import eventsRouter from "./routes/events.js";
+import integrationsRouter from "./routes/integrations.js";
 import { requireAuth, attachApiToken } from "./middleware/auth.js";
 import { requirePermission } from "./middleware/permissions.js";
 
@@ -34,4 +35,5 @@ router.use("/agent", agentRouter);
 
 // ─── Authenticated surfaces ────────────────────────────────────────────────
 router.use(requireAuth);
+router.use("/integrations", requirePermission("integrations", "read"), integrationsRouter);
 router.use("/events", requirePermission("events", "read"), eventsRouter);

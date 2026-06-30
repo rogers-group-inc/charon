@@ -236,18 +236,25 @@ export async function startApp(): Promise<void> {
 // is exercised from day one.
 
 function startSchedulers(cfg: RoleConfig): void {
-  logger.info({ role: cfg.role }, "Leader — schedulers enabled (directory sync, tag reconcile, posture eval, health checks)");
-  // TODO(milestones 3–6): start interval producers that enqueue pg-boss jobs.
+  logger.info({ role: cfg.role }, "Leader — schedulers enabled");
+  // Health-check sweep: enqueue every 10 min for the worker role to drain.
+  void import("./jobs/integrationHealthCheck.js").then((m) => m.scheduleHealthChecks());
+  // TODO(milestones 4–6): directory-sync, tag-reconcile, posture-eval producers.
 }
 
 function stopSchedulers(): void {
   logger.info("Schedulers paused (lost leadership)");
+  void import("./jobs/integrationHealthCheck.js").then((m) => m.stopHealthChecks());
 }
 
 async function startConsumers(cfg: RoleConfig): Promise<void> {
   if (cfg.runsWorkers) {
     logger.info("Worker role — directory-sync / tag-reconcile / posture-eval / health-check consumers");
-    // TODO(milestones 3–4): boss.work(QUEUES.directorySync, ...) etc.
+    const m = await import("./jobs/integrationHealthCheck.js");
+    await m.registerHealthCheckConsumer().catch((err) =>
+      logger.warn({ err: err?.message }, "health-check consumer registration failed"),
+    );
+    // TODO(milestone 4): boss.work(QUEUES.directorySync / tagReconcile / postureEval).
   }
   if (cfg.runsEnforcement) {
     logger.info("Enforcer role — enforcement-sync consumer");

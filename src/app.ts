@@ -254,7 +254,11 @@ async function startConsumers(cfg: RoleConfig): Promise<void> {
     await m.registerHealthCheckConsumer().catch((err) =>
       logger.warn({ err: err?.message }, "health-check consumer registration failed"),
     );
-    // TODO(milestone 4): boss.work(QUEUES.directorySync / tagReconcile / postureEval).
+    const tr = await import("./jobs/tagReconcileJob.js");
+    await tr.registerTagReconcileConsumer().catch((err) =>
+      logger.warn({ err: err?.message }, "tag-reconcile consumer registration failed"),
+    );
+    // TODO(milestone 5): boss.work(QUEUES.postureEval / directorySync).
   }
   if (cfg.runsEnforcement) {
     logger.info("Enforcer role — enforcement-sync consumer");

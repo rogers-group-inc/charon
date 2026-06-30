@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Charon — Custom Groups</title>
+  <script src="/js/theme-init.js"></script>
+  <link rel="stylesheet" href="/css/styles.css" />
+  <link rel="stylesheet" href="/css/charon.css" />
+</head>
+<body>
+  <div class="app-layout">
+    <aside id="sidebar" class="sidebar"></aside>
+    <main class="main">
+      <header class="page-header">
+        <h1>Custom Groups</h1>
+        <button class="btn btn-primary" id="addBtn">New group</button>
+      </header>
+      <p class="muted">
+        Custom groups combine explicit member identifiers with rules over
+        directory attributes (e.g. department = OT). Membership is resolved from
+        the discovered directory and feeds tag sources.
+      </p>
+      <div class="table-wrapper" style="margin-top:1rem">
+        <table class="data-table">
+          <thead><tr><th>Name</th><th>Explicit members</th><th>Rules</th><th>Resolved</th><th></th></tr></thead>
+          <tbody id="groupsBody"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+  <div id="modal" class="charon-modal" hidden>
+    <div class="charon-modal-card">
+      <h2 id="modalTitle">New group</h2>
+      <div class="form-group"><label for="gName">Name</label><input id="gName" type="text" /></div>
+      <div class="form-group"><label for="gDesc">Description</label><input id="gDesc" type="text" /></div>
+      <div class="form-group"><label for="gMembers">Explicit members (one identifier per line)</label><textarea id="gMembers" rows="3" style="width:100%"></textarea></div>
+      <div class="form-group"><label for="gRules">Rules (JSON: {"all":[{"attr","op","value"}]})</label><textarea id="gRules" rows="4" style="width:100%;font-family:var(--font-mono)"></textarea></div>
+      <p id="modalError" class="form-error" hidden></p>
+      <div style="display:flex;gap:0.5rem;justify-content:flex-end">
+        <button class="btn" id="cancelBtn">Cancel</button>
+        <button class="btn btn-primary" id="saveBtn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/app.js"></script>
+  <script src="/js/groups.js"></script>
+</body>
+</html>

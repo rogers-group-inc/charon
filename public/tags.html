@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Charon — Tags &amp; Policies</title>
+  <script src="/js/theme-init.js"></script>
+  <link rel="stylesheet" href="/css/styles.css" />
+  <link rel="stylesheet" href="/css/charon.css" />
+</head>
+<body>
+  <div class="app-layout">
+    <aside id="sidebar" class="sidebar"></aside>
+    <main class="main">
+      <header class="page-header">
+        <h1>Tags &amp; Policies</h1>
+        <div>
+          <button class="btn" id="reconcileBtn">Reconcile now</button>
+          <button class="btn btn-primary" id="addTagBtn">New tag</button>
+        </div>
+      </header>
+      <p class="muted">
+        A tag's membership is the union of its sources (directory group / OU /
+        custom group / posture) combined with device posture. The reconciler
+        computes each endpoint's effective tags and the enforcer mirrors them to
+        Fortinet as <code>charon-&lt;tag&gt;</code> objects — dry-run until an
+        integration's enforce toggle is enabled (milestone 6).
+      </p>
+      <div class="table-wrapper" style="margin-top:1rem">
+        <table class="data-table">
+          <thead><tr><th>Tag</th><th>Sources</th><th>Endpoints</th><th>Policies</th><th>Status</th><th></th></tr></thead>
+          <tbody id="tagsBody"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+  <div id="srcModal" class="charon-modal" hidden>
+    <div class="charon-modal-card">
+      <h2>Add source to <span id="srcTagName"></span></h2>
+      <div class="form-group">
+        <label for="srcKind">Source kind</label>
+        <select id="srcKind">
+          <option value="directory_group">Directory group</option>
+          <option value="directory_ou">Directory OU</option>
+          <option value="custom_group">Custom group</option>
+          <option value="posture">Posture state</option>
+        </select>
+      </div>
+      <div class="form-group" id="srcRefGroup">
+        <label for="srcRef">Reference (group externalId / OU DN)</label>
+        <input id="srcRef" type="text" />
+      </div>
+      <div class="form-group" id="srcCustomGroup" hidden>
+        <label for="srcCustom">Custom group</label>
+        <select id="srcCustom"></select>
+      </div>
+      <div class="form-group" id="srcPosture" hidden>
+        <label for="srcPostureSel">Posture state</label>
+        <select id="srcPostureSel"><option>compliant</option><option>noncompliant</option><option>unknown</option></select>
+      </div>
+      <p id="srcError" class="form-error" hidden></p>
+      <div style="display:flex;gap:0.5rem;justify-content:flex-end">
+        <button class="btn" id="srcCancel">Cancel</button>
+        <button class="btn btn-primary" id="srcSave">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/app.js"></script>
+  <script src="/js/tags.js"></script>
+</body>
+</html>

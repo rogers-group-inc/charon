@@ -171,6 +171,9 @@ export async function discoverDirectory(id: string, signal?: AbortSignal): Promi
   }
   recordDiscovery(type, (Date.now() - started) / 1000);
   await logEvent({ action: "integration.discovered", resourceType: "integration", resourceId: id, resourceName: row.name, message: `Discovered ${counts.user} users, ${counts.group} groups, ${counts.ou} OUs from "${row.name}"` });
+  // Directory changed → recompute effective tags fleet-wide (dynamic import
+  // breaks the service import cycle; non-blocking, dry-run until enforce is ON).
+  void import("./tagReconciler.js").then((m) => m.reconcileAll()).catch(() => {});
   return { counts };
 }
 

@@ -40,6 +40,14 @@ jobs:
         if: steps.detect.outputs.present == 'true'
         run: npm run lint --if-present
 
+      - name: Typecheck
+        if: steps.detect.outputs.present == 'true'
+        run: npm run typecheck --if-present
+
+      - name: Check docs present
+        if: steps.detect.outputs.present == 'true'
+        run: npm run check:docs --if-present
+
       - name: Test
         if: steps.detect.outputs.present == 'true'
         run: npm test --if-present

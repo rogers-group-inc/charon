@@ -247,12 +247,14 @@ function startSchedulers(cfg: RoleConfig): void {
   logger.info({ role: cfg.role }, "Leader — schedulers enabled");
   // Health-check sweep: enqueue every 10 min for the worker role to drain.
   void import("./jobs/integrationHealthCheck.js").then((m) => m.scheduleHealthChecks());
-  // TODO(milestones 4–6): directory-sync, tag-reconcile, posture-eval producers.
+  // Retention pruning: trim the audit log + stale verification sessions.
+  void import("./jobs/retentionPrune.js").then((m) => m.scheduleRetentionPrune());
 }
 
 function stopSchedulers(): void {
   logger.info("Schedulers paused (lost leadership)");
   void import("./jobs/integrationHealthCheck.js").then((m) => m.stopHealthChecks());
+  void import("./jobs/retentionPrune.js").then((m) => m.stopRetentionPrune());
 }
 
 async function startConsumers(cfg: RoleConfig): Promise<void> {

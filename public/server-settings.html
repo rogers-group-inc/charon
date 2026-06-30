@@ -59,9 +59,35 @@
         </div>
       </section>
 
-      <!-- Maintenance (milestone 8) -->
+      <!-- Maintenance -->
       <section class="tab-panel" id="panel-maint" hidden>
-        <div class="settings-card"><h2>Maintenance</h2><p class="muted">Capacity, backup/restore, in-app updater, and agent-installer distribution land in milestone 8.</p></div>
+        <div class="settings-card">
+          <h2>Capacity</h2>
+          <div id="capacity" class="muted">Loading…</div>
+        </div>
+        <div class="settings-card" style="margin-top:1rem">
+          <h2>Backup / Restore</h2>
+          <div class="form-group"><label for="bkPass">Encryption password (optional, ≥8 chars)</label><input id="bkPass" type="password" /></div>
+          <button class="btn btn-primary" id="bkCreate">Create backup</button>
+          <div id="backups" class="muted" style="margin-top:0.75rem">Loading…</div>
+        </div>
+        <div class="settings-card" style="margin-top:1rem">
+          <h2>Application updates</h2>
+          <div id="updateInfo" class="muted">Loading…</div>
+          <label style="display:block;margin:0.5rem 0"><input type="checkbox" id="bkBeforeUpdate" checked> Back up before updating</label>
+          <label style="display:block;margin:0.5rem 0"><input type="checkbox" id="confirmNode"> I confirm this node is safe to update (HA: standby first)</label>
+          <button class="btn btn-primary" id="updateStart" disabled>Update now</button>
+          <div id="updateProgress" class="muted" style="margin-top:0.5rem"></div>
+        </div>
+        <div class="settings-card" style="margin-top:1rem">
+          <h2>Agent installers</h2>
+          <div id="agentInstallers" class="muted">Loading…</div>
+        </div>
+        <div class="settings-card" style="margin-top:1rem">
+          <h2>Restart</h2>
+          <p class="muted">Restarts the whole charon.target (web, endpoint, enforcer, worker) and re-renders nginx.</p>
+          <button class="btn" id="restartBtn">Restart Charon</button>
+        </div>
       </section>
     </main>
   </div>

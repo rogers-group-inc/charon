@@ -21,6 +21,7 @@ import groupsRouter from "./routes/groups.js";
 import directoryRouter from "./routes/directory.js";
 import endpointsRouter from "./routes/endpoints.js";
 import policiesRouter from "./routes/policies.js";
+import serverSettingsRouter from "./routes/serverSettings.js";
 import { agentsEnrollRouter, agentsRouter } from "./routes/agents.js";
 import { requireAuth, attachApiToken } from "./middleware/auth.js";
 import { requirePermission } from "./middleware/permissions.js";
@@ -50,4 +51,5 @@ router.use("/directory", requirePermission("directory", "read"), directoryRouter
 router.use("/groups", requirePermission("groups", "read"), groupsRouter);
 router.use("/tags", requirePermission("tags", "read"), tagsRouter);
 router.use("/policies", requirePermission("policies", "read"), policiesRouter);
+router.use("/server-settings", requirePermission("serverSettingsSystem", "read"), serverSettingsRouter);
 router.use("/events", requirePermission("events", "read"), eventsRouter);

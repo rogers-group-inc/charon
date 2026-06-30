@@ -1,0 +1,83 @@
+# Charon nginx site — TEMPLATE.
+#
+# nginx terminates TLS (HTTP/2 + HTTP/3) and reverse-proxies to the localhost
+# app upstreams. Charon's nginxRenderer.ts substitutes the {{TOKENS}} below from
+# Server Settings and writes the active charon.conf; charon-nginx-apply.sh
+# validates (`nginx -t`) and reloads it under sudo.
+#
+# PQC: ssl_ecdh_curve requests the hybrid group X25519MLKEM768 first (requires
+# nginx linked against OpenSSL 3.5+ or oqs-provider — provisioned by
+# deploy/install-rhel.sh). Falls back to X25519/P-256 on older peers. The
+# installer VERIFIES hybrid KEX is actually negotiated rather than assuming it.
+
+# ── Upstreams ───────────────────────────────────────────────────────────────
+upstream charon_web {
+    server 127.0.0.1:{{WEB_PORT}};
+    keepalive 16;
+}
+upstream charon_endpoint {
+    server 127.0.0.1:{{ENDPOINT_PORT}};
+    keepalive 32;
+}
+
+# Optional HTTP→HTTPS redirect (enable by uncommenting; GSLB usually fronts 443).
+# server { listen 80; server_name {{SERVER_NAME}}; return 301 https://$host$request_uri; }
+
+server {
+    listen 443 ssl;
+    listen 443 quic reuseport;      # HTTP/3
+    http2 on;
+    server_name {{SERVER_NAME}};
+
+    ssl_certificate     {{CERT_PATH}};
+    ssl_certificate_key {{KEY_PATH}};
+
+    # TLS 1.3 only; PQC-hybrid KEX preferred.
+    ssl_protocols TLSv1.3;
+    ssl_ecdh_curve X25519MLKEM768:X25519:prime256v1;
+    ssl_prefer_server_ciphers off;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:CharonSSL:10m;
+    ssl_session_tickets off;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header Alt-Svc 'h3=":443"; ma=86400' always;   # advertise HTTP/3
+
+    client_max_body_size 12m;
+
+    # ── Agent comms → endpoint upstream ──────────────────────────────────────
+    # Telemetry WebSocket (long-lived).
+    location = /api/v1/agents/ws {
+        proxy_pass http://charon_endpoint;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+    # Enrollment + heartbeat + posture + config.
+    location /api/v1/agents/ {
+        proxy_pass http://charon_endpoint;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    location = /api/v1/agent/auth-config {
+        proxy_pass http://charon_endpoint;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # ── Everything else (UI + REST API) → web upstream ───────────────────────
+    location / {
+        proxy_pass http://charon_web;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 120s;
+    }
+}

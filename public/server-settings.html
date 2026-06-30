@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Charon — Server Settings</title>
+  <script src="/js/theme-init.js"></script>
+  <link rel="stylesheet" href="/css/styles.css" />
+  <link rel="stylesheet" href="/css/charon.css" />
+</head>
+<body>
+  <div class="app-layout">
+    <aside id="sidebar" class="sidebar"></aside>
+    <main class="main">
+      <header class="page-header"><h1>Server Settings</h1></header>
+      <nav class="page-tabs" id="tabs">
+        <button class="tab active" data-tab="certs">Certificates</button>
+        <button class="tab" data-tab="auth">Authentication</button>
+        <button class="tab" data-tab="ha">High Availability</button>
+        <button class="tab" data-tab="maint">Maintenance</button>
+      </nav>
+
+      <!-- Certificates -->
+      <section class="tab-panel" id="panel-certs">
+        <div class="settings-card">
+          <h2>Active certificate &amp; agent pin</h2>
+          <div id="certCurrent" class="muted">Loading…</div>
+        </div>
+        <div class="settings-card" style="margin-top:1rem">
+          <h2>Upload / rotate certificate</h2>
+          <div class="form-group"><label for="serverName">Server name (SNI / SAN)</label><input id="serverName" type="text" placeholder="charon.example.com" /></div>
+          <div class="form-group"><label for="certPem">Certificate (PEM)</label><textarea id="certPem" rows="5" style="width:100%;font-family:var(--font-mono)"></textarea></div>
+          <div class="form-group"><label for="keyPem">Private key (PEM)</label><textarea id="keyPem" rows="5" style="width:100%;font-family:var(--font-mono)"></textarea></div>
+          <p class="muted">The leaf SHA-256 becomes the agent pin. To rotate without re-enrolling agents: <em>stage</em> the new cert's pin first (agents accept old+new), swap the cert, then promote.</p>
+          <p id="certError" class="form-error" hidden></p>
+          <p id="certOk" class="form-success" hidden></p>
+          <button class="btn btn-primary" id="certUpload">Upload &amp; apply</button>
+          <button class="btn" id="certStage">Stage new pin only</button>
+        </div>
+      </section>
+
+      <!-- Authentication -->
+      <section class="tab-panel" id="panel-auth" hidden>
+        <div class="settings-card">
+          <h2>Active login mode</h2>
+          <p class="muted">Drives both operator login and the endpoint agent's login GUI.</p>
+          <div class="form-group">
+            <select id="authMode"><option value="local">Local (password + TOTP)</option><option value="saml">SAML</option><option value="oidc">OIDC</option></select>
+          </div>
+          <button class="btn btn-primary" id="authSave">Save</button>
+        </div>
+      </section>
+
+      <!-- HA -->
+      <section class="tab-panel" id="panel-ha" hidden>
+        <div class="settings-card">
+          <h2>Leader / replication</h2>
+          <div id="haStatus" class="muted">Loading…</div>
+        </div>
+      </section>
+
+      <!-- Maintenance (milestone 8) -->
+      <section class="tab-panel" id="panel-maint" hidden>
+        <div class="settings-card"><h2>Maintenance</h2><p class="muted">Capacity, backup/restore, in-app updater, and agent-installer distribution land in milestone 8.</p></div>
+      </section>
+    </main>
+  </div>
+  <script src="/js/api.js"></script>
+  <script src="/js/app.js"></script>
+  <script src="/js/server-settings.js"></script>
+</body>
+</html>

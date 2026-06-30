@@ -14,6 +14,9 @@ state/
 # Internal-only build prompt (contains internal paths/app references)
 CHARON_BUILD_PROMPT.md
 
+# Audit output
+audit/
+
 # --- Node ---
 node_modules/
 dist/

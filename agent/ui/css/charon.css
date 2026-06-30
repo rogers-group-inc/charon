@@ -1,0 +1,141 @@
+/*
+ * public/css/charon.css — Charon scaffold layout overlay.
+ *
+ * Builds on the polaris design tokens in styles.css (--color-*, --radius-*,
+ * --sidebar-width, fonts). Defines only the structural classes the scaffold
+ * pages use (app shell, sidebar, login/setup cards, dashboard grid, table,
+ * badges, buttons, toast). Page-specific styling lands per milestone.
+ */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+}
+
+.muted { color: var(--color-text-secondary); font-size: 0.9rem; }
+[hidden] { display: none !important; }
+
+/* ─── App shell ─────────────────────────────────────────────────────────── */
+.app-layout { display: flex; min-height: 100vh; }
+
+.sidebar {
+  width: var(--sidebar-width, 220px);
+  flex: 0 0 var(--sidebar-width, 220px);
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-secondary);
+  border-right: 1px solid var(--color-border);
+  padding: 1rem 0.75rem;
+}
+.sidebar-brand { font-weight: 700; font-size: 1.25rem; padding: 0.5rem 0.75rem 1rem; letter-spacing: 0.04em; }
+.sidebar-nav { display: flex; flex-direction: column; gap: 0.15rem; flex: 1; }
+.sidebar-nav a {
+  display: block;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  text-decoration: none;
+}
+.sidebar-nav a:hover { background: var(--color-bg-tertiary); color: var(--color-text-primary); }
+.sidebar-nav a.active { background: var(--color-accent); color: #fff; }
+.sidebar-footer { border-top: 1px solid var(--color-border); padding-top: 0.75rem; display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.sidebar-user { display: flex; align-items: center; gap: 0.4rem; width: 100%; margin-bottom: 0.4rem; font-size: 0.9rem; }
+.sidebar-version { width: 100%; font-size: 0.75rem; color: var(--color-text-tertiary); }
+
+.main { flex: 1; padding: 1.5rem 2rem; min-width: 0; }
+.page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; }
+.page-header h1 { margin: 0; font-size: 1.5rem; }
+
+/* ─── Cards / dashboard ──────────────────────────────────────────────────── */
+.settings-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.25rem;
+}
+.settings-card h2 { margin: 0 0 0.5rem; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-secondary); }
+.dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; }
+.metric { font-size: 2rem; font-weight: 700; margin: 0; }
+
+/* ─── Tables ─────────────────────────────────────────────────────────────── */
+.table-wrapper { overflow-x: auto; border: 1px solid var(--color-border); border-radius: var(--radius-lg); }
+.data-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.data-table th, .data-table td { text-align: left; padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--color-border-light); }
+.data-table th { background: var(--color-bg-secondary); font-weight: 600; }
+.data-table tr:last-child td { border-bottom: none; }
+
+/* ─── Badges ─────────────────────────────────────────────────────────────── */
+.badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.75rem; color: #fff; background: var(--color-text-tertiary); }
+.badge-info { background: var(--color-accent); }
+.badge-warning { background: var(--color-warning); color: #1a1a1a; }
+.badge-error { background: var(--color-danger); }
+
+/* ─── Buttons ────────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0.5rem 0.9rem; border-radius: var(--radius-md);
+  border: 1px solid var(--color-border); background: var(--color-bg-tertiary);
+  color: var(--color-text-primary); cursor: pointer; font-size: 0.9rem;
+}
+.btn:hover { background: var(--color-bg-secondary); }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn-primary { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
+.btn-primary:hover { background: var(--color-accent-hover); }
+.btn-ghost { background: transparent; }
+.btn-sm { padding: 0.3rem 0.6rem; font-size: 0.8rem; }
+.btn-block { width: 100%; }
+
+/* ─── Forms ──────────────────────────────────────────────────────────────── */
+.form-group { margin-bottom: 1rem; }
+.form-group label { display: block; margin-bottom: 0.35rem; font-size: 0.85rem; color: var(--color-text-secondary); }
+.form-group input {
+  width: 100%; padding: 0.55rem 0.7rem; border-radius: var(--radius-md);
+  border: 1px solid var(--color-border); background: var(--color-bg-primary); color: var(--color-text-primary);
+}
+.form-error { color: var(--color-danger); font-size: 0.9rem; }
+.form-success { color: var(--color-success); font-size: 0.9rem; }
+
+/* ─── Login / setup card ─────────────────────────────────────────────────── */
+.login-body { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 1rem; }
+.login-card { width: 100%; max-width: 380px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 2rem; box-shadow: var(--shadow-md); }
+.login-title { margin: 0; text-align: center; letter-spacing: 0.06em; }
+.login-subtitle { margin: 0.25rem 0 1.5rem; text-align: center; color: var(--color-text-secondary); }
+
+/* ─── Toast ──────────────────────────────────────────────────────────────── */
+.toast {
+  position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 1000;
+  padding: 0.75rem 1rem; border-radius: var(--radius-md);
+  background: var(--color-bg-tertiary); border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-md); opacity: 0; transform: translateY(0.5rem);
+  transition: opacity 0.2s, transform 0.2s;
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+.toast-error { border-color: var(--color-danger); }
+.toast-success { border-color: var(--color-success); }
+
+/* ─── Modal ──────────────────────────────────────────────────────────────── */
+.charon-modal {
+  position: fixed; inset: 0; z-index: 900;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 4rem 1rem; overflow-y: auto;
+}
+.charon-modal-card {
+  width: 100%; max-width: 520px;
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg); padding: 1.5rem; box-shadow: var(--shadow-md);
+}
+.charon-modal-card h2 { margin-top: 0; }
+.charon-modal select {
+  width: 100%; padding: 0.55rem 0.7rem; border-radius: var(--radius-md);
+  border: 1px solid var(--color-border); background: var(--color-bg-primary); color: var(--color-text-primary);
+}
+.card-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.75rem; }

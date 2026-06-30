@@ -1,0 +1,36 @@
+[package]
+name = "charon-agent"
+version = "0.1.0"
+description = "Charon endpoint agent — ZTNA identity + posture telemetry"
+authors = ["Rogers Group"]
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
+# reqwest with rustls so we can pin the server leaf cert ourselves (the agent
+# does NOT trust system roots). PQC-hybrid KEX is negotiated by the TLS stack
+# once the rustls/OpenSSL build supports X25519MLKEM768 — crypto-agility means
+# this is a dependency/config bump, not a protocol change.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-manual-roots", "json"] }
+rustls = "0.23"
+sha2 = "0.10"
+hex = "0.4"
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+directories = "5"
+thiserror = "1"
+
+[target.'cfg(windows)'.dependencies]
+# Windows posture collectors (BitLocker, Defender, firewall) shell out to
+# PowerShell/WMI; no extra crate needed beyond std::process for the scaffold.
+
+[features]
+# Default Tauri production feature set; custom-protocol is required for release.
+custom-protocol = ["tauri/custom-protocol"]

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Charon — Endpoints</title>
+  <script src="/js/theme-init.js"></script>
+  <link rel="stylesheet" href="/css/styles.css" />
+  <link rel="stylesheet" href="/css/charon.css" />
+</head>
+<body>
+  <div class="app-layout">
+    <aside id="sidebar" class="sidebar"></aside>
+    <main class="main">
+      <header class="page-header">
+        <h1>Endpoints</h1>
+        <button class="btn btn-primary" id="inviteBtn">Create invitation</button>
+      </header>
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead><tr><th>Host</th><th>Status</th><th>User</th><th>IP / MAC</th><th>Posture</th><th>Tags</th><th>Last seen</th><th></th></tr></thead>
+          <tbody id="epBody"><tr><td colspan="8" class="muted">Loading…</td></tr></tbody>
+        </table>
+      </div>
+
+      <h2 style="margin-top:2rem">Invitation codes</h2>
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead><tr><th>Label</th><th>Prefix</th><th>Uses</th><th>Expires</th><th>Status</th><th></th></tr></thead>
+          <tbody id="invBody"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+  <div id="inviteModal" class="charon-modal" hidden>
+    <div class="charon-modal-card">
+      <h2>Create invitation code</h2>
+      <div class="form-group"><label for="iLabel">Label (optional)</label><input id="iLabel" type="text" placeholder="Q3 laptop rollout" /></div>
+      <div class="form-group"><label for="iUses">Max uses</label><input id="iUses" type="number" value="1" min="1" /></div>
+      <div class="form-group"><label for="iExpiry">Expires in (hours, blank = never)</label><input id="iExpiry" type="number" min="1" /></div>
+      <div id="inviteResult" hidden>
+        <p class="form-success">Code created — copy it now, it won't be shown again:</p>
+        <pre id="inviteCode" style="white-space:pre-wrap;word-break:break-all;background:var(--color-bg-tertiary);padding:0.75rem;border-radius:6px"></pre>
+      </div>
+      <p id="inviteError" class="form-error" hidden></p>
+      <div style="display:flex;gap:0.5rem;justify-content:flex-end">
+        <button class="btn" id="inviteClose">Close</button>
+        <button class="btn btn-primary" id="inviteCreate">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/app.js"></script>
+  <script src="/js/endpoints.js"></script>
+</body>
+</html>

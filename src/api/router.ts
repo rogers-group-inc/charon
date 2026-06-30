@@ -19,6 +19,8 @@ import integrationsRouter from "./routes/integrations.js";
 import tagsRouter from "./routes/tags.js";
 import groupsRouter from "./routes/groups.js";
 import directoryRouter from "./routes/directory.js";
+import endpointsRouter from "./routes/endpoints.js";
+import { agentsEnrollRouter, agentsRouter } from "./routes/agents.js";
 import { requireAuth, attachApiToken } from "./middleware/auth.js";
 import { requirePermission } from "./middleware/permissions.js";
 
@@ -32,12 +34,16 @@ router.use(attachApiToken);
 router.use("/auth", authRouter);
 router.use("/agent", agentRouter);
 
-// NOTE: /agents/* (enrollment + telemetry) mounts here in the endpoint-agent
-// milestone, BEFORE requireAuth — agents present a one-shot enrollment token or
-// a per-agent bearer, never a session.
+// Agent protocol — enrollment (invitation code) + bearer-guarded telemetry.
+// Mounted BEFORE requireAuth: agents present a one-shot code or a per-agent
+// bearer, never a session. The WS upgrade (/agents/ws) is handled separately in
+// app.ts on the HTTP server.
+router.use("/agents/enroll", agentsEnrollRouter);
+router.use("/agents", agentsRouter);
 
 // ─── Authenticated surfaces ────────────────────────────────────────────────
 router.use(requireAuth);
+router.use("/endpoints", requirePermission("endpoints", "read"), endpointsRouter);
 router.use("/integrations", requirePermission("integrations", "read"), integrationsRouter);
 router.use("/directory", requirePermission("directory", "read"), directoryRouter);
 router.use("/groups", requirePermission("groups", "read"), groupsRouter);

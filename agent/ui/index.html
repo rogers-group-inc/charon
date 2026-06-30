@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Charon</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+  <link rel="stylesheet" href="/css/charon.css" />
+</head>
+<body class="login-body">
+  <main class="login-card">
+    <h1 class="login-title">Charon</h1>
+
+    <!-- Enrollment view (shown until the device is enrolled) -->
+    <section id="enrollView" hidden>
+      <p class="login-subtitle">Enroll this device</p>
+      <div class="form-group"><label for="serverUrl">Server URL</label><input id="serverUrl" type="url" placeholder="https://charon.example.com" /></div>
+      <div class="form-group"><label for="code">Invitation code</label><input id="code" type="text" placeholder="charon-inv_…" /></div>
+      <p id="enrollError" class="form-error" hidden></p>
+      <button class="btn btn-primary btn-block" id="enrollBtn">Enroll</button>
+    </section>
+
+    <!-- Login view (mode dictated by the server) -->
+    <section id="loginView" hidden>
+      <p class="login-subtitle" id="loginSubtitle">Sign in</p>
+      <div id="localLogin" hidden>
+        <div class="form-group"><label for="username">Username</label><input id="username" type="text" /></div>
+        <div class="form-group"><label for="password">Password</label><input id="password" type="password" /></div>
+        <button class="btn btn-primary btn-block" id="loginBtn">Sign in</button>
+      </div>
+      <div id="ssoLogin" hidden>
+        <p class="muted">Your organization uses single sign-on. Continue in your browser to verify.</p>
+        <button class="btn btn-primary btn-block" id="ssoBtn">Continue with SSO</button>
+      </div>
+      <p id="loginError" class="form-error" hidden></p>
+      <p id="loginOk" class="form-success" hidden></p>
+    </section>
+
+    <p class="sidebar-version" id="agentVersion" style="text-align:center;margin-top:1rem"></p>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+# Charon endpoint agent — Cargo workspace.
+#
+# The Tauri app lives in src-tauri/. This workspace manifest sits at agent/ so
+# Dependabot's cargo ecosystem (directory: "/agent") finds it. The agent is
+# built in CI/release (the server image deliberately ships no Rust toolchain).
+
+[workspace]
+members = ["src-tauri"]
+resolver = "2"

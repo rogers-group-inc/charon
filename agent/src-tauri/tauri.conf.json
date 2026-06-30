@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Charon Agent",
+  "version": "0.1.0",
+  "identifier": "com.rogersgroup.charon.agent",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Charon",
+        "width": 420,
+        "height": 560,
+        "resizable": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "nsis", "app", "dmg", "appimage", "deb"],
+    "icon": ["icons/icon.png"],
+    "category": "Utility",
+    "shortDescription": "Charon ZTNA endpoint agent",
+    "longDescription": "Enrolls the device with Charon, reports posture telemetry, and presents the server-dictated user login."
+  }
+}

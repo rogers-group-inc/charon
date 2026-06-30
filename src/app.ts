@@ -228,7 +228,15 @@ export async function startApp(): Promise<void> {
   // and proxies to the web + endpoint upstreams.
   const PORT = Number.parseInt(process.env.PORT ?? "3000", 10) || 3000;
   const bind = process.env.CHARON_BIND || "127.0.0.1";
-  app.listen(PORT, bind, () => logger.info({ port: PORT, bind, role: cfg.role }, "Charon listening"));
+  const httpServer = app.listen(PORT, bind, () => logger.info({ port: PORT, bind, role: cfg.role }, "Charon listening"));
+
+  // Agent telemetry WebSocket lives on the same listener — nginx routes the
+  // /api/v1/agents/ws upgrade to the endpoint upstream. Only attach where this
+  // process actually serves agent comms (endpoint / all).
+  if (cfg.runsAgentComms) {
+    const { attachAgentWsUpgradeHandler } = await import("./api/routes/agentsWs.js");
+    attachAgentWsUpgradeHandler(httpServer);
+  }
 }
 
 // ─── Scheduler / consumer wiring (extension points) ─────────────────────────────

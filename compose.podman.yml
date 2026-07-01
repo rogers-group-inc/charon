@@ -6,7 +6,7 @@
 # docker-compose.yml + nginx there).
 #
 #   podman compose -f compose.podman.yml up -d --build
-#   open http://localhost:3010   →  log in as  admin / charon-admin-pw
+#   open http://localhost:3010   →  log in as  admin / admin  (dev only!)
 #
 # Ordering: migrate (one-shot) → seed (built-in roles + admin) → charon.
 # The CHARON_DATA_KEY + admin password below are throwaway dev values.
@@ -53,7 +53,7 @@ services:
     environment:
       <<: *charon-env
       CHARON_SEED_ADMIN_USER: admin
-      CHARON_SEED_ADMIN_PASSWORD: charon-admin-pw
+      CHARON_SEED_ADMIN_PASSWORD: admin
     entrypoint: ["node", "dist/cli/seed.js"]
     depends_on:
       migrate:

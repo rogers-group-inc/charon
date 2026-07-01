@@ -88,8 +88,10 @@ app.use(
         scriptSrc: ["'self'"],
         // on* handler attributes are still used via innerHTML on some pages.
         scriptSrcAttr: ["'unsafe-inline'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        fontSrc: ["'self'"],
+        // Google Fonts (Inter + Roboto Mono) — the polaris design system's
+        // typography. Stylesheet from googleapis, font files from gstatic.
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com"],
         imgSrc: ["'self'", "data:", "blob:"],
         connectSrc: ["'self'"],
         frameSrc: ["'none'"],

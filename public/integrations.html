@@ -1,53 +1,63 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Charon — Integrations</title>
   <script src="/js/theme-init.js"></script>
-  <link rel="stylesheet" href="/css/styles.css" />
-  <link rel="stylesheet" href="/css/charon.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/styles.css">
+  <link rel="stylesheet" href="/css/charon.css">
 </head>
 <body>
-  <div class="app-layout">
-    <aside id="sidebar" class="sidebar"></aside>
+  <div class="layout">
+    <aside class="sidebar" id="sidebar"></aside>
     <main class="main">
-      <header class="page-header">
-        <h1>Integrations</h1>
-        <button class="btn btn-primary" id="addBtn">Add integration</button>
-      </header>
+      <div class="page-header">
+        <h2>Integrations</h2>
+        <div class="page-header-actions">
+          <button class="btn btn-primary" id="addBtn">+ Integration</button>
+        </div>
+      </div>
+
       <p class="muted">
         FortiManager &amp; FortiGate are enforcement targets; Active Directory,
-        Entra ID &amp; Intune are directory/posture sources. Secrets are encrypted
-        at rest and never shown after saving. Discovery is read-only.
+        Entra ID &amp; Intune are directory / posture sources. Secrets are
+        encrypted at rest and never shown after saving. Discovery is read-only.
       </p>
-      <section id="cards" class="dashboard-grid" style="margin-top:1rem">
-        <div class="muted">Loading…</div>
-      </section>
+
+      <div id="cards" class="dashboard-grid" style="margin-top:1rem">
+        <div class="empty-state">Loading…</div>
+      </div>
     </main>
   </div>
 
-  <div id="modal" class="charon-modal" hidden>
-    <div class="charon-modal-card">
-      <h2 id="modalTitle">Configure integration</h2>
-      <form id="cfgForm">
-        <div class="form-group">
-          <label for="fType">Type</label>
-          <select id="fType"></select>
-        </div>
-        <div class="form-group">
-          <label for="fName">Name</label>
-          <input id="fName" type="text" required />
-        </div>
-        <div id="typeFields"></div>
-        <p id="testResult" class="muted"></p>
-        <p id="modalError" class="form-error" hidden></p>
-        <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem">
-          <button type="button" class="btn" id="cancelBtn">Cancel</button>
-          <button type="button" class="btn" id="testBtn">Test</button>
-          <button type="submit" class="btn btn-primary" id="saveBtn">Save</button>
-        </div>
-      </form>
+  <div class="modal-overlay" id="modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modalTitle">Configure integration</h3>
+        <button class="btn-icon" id="cancelBtn" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="cfgForm">
+          <div class="form-group">
+            <label for="fType">Type</label>
+            <select id="fType"></select>
+          </div>
+          <div class="form-group">
+            <label for="fName">Name</label>
+            <input id="fName" type="text" required>
+          </div>
+          <div id="typeFields"></div>
+          <p id="testResult" class="muted"></p>
+          <p id="modalError" class="form-error" hidden></p>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="testBtn">Test</button>
+        <button type="submit" class="btn btn-primary" id="saveBtn" form="cfgForm">Save</button>
+      </div>
     </div>
   </div>
 

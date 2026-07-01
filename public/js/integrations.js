@@ -43,7 +43,7 @@
     window.api.get("/integrations").then(function (data) {
       var cards = document.getElementById("cards");
       if (!data.integrations.length) {
-        cards.innerHTML = '<div class="muted">No integrations yet.</div>';
+        cards.innerHTML = '<div class="empty-state">No integrations yet.</div>';
         return;
       }
       cards.innerHTML = data.integrations.map(cardHtml).join("");
@@ -52,8 +52,8 @@
   }
 
   function statusBadge(it) {
-    if (it.lastTestOk === true) return '<span class="badge badge-info">Connected</span>';
-    if (it.lastTestOk === false) return '<span class="badge badge-error">Error</span>';
+    if (it.lastTestOk === true) return '<span class="badge badge-active">Connected</span>';
+    if (it.lastTestOk === false) return '<span class="badge badge-conflict">Error</span>';
     return '<span class="badge">Untested</span>';
   }
 
@@ -61,10 +61,10 @@
     if (!ENFORCE_TYPES[it.type]) return "";
     var enforcing = it.enforcementMode === "enforce";
     var badge = enforcing
-      ? '<span class="badge badge-error">ENFORCING (live)</span>'
-      : '<span class="badge badge-warning">dry-run</span>';
+      ? '<span class="badge badge-conflict">ENFORCING (live)</span>'
+      : '<span class="badge badge-maintenance">dry-run</span>';
     var toggle = canEnforce
-      ? ' <button class="btn btn-sm" data-act="enforce" data-id="' + it.id + '" data-mode="' + (enforcing ? "dry_run" : "enforce") + '">' +
+      ? ' <button class="btn btn-secondary btn-sm" data-act="enforce" data-id="' + it.id + '" data-mode="' + (enforcing ? "dry_run" : "enforce") + '">' +
         (enforcing ? "Switch to dry-run" : "Enable enforcement") + "</button>"
       : "";
     return '<p class="muted">Enforcement: ' + badge + toggle + "</p>";
@@ -73,13 +73,13 @@
   function cardHtml(it) {
     var last = it.lastTestAt ? new Date(it.lastTestAt).toLocaleString() : "never";
     var btns = canWrite
-      ? '<button class="btn btn-sm" data-act="test" data-id="' + it.id + '">Test</button>' +
-        (DIRECTORY_TYPES[it.type] ? ' <button class="btn btn-sm" data-act="discover" data-id="' + it.id + '">Discover</button>' : "") +
-        ' <button class="btn btn-sm" data-act="edit" data-id="' + it.id + '">Edit</button>' +
-        ' <button class="btn btn-sm" data-act="delete" data-id="' + it.id + '">Delete</button>'
+      ? '<button class="btn btn-secondary btn-sm" data-act="test" data-id="' + it.id + '">Test</button>' +
+        (DIRECTORY_TYPES[it.type] ? ' <button class="btn btn-secondary btn-sm" data-act="discover" data-id="' + it.id + '">Discover</button>' : "") +
+        ' <button class="btn btn-secondary btn-sm" data-act="edit" data-id="' + it.id + '">Edit</button>' +
+        ' <button class="btn btn-secondary btn-sm" data-act="delete" data-id="' + it.id + '">Delete</button>'
       : "";
-    return '<div class="settings-card">' +
-      "<h2>" + (TYPE_LABELS[it.type] || it.type) + "</h2>" +
+    return '<div class="card">' +
+      '<div class="card-title">' + (TYPE_LABELS[it.type] || it.type) + "</div>" +
       "<p><strong>" + window.Charon.escapeHtml(it.name) + "</strong> " + statusBadge(it) + "</p>" +
       '<p class="muted">Last test: ' + last + "</p>" +
       enforcementHtml(it) +
@@ -173,10 +173,10 @@
     typeSel.disabled = !!it;
     document.getElementById("fName").value = it ? it.name : "";
     renderFields(typeSel.value, it ? it.config : {});
-    document.getElementById("modal").hidden = false;
+    document.getElementById("modal").classList.add("open");
   }
 
-  function closeModal() { document.getElementById("modal").hidden = true; }
+  function closeModal() { document.getElementById("modal").classList.remove("open"); }
 
   function collectConfig() {
     var cfg = {};

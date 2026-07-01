@@ -20,7 +20,7 @@
   function load() {
     window.api.get("/tags").then(function (data) {
       var body = document.getElementById("tagsBody");
-      if (!data.tags.length) { body.innerHTML = '<tr><td colspan="6" class="muted">No tags yet.</td></tr>'; return; }
+      if (!data.tags.length) { body.innerHTML = '<tr><td colspan="6" class="empty-state">No tags yet.</td></tr>'; return; }
       body.innerHTML = data.tags.map(rowHtml).join("");
       data.tags.forEach(wireRow);
     });
@@ -38,15 +38,15 @@
         (canWrite ? ' <a href="#" data-rmsrc="' + s.id + '">×</a>' : "") + "</span>";
     }).join(" ") || '<span class="muted">none</span>';
     var actions = canWrite
-      ? '<button class="btn btn-sm" data-addsrc="' + t.id + '" data-name="' + window.Charon.escapeHtml(t.name) + '">+ source</button> ' +
-        '<button class="btn btn-sm" data-deltag="' + t.id + '">Delete</button>'
+      ? '<button class="btn btn-secondary btn-sm" data-addsrc="' + t.id + '" data-name="' + window.Charon.escapeHtml(t.name) + '">+ source</button> ' +
+        '<button class="btn btn-secondary btn-sm" data-deltag="' + t.id + '">Delete</button>'
       : "";
     return "<tr>" +
       "<td><strong>" + window.Charon.escapeHtml(t.name) + "</strong></td>" +
       "<td>" + sources + "</td>" +
       "<td>" + (t._count ? t._count.endpointTags : 0) + "</td>" +
       "<td>" + (t._count ? t._count.policies : 0) + "</td>" +
-      "<td>" + (t.enabled ? '<span class="badge badge-info">enabled</span>' : '<span class="badge">disabled</span>') + "</td>" +
+      "<td>" + (t.enabled ? '<span class="badge badge-active">enabled</span>' : '<span class="badge badge-disabled">disabled</span>') + "</td>" +
       "<td>" + actions + "</td></tr>";
   }
 
@@ -84,7 +84,9 @@
   function wireSrcModal() {
     var kind = document.getElementById("srcKind");
     kind.addEventListener("change", syncSrcFields);
-    document.getElementById("srcCancel").addEventListener("click", function () { document.getElementById("srcModal").hidden = true; });
+    var close = function () { document.getElementById("srcModal").classList.remove("open"); };
+    document.getElementById("srcCancel").addEventListener("click", close);
+    document.getElementById("srcCancel2").addEventListener("click", close);
     document.getElementById("srcSave").addEventListener("click", saveSrc);
   }
 
@@ -106,7 +108,7 @@
       }).join("");
     });
     syncSrcFields();
-    document.getElementById("srcModal").hidden = false;
+    document.getElementById("srcModal").classList.add("open");
   }
 
   function saveSrc() {
@@ -116,7 +118,7 @@
     else if (k === "posture") payload.ref = document.getElementById("srcPostureSel").value;
     else payload.ref = document.getElementById("srcRef").value;
     window.api.post("/tags/" + srcTagId + "/sources", payload).then(function () {
-      document.getElementById("srcModal").hidden = true;
+      document.getElementById("srcModal").classList.remove("open");
       load();
     }).catch(function (e) { var el = document.getElementById("srcError"); el.textContent = e.message; el.hidden = false; });
   }

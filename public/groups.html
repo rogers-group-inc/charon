@@ -1,45 +1,58 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Charon — Custom Groups</title>
   <script src="/js/theme-init.js"></script>
-  <link rel="stylesheet" href="/css/styles.css" />
-  <link rel="stylesheet" href="/css/charon.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/styles.css">
+  <link rel="stylesheet" href="/css/charon.css">
 </head>
 <body>
-  <div class="app-layout">
-    <aside id="sidebar" class="sidebar"></aside>
+  <div class="layout">
+    <aside class="sidebar" id="sidebar"></aside>
     <main class="main">
-      <header class="page-header">
-        <h1>Custom Groups</h1>
-        <button class="btn btn-primary" id="addBtn">New group</button>
-      </header>
+      <div class="page-header">
+        <h2>Custom Groups</h2>
+        <div class="page-header-actions">
+          <button class="btn btn-primary" id="addBtn">+ Group</button>
+        </div>
+      </div>
+
       <p class="muted">
         Custom groups combine explicit member identifiers with rules over
-        directory attributes (e.g. department = OT). Membership is resolved from
-        the discovered directory and feeds tag sources.
+        directory attributes (e.g. <code>department = OT</code>). Membership is
+        resolved from the discovered directory and feeds tag sources.
       </p>
+
       <div class="table-wrapper" style="margin-top:1rem">
-        <table class="data-table">
-          <thead><tr><th>Name</th><th>Explicit members</th><th>Rules</th><th>Resolved</th><th></th></tr></thead>
-          <tbody id="groupsBody"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
+        <table>
+          <thead>
+            <tr><th>Name</th><th>Explicit members</th><th>Rules</th><th>Resolved</th><th></th></tr>
+          </thead>
+          <tbody id="groupsBody"><tr><td colspan="5" class="empty-state">Loading…</td></tr></tbody>
         </table>
       </div>
     </main>
   </div>
 
-  <div id="modal" class="charon-modal" hidden>
-    <div class="charon-modal-card">
-      <h2 id="modalTitle">New group</h2>
-      <div class="form-group"><label for="gName">Name</label><input id="gName" type="text" /></div>
-      <div class="form-group"><label for="gDesc">Description</label><input id="gDesc" type="text" /></div>
-      <div class="form-group"><label for="gMembers">Explicit members (one identifier per line)</label><textarea id="gMembers" rows="3" style="width:100%"></textarea></div>
-      <div class="form-group"><label for="gRules">Rules (JSON: {"all":[{"attr","op","value"}]})</label><textarea id="gRules" rows="4" style="width:100%;font-family:var(--font-mono)"></textarea></div>
-      <p id="modalError" class="form-error" hidden></p>
-      <div style="display:flex;gap:0.5rem;justify-content:flex-end">
-        <button class="btn" id="cancelBtn">Cancel</button>
+  <div class="modal-overlay" id="modal">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3 id="modalTitle">New group</h3>
+        <button class="btn-icon" id="cancelBtn" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group"><label for="gName">Name</label><input id="gName" type="text"></div>
+        <div class="form-group"><label for="gDesc">Description</label><input id="gDesc" type="text"></div>
+        <div class="form-group"><label for="gMembers">Explicit members (one identifier per line)</label><textarea id="gMembers" rows="3" style="width:100%"></textarea></div>
+        <div class="form-group"><label for="gRules">Rules (JSON: {"all":[{"attr","op","value"}]})</label><textarea id="gRules" rows="5" style="width:100%;font-family:var(--font-mono)"></textarea></div>
+        <p id="modalError" class="form-error" hidden></p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelBtn2">Cancel</button>
         <button class="btn btn-primary" id="saveBtn">Save</button>
       </div>
     </div>

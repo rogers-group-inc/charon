@@ -190,7 +190,7 @@
         return "<li>" + window.Charon.escapeHtml(r.client || "?") + " — " + r.state + " / " + r.sync_state + " (lag " + (r.lag_bytes || 0) + " bytes)</li>";
       }).join("");
       el.innerHTML =
-        "<p><strong>This node:</strong> " + (d.isLeader ? '<span class="badge badge-info">LEADER</span>' : '<span class="badge">standby/follower</span>') + "</p>" +
+        "<p><strong>This node:</strong> " + (d.isLeader ? '<span class="badge badge-active">LEADER</span>' : '<span class="badge">standby/follower</span>') + "</p>" +
         "<p><strong>Public URL:</strong> " + window.Charon.escapeHtml(d.publicUrl || "—") + "</p>" +
         "<p><strong>Replicas streaming:</strong></p>" + (rep ? "<ul>" + rep + "</ul>" : '<p class="muted">none reported (standby, or no replication configured)</p>');
     }).catch(function () {});

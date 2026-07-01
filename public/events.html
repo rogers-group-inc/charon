@@ -1,24 +1,40 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Charon — Events</title>
   <script src="/js/theme-init.js"></script>
-  <link rel="stylesheet" href="/css/styles.css" />
-  <link rel="stylesheet" href="/css/charon.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/styles.css">
+  <link rel="stylesheet" href="/css/charon.css">
 </head>
 <body>
-  <div class="app-layout">
-    <aside id="sidebar" class="sidebar"></aside>
+  <div class="layout">
+    <aside class="sidebar" id="sidebar"></aside>
     <main class="main">
-      <header class="page-header"><h1>Events</h1></header>
+      <div class="page-header">
+        <h2>Events</h2>
+        <div class="page-header-actions">
+          <button class="btn btn-secondary" id="btn-refresh">Refresh</button>
+        </div>
+      </div>
+
       <div class="table-wrapper">
-        <table class="data-table">
+        <table>
           <thead>
-            <tr><th>Time</th><th>Level</th><th>Action</th><th>Actor</th><th>Message</th></tr>
+            <tr>
+              <th style="width:170px">Timestamp</th>
+              <th style="width:80px">Level</th>
+              <th style="width:180px">Action</th>
+              <th style="width:120px">Actor</th>
+              <th>Message</th>
+            </tr>
           </thead>
-          <tbody id="eventsBody"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
+          <tbody id="eventsBody">
+            <tr><td colspan="5" class="empty-state">Loading…</td></tr>
+          </tbody>
         </table>
       </div>
     </main>

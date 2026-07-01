@@ -1,18 +1,21 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Charon — Server Settings</title>
   <script src="/js/theme-init.js"></script>
-  <link rel="stylesheet" href="/css/styles.css" />
-  <link rel="stylesheet" href="/css/charon.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/styles.css">
+  <link rel="stylesheet" href="/css/charon.css">
 </head>
 <body>
-  <div class="app-layout">
-    <aside id="sidebar" class="sidebar"></aside>
+  <div class="layout">
+    <aside class="sidebar" id="sidebar"></aside>
     <main class="main">
-      <header class="page-header"><h1>Server Settings</h1></header>
+      <div class="page-header"><h2>Server Settings</h2></div>
+
       <nav class="page-tabs" id="tabs">
         <button class="tab active" data-tab="certs">Certificates</button>
         <button class="tab" data-tab="auth">Authentication</button>
@@ -23,26 +26,28 @@
       <!-- Certificates -->
       <section class="tab-panel" id="panel-certs">
         <div class="settings-card">
-          <h2>Active certificate &amp; agent pin</h2>
+          <h4>Active certificate &amp; agent pin</h4>
           <div id="certCurrent" class="muted">Loading…</div>
         </div>
         <div class="settings-card" style="margin-top:1rem">
-          <h2>Upload / rotate certificate</h2>
-          <div class="form-group"><label for="serverName">Server name (SNI / SAN)</label><input id="serverName" type="text" placeholder="charon.example.com" /></div>
+          <h4>Upload / rotate certificate</h4>
+          <div class="form-group"><label for="serverName">Server name (SNI / SAN)</label><input id="serverName" type="text" placeholder="charon.example.com"></div>
           <div class="form-group"><label for="certPem">Certificate (PEM)</label><textarea id="certPem" rows="5" style="width:100%;font-family:var(--font-mono)"></textarea></div>
           <div class="form-group"><label for="keyPem">Private key (PEM)</label><textarea id="keyPem" rows="5" style="width:100%;font-family:var(--font-mono)"></textarea></div>
           <p class="muted">The leaf SHA-256 becomes the agent pin. To rotate without re-enrolling agents: <em>stage</em> the new cert's pin first (agents accept old+new), swap the cert, then promote.</p>
           <p id="certError" class="form-error" hidden></p>
           <p id="certOk" class="form-success" hidden></p>
-          <button class="btn btn-primary" id="certUpload">Upload &amp; apply</button>
-          <button class="btn" id="certStage">Stage new pin only</button>
+          <div class="card-actions">
+            <button class="btn btn-primary" id="certUpload">Upload &amp; apply</button>
+            <button class="btn btn-secondary" id="certStage">Stage new pin only</button>
+          </div>
         </div>
       </section>
 
       <!-- Authentication -->
       <section class="tab-panel" id="panel-auth" hidden>
         <div class="settings-card">
-          <h2>Active login mode</h2>
+          <h4>Active login mode</h4>
           <p class="muted">Drives both operator login and the endpoint agent's login GUI.</p>
           <div class="form-group">
             <select id="authMode"><option value="local">Local (password + TOTP)</option><option value="saml">SAML</option><option value="oidc">OIDC</option></select>
@@ -54,7 +59,7 @@
       <!-- HA -->
       <section class="tab-panel" id="panel-ha" hidden>
         <div class="settings-card">
-          <h2>Leader / replication</h2>
+          <h4>Leader / replication</h4>
           <div id="haStatus" class="muted">Loading…</div>
         </div>
       </section>
@@ -62,17 +67,17 @@
       <!-- Maintenance -->
       <section class="tab-panel" id="panel-maint" hidden>
         <div class="settings-card">
-          <h2>Capacity</h2>
+          <h4>Capacity</h4>
           <div id="capacity" class="muted">Loading…</div>
         </div>
         <div class="settings-card" style="margin-top:1rem">
-          <h2>Backup / Restore</h2>
-          <div class="form-group"><label for="bkPass">Encryption password (optional, ≥8 chars)</label><input id="bkPass" type="password" /></div>
+          <h4>Backup / Restore</h4>
+          <div class="form-group"><label for="bkPass">Encryption password (optional, ≥8 chars)</label><input id="bkPass" type="password"></div>
           <button class="btn btn-primary" id="bkCreate">Create backup</button>
           <div id="backups" class="muted" style="margin-top:0.75rem">Loading…</div>
         </div>
         <div class="settings-card" style="margin-top:1rem">
-          <h2>Application updates</h2>
+          <h4>Application updates</h4>
           <div id="updateInfo" class="muted">Loading…</div>
           <label style="display:block;margin:0.5rem 0"><input type="checkbox" id="bkBeforeUpdate" checked> Back up before updating</label>
           <label style="display:block;margin:0.5rem 0"><input type="checkbox" id="confirmNode"> I confirm this node is safe to update (HA: standby first)</label>
@@ -80,13 +85,13 @@
           <div id="updateProgress" class="muted" style="margin-top:0.5rem"></div>
         </div>
         <div class="settings-card" style="margin-top:1rem">
-          <h2>Agent installers</h2>
+          <h4>Agent installers</h4>
           <div id="agentInstallers" class="muted">Loading…</div>
         </div>
         <div class="settings-card" style="margin-top:1rem">
-          <h2>Restart</h2>
+          <h4>Restart</h4>
           <p class="muted">Restarts the whole charon.target (web, endpoint, enforcer, worker) and re-renders nginx.</p>
-          <button class="btn" id="restartBtn">Restart Charon</button>
+          <button class="btn btn-secondary" id="restartBtn">Restart Charon</button>
         </div>
       </section>
     </main>

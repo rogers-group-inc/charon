@@ -11,7 +11,9 @@
       canWrite = window.Charon.can("groups", "write");
       if (!canWrite) document.getElementById("addBtn").style.display = "none";
       document.getElementById("addBtn").addEventListener("click", function () { openModal(null); });
-      document.getElementById("cancelBtn").addEventListener("click", function () { document.getElementById("modal").hidden = true; });
+      var close = function () { document.getElementById("modal").classList.remove("open"); };
+      document.getElementById("cancelBtn").addEventListener("click", close);
+      document.getElementById("cancelBtn2").addEventListener("click", close);
       document.getElementById("saveBtn").addEventListener("click", save);
       load();
     });
@@ -20,7 +22,7 @@
   function load() {
     window.api.get("/groups").then(function (data) {
       var body = document.getElementById("groupsBody");
-      if (!data.groups.length) { body.innerHTML = '<tr><td colspan="5" class="muted">No groups yet.</td></tr>'; return; }
+      if (!data.groups.length) { body.innerHTML = '<tr><td colspan="5" class="empty-state">No groups yet.</td></tr>'; return; }
       body.innerHTML = data.groups.map(rowHtml).join("");
       data.groups.forEach(function (g) {
         previewCount(g.id);
@@ -36,7 +38,7 @@
 
   function rowHtml(g) {
     var ruleCount = ((g.rules && g.rules.all) || []).length + ((g.rules && g.rules.any) || []).length;
-    var actions = canWrite ? '<button class="btn btn-sm" data-edit="' + g.id + '">Edit</button> <button class="btn btn-sm" data-del="' + g.id + '">Delete</button>' : "";
+    var actions = canWrite ? '<button class="btn btn-secondary btn-sm" data-edit="' + g.id + '">Edit</button> <button class="btn btn-secondary btn-sm" data-del="' + g.id + '">Delete</button>' : "";
     return "<tr>" +
       "<td><strong>" + window.Charon.escapeHtml(g.name) + "</strong><br><span class='muted'>" + window.Charon.escapeHtml(g.description || "") + "</span></td>" +
       "<td>" + (g.members ? g.members.length : 0) + "</td>" +
@@ -60,7 +62,7 @@
     document.getElementById("gDesc").value = g ? (g.description || "") : "";
     document.getElementById("gMembers").value = g ? (g.members || []).join("\n") : "";
     document.getElementById("gRules").value = g && g.rules ? JSON.stringify(g.rules, null, 2) : '{\n  "all": []\n}';
-    document.getElementById("modal").hidden = false;
+    document.getElementById("modal").classList.add("open");
   }
 
   function save() {
@@ -72,7 +74,7 @@
     catch (e) { errEl.textContent = "Rules must be valid JSON"; errEl.hidden = false; return; }
     var payload = { name: document.getElementById("gName").value, description: document.getElementById("gDesc").value, members: members, rules: rules };
     var p = editing ? window.api.put("/groups/" + editing, payload) : window.api.post("/groups", payload);
-    p.then(function () { document.getElementById("modal").hidden = true; load(); }).catch(function (e) { errEl.textContent = e.message; errEl.hidden = false; });
+    p.then(function () { document.getElementById("modal").classList.remove("open"); load(); }).catch(function (e) { errEl.textContent = e.message; errEl.hidden = false; });
   }
 
   function err(e) { window.Charon.toast(e.message, "error"); }

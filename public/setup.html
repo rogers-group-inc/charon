@@ -1,42 +1,53 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Charon — First-Run Setup</title>
   <script src="/js/theme-init.js"></script>
-  <link rel="stylesheet" href="/css/styles.css" />
-  <link rel="stylesheet" href="/css/charon.css" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Charon — First-Run Setup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/styles.css">
+  <link rel="stylesheet" href="/css/charon.css">
+  <style>
+    .login-wrapper { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--color-bg-secondary); padding: 2rem 1rem; }
+    .login-card { background: var(--color-bg-primary); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 2rem 2.5rem; width: 100%; max-width: 560px; box-shadow: var(--shadow-md); }
+    .login-card h2 { text-align: center; margin: 0 0 0.25rem; font-size: 1.25rem; font-weight: 700; color: var(--color-text-primary); text-transform: uppercase; letter-spacing: 1px; }
+    .login-card .subtitle { text-align: center; color: var(--color-text-tertiary); font-size: 0.8rem; margin-bottom: 1.5rem; }
+  </style>
 </head>
-<body class="login-body">
-  <main class="login-card" style="max-width:560px">
-    <h1 class="login-title">Charon Setup</h1>
-    <p class="login-subtitle">Configure the database and the first administrator.</p>
-
-    <form id="setupForm">
-      <div class="form-group">
-        <label for="databaseUrl">PostgreSQL connection URL</label>
-        <input id="databaseUrl" type="text" placeholder="postgresql://charon:••••@localhost:5432/charon" required />
-        <button type="button" class="btn btn-ghost btn-sm" id="testDbBtn">Test connection</button>
-        <span id="testDbResult" class="muted"></span>
-      </div>
-      <div class="form-group">
-        <label for="adminUsername">Administrator username</label>
-        <input id="adminUsername" type="text" minlength="3" required />
-      </div>
-      <div class="form-group">
-        <label for="adminPassword">Administrator password (min 12 chars)</label>
-        <input id="adminPassword" type="password" minlength="12" required />
-      </div>
-      <div class="form-group">
-        <label for="publicUrl">Public URL (optional)</label>
-        <input id="publicUrl" type="url" placeholder="https://charon.example.com" />
-      </div>
-      <p id="setupError" class="form-error" role="alert" hidden></p>
-      <p id="setupOk" class="form-success" role="status" hidden></p>
-      <button type="submit" class="btn btn-primary btn-block" id="finalizeBtn">Finish setup</button>
-    </form>
-  </main>
+<body>
+  <div class="login-wrapper">
+    <div class="login-card">
+      <h2>Charon Setup</h2>
+      <p class="subtitle">Configure the database and the first administrator.</p>
+      <form id="setupForm">
+        <div class="form-group">
+          <label for="databaseUrl">PostgreSQL connection URL</label>
+          <input id="databaseUrl" type="text" placeholder="postgresql://charon:••••@localhost:5432/charon" required>
+          <div style="margin-top:0.5rem;display:flex;align-items:center;gap:0.5rem">
+            <button type="button" class="btn btn-secondary" id="testDbBtn">Test connection</button>
+            <span id="testDbResult" class="muted"></span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="adminUsername">Administrator username</label>
+          <input id="adminUsername" type="text" minlength="3" required>
+        </div>
+        <div class="form-group">
+          <label for="adminPassword">Administrator password (min 12 chars)</label>
+          <input id="adminPassword" type="password" minlength="12" required>
+        </div>
+        <div class="form-group">
+          <label for="publicUrl">Public URL (optional)</label>
+          <input id="publicUrl" type="url" placeholder="https://charon.example.com">
+        </div>
+        <p id="setupError" class="form-error" hidden></p>
+        <p id="setupOk" class="form-success" hidden></p>
+        <button type="submit" class="btn btn-primary" id="finalizeBtn" style="width:100%;justify-content:center">Finish setup</button>
+      </form>
+    </div>
+  </div>
   <script src="/js/setup.js"></script>
 </body>
 </html>

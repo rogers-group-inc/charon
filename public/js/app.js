@@ -47,6 +47,50 @@
     setTimeout(function () { t.remove(); }, 4000);
   }
 
+  // ─── User badge (top-right of the page header) ───────────────────────────────
+  function getInitials(name) {
+    if (!name) return "?";
+    var parts = name.replace(/[._@-]/g, " ").trim().split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    return name.substring(0, 2).toUpperCase();
+  }
+  function initialsColor(name) {
+    var hash = 0;
+    for (var i = 0; i < (name || "").length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    var colors = ["#4a9eff", "#34d399", "#f59e0b", "#f472b6", "#a78bfa", "#fb923c", "#38bdf8", "#4ade80"];
+    return colors[Math.abs(hash) % colors.length];
+  }
+  // Short label + pill color per built-in role (matches the seeded role colors).
+  var ROLE_LABEL = { Administrator: "Admin", Operator: "Operator", "Read-Only": "Read-Only" };
+  var ROLE_COLOR = { Administrator: "#dc2626", Operator: "#2563eb", "Read-Only": "#6b7280" };
+
+  function renderUserBadge() {
+    if (!currentUser) return;
+    var header = document.querySelector(".page-header-actions");
+    if (!header) {
+      var ph = document.querySelector(".page-header");
+      if (!ph) return;
+      header = document.createElement("div");
+      header.className = "page-header-actions";
+      ph.appendChild(header);
+    }
+    var existing = header.querySelectorAll(".user-badge");
+    for (var i = 0; i < existing.length; i++) existing[i].remove();
+
+    var name = currentUser.displayName || currentUser.username || "";
+    var role = currentUser.role || "";
+    var label = ROLE_LABEL[role] || role;
+    var pillColor = ROLE_COLOR[role] || "var(--color-text-tertiary)";
+    var badge = document.createElement("div");
+    badge.className = "user-badge";
+    badge.title = name + (label ? " (" + label + ")" : "");
+    badge.innerHTML =
+      '<div class="user-badge-avatar" style="background:' + initialsColor(name) + '">' + escapeHtml(getInitials(name)) + "</div>" +
+      '<span class="user-badge-name">' + escapeHtml(name) + "</span>" +
+      (label ? '<span class="badge" style="font-size:0.7rem;padding:1px 6px;background:' + pillColor + ';color:#fff">' + escapeHtml(label) + "</span>" : "");
+    header.appendChild(badge);
+  }
+
   // ─── Permissions ─────────────────────────────────────────────────────────────
   function can(key, level) {
     if (!key) return true;
@@ -88,10 +132,6 @@
     }).join("");
 
     var showSettings = can("serverSettingsSystem", "read") || can("serverSettingsData", "read");
-    var userBadge = currentUser
-      ? '<div class="sidebar-user"><span class="badge">' + escapeHtml(currentUser.role || "") + "</span>" +
-        '<span class="sidebar-user-name">' + escapeHtml(currentUser.displayName || currentUser.username || "") + "</span></div>"
-      : "";
 
     sidebar.innerHTML =
       '<div class="sidebar-brand">' +
@@ -100,7 +140,6 @@
       "</div>" +
       '<ul class="sidebar-nav">' + items + "</ul>" +
       '<div style="margin-top:auto">' +
-        userBadge +
         (showSettings
           ? '<div style="padding:0.5rem 0.5rem 0;border-top:1px solid var(--color-border-light)"><a href="/server-settings.html" class="sidebar-bottom-link' + (current === "/server-settings.html" ? " active" : "") + '">' + ICONS.settings + "<span>Server Settings</span></a></div>"
           : "") +
@@ -129,6 +168,7 @@
       .then(function (user) {
         currentUser = user;
         renderNav();
+        renderUserBadge();
         // Best-effort version stamp for the sidebar.
         fetch("/api/v1/server-settings/identification", { credentials: "same-origin" })
           .then(function (r) { return r.ok ? r.json() : null; })

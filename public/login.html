@@ -19,7 +19,11 @@
     .login-card .subtitle { text-align: center; color: var(--color-text-tertiary); font-size: 0.8rem; margin-bottom: 1.5rem; letter-spacing: 0.5px; }
     .login-error { background: rgba(255,23,68,0.12); color: var(--color-danger); border: 1px solid rgba(255,23,68,0.3); border-radius: var(--radius-md); padding: 0.5rem 0.75rem; font-size: 0.85rem; margin-bottom: 1rem; }
     .login-card .btn-primary { width: 100%; justify-content: center; }
-  </style>
+    /* Push the submit button down so its gap from the password field matches
+       the username→password gap (which also includes the password label:
+       0.8rem × 1.5 line-height + 4px label margin). */
+    #loginForm .btn-primary { margin-top: calc(0.8rem * 1.5 + 4px); }
+</style>
 </head>
 <body>
   <div class="login-wrapper">

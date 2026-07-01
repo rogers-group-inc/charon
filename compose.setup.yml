@@ -1,0 +1,64 @@
+# Charon — local Podman stack for exercising the FIRST-RUN SETUP WIZARD.
+#
+# Unlike compose.podman.yml (which pre-configures DATABASE_URL + auto-seeds
+# admin/admin so it boots straight into the app), this stack starts Charon with
+# NO DATABASE_URL, so it comes up in "needs-setup" mode and serves the wizard at
+# /setup.html. You provision the DB details through the wizard yourself.
+#
+#   podman compose -f compose.setup.yml up -d --build
+#   open http://localhost:3010          → redirects to /setup.html
+#
+# In the wizard, use this connection string (Postgres runs as a sibling service):
+#   postgresql://charon:charon@postgres:5432/charon
+# ...and choose your own admin username + password (min 12 chars).
+#
+# The wizard writes /app/state/.env (generating SESSION_SECRET + the AES-256-GCM
+# CHARON_DATA_KEY), runs migrations, and seeds roles + your admin. It then tells
+# you to restart. Do:
+#   podman compose -f compose.setup.yml restart charon
+# On restart the entrypoint loads /app/state/.env, DATABASE_URL is now set, and
+# Charon boots the full app. Log in with the admin you created.
+#
+# Fresh start (wipe DB + the written .env/.setup-complete to redo setup):
+#   podman compose -f compose.setup.yml down -v
+
+services:
+  postgres:
+    image: docker.io/library/postgres:15-alpine
+    environment:
+      POSTGRES_USER: charon
+      POSTGRES_PASSWORD: charon
+      POSTGRES_DB: charon
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U charon"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - charon-setup-pg:/var/lib/postgresql/data
+
+  charon:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: charon:local
+    environment:
+      # Intentionally NO DATABASE_URL / CHARON_DATA_KEY / SESSION_SECRET here —
+      # their absence is what triggers the first-run setup wizard. The wizard
+      # generates and persists them to /app/state/.env.
+      CHARON_ROLE: all
+      NODE_ENV: production
+      PORT: "3000"
+      CHARON_BIND: "0.0.0.0"
+    ports:
+      - "127.0.0.1:3010:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      # Persist the wizard-written .env + .setup-complete across the restart.
+      - charon-setup-state:/app/state
+
+volumes:
+  charon-setup-pg:
+  charon-setup-state:

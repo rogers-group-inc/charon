@@ -29,7 +29,14 @@ case "$ROLE" in
     exit 0
     ;;
   web|all)
-    run_migrations
+    # No DATABASE_URL yet → this host still needs first-run setup. Skip
+    # migrations and let the app boot the setup wizard (index.ts). The wizard's
+    # finalize applies migrations itself once the operator supplies a DB.
+    if [[ -n "${DATABASE_URL:-}" ]]; then
+      run_migrations
+    else
+      echo "[entrypoint] no DATABASE_URL — starting first-run setup wizard."
+    fi
     ;;
   endpoint|enforcer|worker)
     echo "[entrypoint] role=$ROLE — migrations handled by the migrate/web service."

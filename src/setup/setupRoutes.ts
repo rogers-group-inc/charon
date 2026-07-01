@@ -104,11 +104,14 @@ router.post("/finalize", async (req, res, next) => {
     // Apply schema, then seed built-in roles + the first admin. execFileSync
     // (not a shell) so operator-supplied values never reach a shell.
     execFileSync("npx", ["prisma", "migrate", "deploy"], { env: childEnv, stdio: "inherit" });
-    execFileSync(
-      "node",
-      ["--import", "tsx/esm", "prisma/seed.ts"],
-      { env: childEnv, stdio: "inherit" },
-    );
+    // Prefer the compiled seed (dist/cli/seed.js) — the production/Docker image
+    // prunes devDependencies, so tsx + the prisma/seed.ts source aren't present
+    // there. Fall back to the tsx source for a dev checkout that isn't built.
+    if (existsSync("dist/cli/seed.js")) {
+      execFileSync("node", ["dist/cli/seed.js"], { env: childEnv, stdio: "inherit" });
+    } else {
+      execFileSync("node", ["--import", "tsx/esm", "prisma/seed.ts"], { env: childEnv, stdio: "inherit" });
+    }
 
     markSetupComplete();
     logger.info("First-run setup finalized; restart Charon to boot the full app.");

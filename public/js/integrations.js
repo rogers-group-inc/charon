@@ -11,8 +11,18 @@
 
   var TYPE_LABELS = {
     fortimanager: "FortiManager", fortigate: "FortiGate",
-    activedirectory: "Active Directory", entraid: "Entra ID", intune: "Intune",
+    activedirectory: "Active Directory", entraid: "Microsoft Entra ID", intune: "Microsoft Intune",
   };
+  // Subtitle shown on each type-picker card.
+  var TYPE_DESC = {
+    fortimanager: "Multi-FortiGate via JSON-RPC",
+    fortigate: "Standalone FortiGate via REST",
+    activedirectory: "On-prem users, groups & OUs via LDAP",
+    entraid: "Users & groups via Microsoft Graph",
+    intune: "Device posture via Microsoft Graph",
+  };
+  // Order the cards appear in the picker.
+  var TYPE_ORDER = ["fortimanager", "fortigate", "activedirectory", "entraid", "intune"];
   // [name, label, type, secret?]
   var TYPE_FIELDS = {
     fortimanager: [["host", "Host", "text"], ["port", "Port", "number"], ["apiUser", "API user", "text"], ["apiToken", "API token", "password", true], ["adom", "ADOM", "text"], ["verifyTls", "Verify TLS", "checkbox"]],
@@ -138,12 +148,23 @@
   // ─── Modal ───────────────────────────────────────────────────────────────
   function wireModal() {
     var typeSel = document.getElementById("fType");
-    typeSel.innerHTML = Object.keys(TYPE_FIELDS).map(function (t) {
+    typeSel.innerHTML = TYPE_ORDER.map(function (t) {
       return '<option value="' + t + '">' + TYPE_LABELS[t] + "</option>";
     }).join("");
-    typeSel.addEventListener("change", function () { renderFields(typeSel.value, {}); });
+
+    // Build the type-picker cards (step 1).
+    document.getElementById("typeCards").innerHTML = TYPE_ORDER.map(function (t) {
+      return '<button type="button" class="type-card" data-type="' + t + '">' +
+        '<span class="type-card-title">' + TYPE_LABELS[t] + "</span>" +
+        '<span class="type-card-desc">' + TYPE_DESC[t] + "</span></button>";
+    }).join("");
+    document.querySelectorAll("#typeCards .type-card").forEach(function (btn) {
+      btn.addEventListener("click", function () { showForm(btn.getAttribute("data-type"), null); });
+    });
+
     document.getElementById("addBtn").addEventListener("click", function () { openModal(null); });
     document.getElementById("cancelBtn").addEventListener("click", closeModal);
+    document.getElementById("backBtn").addEventListener("click", showPicker);
     document.getElementById("testBtn").addEventListener("click", onTest);
     document.getElementById("cfgForm").addEventListener("submit", onSave);
   }
@@ -164,16 +185,37 @@
   }
 
   function openModal(it) {
+    document.getElementById("modal").classList.add("open");
+    if (it) { showForm(it.type, it); } else { showPicker(); }
+  }
+
+  // Step 1 — the type picker (only for a brand-new integration).
+  function showPicker() {
+    editing = null;
+    document.getElementById("modalTitle").textContent = "Add Integration";
+    document.getElementById("typePicker").hidden = false;
+    document.getElementById("cfgForm").hidden = true;
+    document.getElementById("backBtn").hidden = true;
+    document.getElementById("testBtn").hidden = true;
+    document.getElementById("saveBtn").hidden = true;
+  }
+
+  // Step 2 — the config form. `it` set when editing an existing integration.
+  function showForm(type, it) {
     editing = it ? it.id : null;
-    document.getElementById("modalTitle").textContent = it ? "Edit integration" : "Add integration";
+    document.getElementById("modalTitle").textContent = it ? "Edit " + (TYPE_LABELS[type] || type) : "Add " + (TYPE_LABELS[type] || type);
     document.getElementById("modalError").hidden = true;
     document.getElementById("testResult").textContent = "";
-    var typeSel = document.getElementById("fType");
-    typeSel.value = it ? it.type : Object.keys(TYPE_FIELDS)[0];
-    typeSel.disabled = !!it;
+    document.getElementById("fType").value = type;
     document.getElementById("fName").value = it ? it.name : "";
-    renderFields(typeSel.value, it ? it.config : {});
-    document.getElementById("modal").classList.add("open");
+    renderFields(type, it ? it.config : {});
+    document.getElementById("typePicker").hidden = true;
+    document.getElementById("cfgForm").hidden = false;
+    // Editing jumps straight to the form (no type to re-pick); adding can go Back.
+    document.getElementById("backBtn").hidden = !!it;
+    document.getElementById("testBtn").hidden = false;
+    document.getElementById("saveBtn").hidden = false;
+    document.getElementById("fName").focus();
   }
 
   function closeModal() { document.getElementById("modal").classList.remove("open"); }

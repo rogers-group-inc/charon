@@ -24,7 +24,7 @@ rustls = "0.23"
 sha2 = "0.10"
 hex = "0.4"
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
-directories = "5"
+directories = "6"
 thiserror = "1"
 
 [target.'cfg(windows)'.dependencies]

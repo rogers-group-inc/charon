@@ -19,7 +19,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"
 # does NOT trust system roots). PQC-hybrid KEX is negotiated by the TLS stack
 # once the rustls/OpenSSL build supports X25519MLKEM768 — crypto-agility means
 # this is a dependency/config bump, not a protocol change.
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-manual-roots", "json"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls-tls-manual-roots", "json"] }
 rustls = "0.23"
 sha2 = "0.10"
 hex = "0.4"

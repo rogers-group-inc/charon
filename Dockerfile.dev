@@ -1,8 +1,8 @@
 # Charon dev image — runs the TS source via tsx with --watch (no build step).
 # Used only by compose.dev.yml with a bind-mounted source tree.
-FROM node:20-bookworm
+FROM node:24-trixie
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends python3 build-essential postgresql-client && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends python3 build-essential postgresql-client-17 && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json prisma.config.ts ./
 COPY prisma ./prisma
 RUN npm ci

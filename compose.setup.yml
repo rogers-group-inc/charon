@@ -26,7 +26,9 @@
 
 services:
   postgres:
-    image: docker.io/library/postgres:15-alpine
+    # A volume created by an older major will not start under 17 ("database files
+    # are incompatible with server"): `down -v` and re-seed, the data is throwaway.
+    image: docker.io/library/postgres:17-alpine
     environment:
       POSTGRES_USER: charon
       POSTGRES_PASSWORD: charon

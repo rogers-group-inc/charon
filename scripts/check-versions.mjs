@@ -46,6 +46,8 @@ const FAMILIES = [
       { file: "compose.setup.yml", label: "postgres image", kind: "pin", re: /image:\s*\S*postgres:(\d+)/ },
       { file: "deploy/install-rhel.sh", label: "postgresqlN-server", kind: "pin", re: /postgresql(\d+)-server/ },
       { file: "deploy/install-rhel.sh", label: "postgresql-N unit", kind: "pin", re: /enable --now postgresql-(\d+)/ },
+      { file: "Dockerfile", label: "postgresql-client-N", kind: "pin", re: /postgresql-client-(\d+)/ },
+      { file: "Dockerfile.dev", label: "postgresql-client-N", kind: "pin", re: /postgresql-client-(\d+)/ },
     ],
   },
   {

@@ -40,8 +40,10 @@ dataset is read at check time only; nothing fetches EOL data at runtime.
 
 ## Current state (re-derive with `npm run check:versions`)
 
-Node.js is pinned at 20, past its end of life — the checker warns on every run until the upgrade
-lands (`references/upgrade-playbooks.md` → Node.js).
+Node.js floor 22 / pin 24 (Debian trixie images), PostgreSQL pin 17 (existing installs may still
+run 15), OpenSSL 3.5.9 + nginx 1.30.6 in the PQC build, Rust MSRV 1.77. Held back on purpose:
+TypeScript 7 (the native-port rewrite) and Prisma 8 (release candidate only) — each is its own
+reviewed upgrade, not a refresh.
 
 Related: `charon-deploy` (the deploy-surface audit runs `check:versions`), `charon-agent`
 (the Rust MSRV), `charon-docs-sync` (routes a pin change here).

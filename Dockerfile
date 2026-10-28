@@ -11,7 +11,7 @@
 # for OUTBOUND TLS (to FortiGate/Graph), hybrid where the peer supports it.
 
 # ── Builder ───────────────────────────────────────────────────────────────────
-FROM node:20-bookworm AS builder
+FROM node:24-trixie AS builder
 WORKDIR /app
 
 # Native build deps for @node-rs/argon2 fallback compile (prebuilt usually, but
@@ -32,12 +32,15 @@ COPY src ./src
 RUN npm run build && npm prune --omit=dev
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
-FROM node:20-bookworm-slim AS runtime
+FROM node:24-trixie-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production CHARON_IN_DOCKER=1 CHARON_STATE_DIR=/app/state
 
+# postgresql-client-17 by NAME, not the unversioned metapackage: pg_dump refuses
+# a server newer than itself, so the client must be >= the compose server major
+# and must not drift with the base image. Debian trixie carries 17 natively.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      postgresql-client ca-certificates tini \
+      postgresql-client-17 ca-certificates tini \
     && rm -rf /var/lib/apt/lists/*
 
 # Build arg → baked commit count so version.ts works without a .git dir.

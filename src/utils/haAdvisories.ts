@@ -246,7 +246,7 @@ export function assessInstallShape(shape: InstallShape): SupportVerdict {
   }
   if (shape.docker) {
     reasons.push(
-      "Container installs are not covered — setup-ha.sh manages the host's postgresql-15 service and data directory. Use your orchestrator's PostgreSQL replication instead.",
+      "Container installs are not covered — setup-ha.sh manages the host's PGDG PostgreSQL service and data directory. Use your orchestrator's PostgreSQL replication instead.",
     );
   }
   if (!shape.localPgdata) {

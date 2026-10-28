@@ -6,12 +6,12 @@
     {
       "id": "node",
       "label": "Node.js",
-      "charonMinimum": "20",
-      "charonTarget": "20",
+      "charonMinimum": "22",
+      "charonTarget": "24",
       "source": "https://raw.githubusercontent.com/nodejs/Release/main/schedule.json",
       "sourceCheckedOn": "2026-10-28",
       "confidence": "vendor",
-      "notes": "Even majors are LTS. Charon's floor and pin are both 20, which is past end of life.",
+      "notes": "Even majors are LTS. Charon provisions 24; the floor is 22 because undici 8 needs >= 22.19 and pg-boss 12 >= 22.12.",
       "tracks": [
         { "track": "20", "released": "2023-04-18", "lts": true, "maintenanceStarts": "2024-10-22", "eol": "2026-04-30" },
         { "track": "22", "released": "2024-04-24", "lts": true, "maintenanceStarts": "2025-10-21", "eol": "2027-04-30" },
@@ -22,12 +22,12 @@
     {
       "id": "postgres",
       "label": "PostgreSQL",
-      "charonMinimum": "15",
-      "charonTarget": "15",
+      "charonMinimum": "17",
+      "charonTarget": "17",
       "source": "https://www.postgresql.org/support/versioning/",
       "sourceCheckedOn": "2026-10-28",
       "confidence": "vendor",
-      "notes": "Each major is supported for five years after its first release.",
+      "notes": "Each major is supported for five years after its first release. Charon's floor and pin are both 17.",
       "tracks": [
         { "track": "14", "released": "2021-09-30", "eol": "2026-11-12" },
         { "track": "15", "released": "2022-10-13", "eol": "2027-11-11" },

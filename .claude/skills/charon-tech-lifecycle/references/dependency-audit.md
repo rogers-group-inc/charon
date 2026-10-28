@@ -32,8 +32,9 @@ Bumps that stay held, and why (as of 2026-10-28):
 
 | Bump | Held because | Unblocked by |
 |---|---|---|
-| `undici` 8 | engines `node >=22.19.0` | the Node upgrade (upgrade-playbooks.md → Node.js) |
-| `@types/node` major | must match the runtime major (it is a `node-major` floor site) | the Node upgrade, in the same commit |
+| `@types/node` above 22 | tracks the Node **floor** (22), not the pin — it is a `node-major` floor site, so newer typings would let code use APIs a floor host lacks | a floor raise, in the same commit |
+| `typescript` 7 | the native-port rewrite; a toolchain change, not a refresh | its own worktree: typecheck + build + test parity |
+| `prisma` / `@prisma/*` 8 | release candidate only (8.0.0-rc) | a GA release, then the Prisma playbook check (driver adapter, generated client path) |
 | agent Rust crates (`reqwest` 0.13, `thiserror` 2, `directories` 6, `sha2` 0.11, `tokio-tungstenite` 0.30) | no toolchain here and no CI job builds the agent; `reqwest` 0.13 removed the rustls root-store features the pinned-TLS client uses | an agent build job, then a pinning test per bump |
 
 Traps seen:

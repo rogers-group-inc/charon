@@ -20,8 +20,8 @@ Every unit runs `node dist/index.js` with `Environment=CHARON_ROLE=<role>`. A ne
 
 ### The container image
 
-`Dockerfile` (multi-stage, `node:20-bookworm` builder → `node:20-bookworm-slim` runtime, with
-`postgresql-client` for backups) + `docker-entrypoint.sh` (loads `/app/state/.env` written by the
+`Dockerfile` (multi-stage, `node:24-trixie` builder → `node:24-trixie-slim` runtime, with
+`postgresql-client-17` named by major for backups) + `docker-entrypoint.sh` (loads `/app/state/.env` written by the
 wizard). `.github/workflows/docker.yml` computes the commit count, bakes it as
 `CHARON_BUILD_COMMIT_COUNT`, and pushes to GHCR (`ghcr.io/<org>/charon`).
 `docker-compose.yml` runs the roles as services behind an `nginx` service
@@ -56,8 +56,9 @@ failure). In Docker/dev (no wrapper) the pair is written and nginx must be reloa
 
 ### RHEL 9.5
 
-`deploy/install-rhel.sh` — idempotent single-node installer: Node, PostgreSQL 15 (PGDG), nginx,
-a PQC OpenSSL 3.5 build under `/opt/openssl-3.5` (hard requirement), the `charon` system user +
+`deploy/install-rhel.sh` — idempotent single-node installer: Node 24, PostgreSQL 17 (PGDG; an
+existing install keeps its major), nginx, a SHA-256-verified PQC OpenSSL 3.5 build under
+`/opt/openssl-3.5` (hard requirement; rebuilt when older than the pinned patch), the `charon` system user +
 `/opt/charon`, DB + least-privilege role, generated secrets + `.env` (including
 `CHARON_DATA_KEY`), migrations + seed, the per-role units, nginx render, firewalld + SELinux.
 

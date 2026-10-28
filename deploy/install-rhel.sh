@@ -2,7 +2,7 @@
 #
 # install-rhel.sh — single-node Charon installer for RHEL 9.5.
 #
-# Idempotent and re-runnable. Installs Node 20, PostgreSQL 15, nginx, and a
+# Idempotent and re-runnable. Installs Node 24, PostgreSQL 17, nginx, and a
 # PQC-capable OpenSSL 3.5+ (required — RHEL 9.5 stock OpenSSL is too old for the
 # hybrid X25519MLKEM768 KEX). Creates the charon system user + /opt/charon,
 # installs deps, provisions the DB + least-privilege role, generates secrets +
@@ -44,19 +44,27 @@ done
 log "Installing base packages…"
 dnf install -y curl git policycoreutils-python-utils firewalld >/dev/null
 
-if ! command -v node >/dev/null || [[ "$(node -v | cut -dv -f2 | cut -d. -f1)" -lt 20 ]]; then
-  log "Installing Node.js 20 (NodeSource)…"
-  curl -fsSL https://rpm.nodesource.com/setup_20.x | bash - >/dev/null
+# Floor 22 (undici 8 needs >= 22.19, pg-boss 12 >= 22.12); provisions 24. A host
+# already on 22 is left alone; one below the floor is moved to 24 in place —
+# `dnf install` alone would keep the installed older nodejs, hence the upgrade.
+if ! command -v node >/dev/null || [[ "$(node -v | cut -dv -f2 | cut -d. -f1)" -lt 22 ]]; then
+  log "Installing Node.js 24 (NodeSource)…"
+  dnf -qy module disable nodejs >/dev/null 2>&1 || true
+  curl -fsSL https://rpm.nodesource.com/setup_24.x | bash - >/dev/null
   dnf install -y nodejs >/dev/null
+  dnf upgrade -y nodejs >/dev/null
 fi
 
+# Only a host with no PostgreSQL gets 17. An existing install keeps its major —
+# a major upgrade is a pg_dump/restore or pg_upgrade, never a side effect of
+# re-running this script (charon-tech-lifecycle → upgrade-playbooks.md).
 if ! command -v psql >/dev/null; then
-  log "Installing PostgreSQL 15 (PGDG)…"
+  log "Installing PostgreSQL 17 (PGDG)…"
   dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-x86_64/pgdg-redhat-repo-latest.noarch.rpm >/dev/null || true
   dnf -qy module disable postgresql >/dev/null 2>&1 || true
-  dnf install -y postgresql15-server postgresql15 >/dev/null
-  [[ -d /var/lib/pgsql/15/data/base ]] || /usr/pgsql-15/bin/postgresql-15-setup initdb
-  systemctl enable --now postgresql-15
+  dnf install -y postgresql17-server postgresql17 >/dev/null
+  [[ -d /var/lib/pgsql/17/data/base ]] || /usr/pgsql-17/bin/postgresql-17-setup initdb
+  systemctl enable --now postgresql-17
 fi
 
 dnf install -y nginx >/dev/null || true
@@ -67,7 +75,16 @@ dnf install -y nginx >/dev/null || true
 OPENSSL_BIN="$(command -v openssl || true)"
 OPENSSL_VER="$("$OPENSSL_BIN" version 2>/dev/null | awk '{print $2}')"
 need_pqc_openssl=1
-if [[ -x /opt/openssl-3.5/bin/openssl ]]; then need_pqc_openssl=0; fi
+# An /opt build older than the pinned patch is rebuilt in place: 3.5.x patch
+# releases are security fixes, and the prefix (and so every link to it) is stable.
+if [[ -x /opt/openssl-3.5/bin/openssl ]]; then
+  opt_ver="$(/opt/openssl-3.5/bin/openssl version 2>/dev/null | awk '{print $2}')"
+  if [[ "$(printf '%s\n' "$opt_ver" 3.5.9 | sort -V | head -1)" == 3.5.9 ]]; then
+    need_pqc_openssl=0
+  else
+    log "/opt/openssl-3.5 is ${opt_ver:-unknown}, older than 3.5.9 — rebuilding."
+  fi
+fi
 case "$OPENSSL_VER" in 3.5*|3.6*|4.*) need_pqc_openssl=0 ;; esac
 
 if [[ $need_pqc_openssl -eq 1 ]]; then
@@ -75,10 +92,15 @@ if [[ $need_pqc_openssl -eq 1 ]]; then
   log "Building OpenSSL 3.5 under /opt/openssl-3.5 (one-time)…"
   dnf groupinstall -y "Development Tools" >/dev/null || dnf install -y gcc make perl >/dev/null
   tmp="$(mktemp -d)"; pushd "$tmp" >/dev/null
-  curl -fsSL https://github.com/openssl/openssl/releases/download/openssl-3.5.0/openssl-3.5.0.tar.gz -o o.tgz
-  tar xf o.tgz && cd openssl-3.5.0
-  ./Configure --prefix=/opt/openssl-3.5 --openssldir=/opt/openssl-3.5 >/dev/null
-  make -j"$(nproc)" >/dev/null && make install_sw >/dev/null
+  # SHA-256 from the release's published .sha256; move it with the version.
+  curl -fsSL https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz -o o.tgz
+  echo "603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a  o.tgz" | sha256sum -c - >/dev/null \
+    || die "openssl-3.5.9.tar.gz failed its SHA-256 check"
+  tar xf o.tgz && cd openssl-3.5.9
+  # rpath: without it bin/openssl loads the system libcrypto.so.3 (RHEL's 3.0/3.2,
+  # no ML-KEM), and the cert + X25519MLKEM768 checks below would test the wrong library.
+  ./Configure --prefix=/opt/openssl-3.5 --openssldir=/opt/openssl-3.5 -Wl,-rpath,/opt/openssl-3.5/lib64 >/dev/null
+  make -j"$(nproc)" >/dev/null && make install_sw install_ssldirs >/dev/null
   popd >/dev/null && rm -rf "$tmp"
 fi
 [[ -x /opt/openssl-3.5/bin/openssl ]] || command -v openssl | grep -q . || die "no PQC-capable OpenSSL available"

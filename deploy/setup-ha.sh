@@ -17,7 +17,12 @@
 set -euo pipefail
 
 ROLE="" PRIMARY_IP="" STANDBY_IP="" REPL_PASS_FILE=""
-PGDATA=/var/lib/pgsql/15/data
+# The PGDG major install-rhel.sh put on this node: 17 on a fresh install, but a
+# host installed earlier keeps the major it was installed with (the installer
+# never upgrades PostgreSQL in place). Both nodes must run the same major.
+PG_MAJOR="$(ls -d /usr/pgsql-[0-9]* 2>/dev/null | sed 's#.*/pgsql-##' | sort -n | tail -1)"
+PG_MAJOR="${PG_MAJOR:-17}"
+PGDATA=/var/lib/pgsql/${PG_MAJOR}/data
 REPL_USER=charon_repl
 
 log() { printf '\033[36m[charon-ha]\033[0m %s\n' "$*"; }
@@ -73,7 +78,7 @@ if [[ "$ROLE" == "primary" ]]; then
   if [[ "$STANDBY_IP" == *:* ]]; then HBA_MASK=128; else HBA_MASK=32; fi
   grep -q "charon_standby_repl" "$HBA" 2>/dev/null || \
     echo "hostssl replication $REPL_USER ${STANDBY_IP}/${HBA_MASK} scram-sha-256  # charon_standby_repl" >> "$HBA"
-  systemctl restart postgresql-15
+  systemctl restart postgresql-${PG_MAJOR}
   firewall-cmd --permanent --add-port=5432/tcp >/dev/null 2>&1 || true
   firewall-cmd --reload >/dev/null 2>&1 || true
   if [[ -n "$REPL_PASS_FILE" ]]; then
@@ -91,15 +96,15 @@ else
     read -r -s -p "Replication password (from primary /root/.charon_repl_pass): " REPL_PASS; echo
   fi
   log "Configuring STANDBY (base-backup from $PRIMARY_IP)…"
-  systemctl stop postgresql-15 || true
+  systemctl stop postgresql-${PG_MAJOR} || true
   rm -rf "${PGDATA:?}/"*
   # sudo resets the environment, so PGPASSWORD must be preserved explicitly
   # (never put it on the command line). sslmode goes in the conninfo —
   # pg_basebackup has no --sslmode flag.
-  PGPASSWORD="$REPL_PASS" sudo --preserve-env=PGPASSWORD -u postgres /usr/pgsql-15/bin/pg_basebackup \
+  PGPASSWORD="$REPL_PASS" sudo --preserve-env=PGPASSWORD -u postgres /usr/pgsql-${PG_MAJOR}/bin/pg_basebackup \
     -d "host=$PRIMARY_IP user=$REPL_USER sslmode=require" -D "$PGDATA" -Fp -Xs -P -R -S charon_standby
   sudo -u postgres touch "$PGDATA/standby.signal"
-  systemctl start postgresql-15
+  systemctl start postgresql-${PG_MAJOR}
   log "STANDBY streaming. Verify on the primary: SELECT * FROM pg_stat_replication;"
 fi
 

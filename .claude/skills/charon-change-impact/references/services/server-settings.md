@@ -390,7 +390,9 @@ bootstrap / teardown scripts.
 `CHARON_DATA_KEY`, the nginx leaf key and the replication password) is released only after an
 operator approves, once, to the address that registered. Token and poll handle are stored as
 SHA-384 only; every token rejection returns the same text. Values interpolated into a script
-must be inert inside single quotes.
+must be inert inside single quotes. Generated scripts never bake in a PostgreSQL major: they
+resolve it on the host (`ls -d /usr/pgsql-*`) as `deploy/setup-ha.sh` does, because a host keeps
+the major it was installed with (`charon-tech-lifecycle` → version-pin-inventory.md).
 **When changing this:** needs human + crypto review; `tests/unit/haSettings.test.ts`.
 
 ---

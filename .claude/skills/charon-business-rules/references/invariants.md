@@ -65,3 +65,36 @@ narrative by design. From rule 8 on, every invariant ends with a pointer to its
    that registered, inside the claim window. Every token rejection returns the same text.
    Leans on rule 3.
    → [narrative-9.md#rule-9](narrative-9.md#rule-9)
+11. **A secret is never sent to an unauthenticated server** — Every outbound SSH connection
+   checks the server's host key against `SshHostKey` (trust on first use, keyed by the address
+   dialed) before authenticating (`src/utils/remoteExec.ts → buildHostVerifier()`), unless its
+   credential sets `verifyHostKey: false`; every HTTPS request carrying a secret WITHOUT CA
+   verification (integration `verifySsl` off, WinRM, credential probes) checks the leaf against
+   `TlsCertPin` after the handshake and before the request is written
+   (`src/utils/tlsDispatcher.ts → tlsFetch()`, `src/utils/pinnedTlsAgent.ts → pinnedAgentFor()`).
+   A changed identity is refused, fails closed on an internal error, and writes a warning Event;
+   a changed certificate is parked as `pendingFingerprint` and trusted only when an administrator
+   confirms that exact fingerprint (`tlsCertPinService → trustPendingCert()`). Deleting a pin
+   re-opens first-use trust and is audited. A CA-verified connection is not pinned and keeps the
+   operator-uploaded trusted CAs (`verifyingTlsDispatcher()`).
+   → [narrative-11.md#rule-11](narrative-11.md#rule-11)
+11a. **A stored secret follows its destination** — A blank or masked secret in an integration
+   edit is reused from the stored row only while host, port, TLS mode and FortiManager's
+   direct-mode leg are unchanged (`src/utils/secretDestination.ts → restoreStoredSecrets()`,
+   called by `integrationConfig.writeConfig()`); otherwise the save is refused (400) until the
+   secret is re-entered, so an edit can never redirect a stored token to a new server. Leans on
+   rules 3, 11.
+   → [narrative-11.md#rule-11a](narrative-11.md#rule-11a)
+12. **A push deploy runs as root only behind fullwrite, a pinned transport, a verified installer
+   and a sealed single-use code** — Deploy, retry, upgrade, uninstall and upgrade-all
+   (`src/services/agentDeployService.ts`) need `endpoints` fullwrite. The transport is pinned
+   (rule 11). The installer must carry a SHA-256 in the agent manifest
+   (`agentInstallScripts.selectInstaller()` never picks one without) and the host checks it
+   before running it; Windows downloads it from `/api/v1/agents/binary` accepting only an agent
+   certificate pin. Unix runs stage in a fresh private directory (`utils/remoteStaging.ts`).
+   Every install mints its own invitation code (`maxUses: 1`, 10-minute TTL) into an
+   enrollment preseed readable by root / SYSTEM + Administrators only
+   (`renderEnrollmentPreseed()`; `PRESEED_PATHS`); the server URL in it passes the script-safe
+   allowlist (`utils/agentServerUrl.ts`). Every substituted script value is allowlisted.
+   Uninstall revokes the endpoint's bearer. Leans on rules 3, 4, 11.
+   → [narrative-12.md#rule-12](narrative-12.md#rule-12)

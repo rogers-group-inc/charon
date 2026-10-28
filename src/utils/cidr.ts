@@ -5,8 +5,19 @@
  */
 
 import { isIP } from "node:net";
+import { isValidAllowlistEntry } from "./ipAllowlist.js";
 
 /** Return true if the given IP address (without prefix) is a valid IPv4 or IPv6 address. */
+/**
+ * True for an IPv4 / IPv6 CIDR with an in-range prefix length ("10.0.0.0/8").
+ * polaris accepts a dotted mask too (via netmask); Charon takes the prefix form only.
+ */
+export function isValidCidr(cidr: string): boolean {
+  // The character class refuses an IPv6 zone index ("fe80::1%eth0/64"), which
+  // Node's isIP accepts — these values are written into generated scripts.
+  return typeof cidr === "string" && /^[0-9A-Fa-f:.]+\/\d{1,3}$/.test(cidr) && isValidAllowlistEntry(cidr);
+}
+
 /** True for a dotted-quad IPv4 address with every octet ≤ 255 (polaris cidr.ts). */
 export function isValidIpv4(ip: string): boolean {
   if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) return false;

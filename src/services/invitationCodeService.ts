@@ -22,11 +22,16 @@ export interface IssuedCode {
   maxUses: number;
 }
 
-export async function issueCode(input: { label?: string; maxUses?: number; expiresInHours?: number }, actor: string): Promise<IssuedCode> {
+export async function issueCode(
+  input: { label?: string; maxUses?: number; expiresInHours?: number; expiresInMinutes?: number },
+  actor: string,
+): Promise<IssuedCode> {
   const { plaintext, hash } = generateToken(CODE_PREFIX, 24);
-  const expiresAt = input.expiresInHours && input.expiresInHours > 0
-    ? new Date(Date.now() + input.expiresInHours * 3600 * 1000)
-    : null;
+  // expiresInMinutes: push deployments mint single-use codes that live minutes, not hours.
+  const ttlMs = input.expiresInMinutes && input.expiresInMinutes > 0
+    ? input.expiresInMinutes * 60 * 1000
+    : input.expiresInHours && input.expiresInHours > 0 ? input.expiresInHours * 3600 * 1000 : 0;
+  const expiresAt = ttlMs > 0 ? new Date(Date.now() + ttlMs) : null;
   const row = await prisma.invitationCode.create({
     data: {
       label: input.label ?? null,

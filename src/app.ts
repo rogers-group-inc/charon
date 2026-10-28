@@ -254,6 +254,8 @@ function startSchedulers(cfg: RoleConfig): void {
     m.scheduleDirectoryDiscovery();
     m.scheduleDiscoveryReaper();
   });
+  // Endpoint silence: an online agent with no heartbeat for two intervals goes offline (60 s).
+  void import("./jobs/endpointSilenceJob.js").then((m) => m.scheduleEndpointSilence());
   // Retention pruning: trim the audit log + stale verification sessions.
   void import("./jobs/retentionPrune.js").then((m) => m.scheduleRetentionPrune());
   // Weekly IEEE OUI (MAC vendor) database refresh (Server Settings → Identification).
@@ -271,6 +273,7 @@ function stopSchedulers(): void {
   logger.info("Schedulers paused (lost leadership)");
   void import("./jobs/integrationHealthCheck.js").then((m) => m.stopHealthChecks());
   void import("./jobs/directoryDiscoveryJob.js").then((m) => m.stopDirectoryDiscoverySchedulers());
+  void import("./jobs/endpointSilenceJob.js").then((m) => m.stopEndpointSilence());
   void import("./jobs/retentionPrune.js").then((m) => m.stopRetentionPrune());
   void import("./jobs/ouiRefresh.js").then((m) => m.stopOuiRefresh());
   void import("./jobs/scheduledBackup.js").then((m) => m.stopScheduledBackups());
@@ -311,7 +314,8 @@ async function startConsumers(cfg: RoleConfig): Promise<void> {
 function registerShutdown(): void {
   for (const sig of ["SIGTERM", "SIGINT"] as const) {
     process.once(sig, () => {
-      Promise.allSettled([stopLeaderElection(), stopBoss()]).finally(() => process.exit(0));
+      const closeAgents = import("./services/agentChannelService.js").then((m) => m.shutdownAllSessions());
+      Promise.allSettled([stopLeaderElection(), stopBoss(), closeAgents]).finally(() => process.exit(0));
     });
   }
 }

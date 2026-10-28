@@ -1,11 +1,11 @@
 /**
- * src/utils/remoteStaging.ts — where Polaris puts the files it is about to run
+ * src/utils/remoteStaging.ts — where Charon puts the files it is about to run
  * as root / Administrator on a monitored host (business rule 119, re-scan
  * F63 / F64 / F67).
  *
  * Agent install, upgrade, uninstall and reboot-permission used to upload to
- * FIXED names in world-writable temp directories (`/tmp/polaris-agent-*`,
- * `C:\Windows\Temp\polaris-agent-*.ps1`) and then run them elevated. SFTP
+ * FIXED names in world-writable temp directories (`/tmp/charon-agent-*`,
+ * `C:\Windows\Temp\charon-agent-*.ps1`) and then run them elevated. SFTP
  * opens with create/truncate and applies the mode only to a NEW file, so a
  * local user who created that name first kept ownership of it: Polaris wrote
  * the enrollment token into their file and ran a script they could still edit.
@@ -30,17 +30,17 @@ import { truncate } from "./text.js";
 
 type SshClient = Parameters<typeof sshExec>[0];
 
-/** What `mktemp -d /tmp/polaris-agent.XXXXXXXXXX` returns — and nothing else is accepted. */
-export const UNIX_STAGE_DIR_RE = /^\/tmp\/polaris-agent\.[A-Za-z0-9]{10}$/;
+/** What `mktemp -d /tmp/charon-agent.XXXXXXXXXX` returns — and nothing else is accepted. */
+export const UNIX_STAGE_DIR_RE = /^\/tmp\/charon-agent\.[A-Za-z0-9]{10}$/;
 
 /** A Windows staging path: drive-rooted, no quote or shell metacharacters, our own random leaf. */
-export const WINDOWS_STAGE_DIR_RE = /^[A-Za-z]:\\[^"'<>|?*\r\n%`$]+\\polaris-agent-[0-9a-f]{32}$/;
+export const WINDOWS_STAGE_DIR_RE = /^[A-Za-z]:\\[^"'<>|?*\r\n%`$]+\\charon-agent-[0-9a-f]{32}$/;
 
 const SHA256_RE = /^[0-9a-f]{64}$/;
 
 /** Create this run's private staging directory on a Linux / macOS host. */
 export async function makeUnixStageDir(client: SshClient): Promise<string> {
-  const out = await sshExec(client, "umask 077 && mktemp -d /tmp/polaris-agent.XXXXXXXXXX", 15_000);
+  const out = await sshExec(client, "umask 077 && mktemp -d /tmp/charon-agent.XXXXXXXXXX", 15_000);
   const dir = out.stdout.trim();
   if (out.exitCode !== 0 || !UNIX_STAGE_DIR_RE.test(dir)) {
     throw new AppError(502, `Could not create a private staging directory on the host: ${truncate(out.stderr || out.stdout, 200)}`);
@@ -74,7 +74,7 @@ export async function removeUnixStageDir(client: SshClient, dir: string): Promis
  */
 export async function makeWindowsStageDir(client: SshClient): Promise<string> {
   const ps =
-    "$d = Join-Path ([IO.Path]::GetTempPath()) ('polaris-agent-' + [guid]::NewGuid().ToString('N')); " +
+    "$d = Join-Path ([IO.Path]::GetTempPath()) ('charon-agent-' + [guid]::NewGuid().ToString('N')); " +
     "New-Item -ItemType Directory -Path $d -ErrorAction Stop | Out-Null; Write-Output $d";
   const out = await sshExec(client, `powershell.exe -NoProfile -NonInteractive -Command "${ps}"`, 30_000);
   const dir = out.stdout.trim();
@@ -112,7 +112,7 @@ export async function removeWindowsStageDir(client: SshClient, dir: string): Pro
  * the string itself already carries plain shell `${…}`.
  */
 export const STAGED_SCRIPT_PRELUDE = `STAGE_DIR="\${1:?usage: script <staging-dir> [<sha256>]}"
-# Business rule 119: this run's files were uploaded into a directory Polaris
+# This run's files were uploaded into a directory Charon
 # created for it (mktemp -d, mode 0700, owned by the SSH user) — never a fixed
 # name in /tmp that a local user could have created first.
 if [ -L "\${STAGE_DIR}" ] || [ ! -d "\${STAGE_DIR}" ]; then

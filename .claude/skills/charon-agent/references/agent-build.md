@@ -33,4 +33,28 @@ TODO: populate when the agent release workflow exists.
 Built installers are dropped under `data/agents/<version>/` with a `manifest.json`
 (`{ version, files: [{ platform, arch, filename, sha256 }] }`). The Maintenance tab lists and
 serves them (`src/services/agentDistService.ts`); only files named in the manifest are served —
-no path traversal.
+no path traversal. (`manifest.json` sits at `data/agents/manifest.json`; the installers under
+`data/agents/<version>/`.)
+
+Bundle targets (`tauri.conf.json`): msi, nsis, app, dmg, appimage, deb, rpm — rpm added in 0.1.2
+for RHEL hosts.
+
+## Push deployment
+
+Ported from polaris and installing these packages
+(`src/services/agentDeployService.ts`, `src/services/agentInstallScripts.ts`; business rule 12).
+Push deploy needs a `sha256` on every manifest file it installs — `selectInstaller()` never
+picks one without — so the CI release job must write it. Per host it probes OS / arch / package
+manager over the pinned SSH or WinRM transport, then:
+
+| OS | Installer picked | How it lands |
+|---|---|---|
+| Linux | deb (dpkg hosts) → rpm (rpm hosts) → AppImage | SFTP into a private staging dir, SHA-256 checked, `dpkg -i` / `dnf install` / copied to `/opt/charon-agent` |
+| macOS | dmg | staged, checked, mounted read-only, `Charon Agent.app` copied to `/Applications` |
+| Windows | msi → NSIS | pulled from `/api/v1/agents/binary` pinning the agent certs, `Get-FileHash` checked, `msiexec /qn` / `/S` |
+
+Every install drops the enrollment preseed (a single-use, 10-minute code; root / SYSTEM-only).
+Upgrade is the same install without a preseed. Uninstall runs the package's own removal and
+revokes the bearer. The SSH Deployment card (Server Settings) generates the deployment keypair
+and the onboarding scripts that make hosts reachable; Intune publishing ships the Windows pair
+as an unassigned Remediation.

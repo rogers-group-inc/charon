@@ -32,6 +32,8 @@ src/
 │       ├── policies.ts       # Charon-managed policies
 │       ├── serverSettings.ts # ha (summary), auth-mode, identification
 │       ├── maintenance.ts    # agent installers only (/server-settings/maintenance/agents)
+│       ├── agentDeploy.ts    # /agent-deployments: list (endpoints read); deploy / retry / upgrade / uninstall / delete (endpoints FULLWRITE)
+│       ├── agentBinary.ts    # PUBLIC GET /agents/binary/:file — manifest installers only, rate-limited (Windows pinned download)
 │       ├── events.ts         # audit log
 │       └── settings/         # Server Settings tabs ported from polaris; each route declares its own requirePermission
 │           ├── ntp.ts            # /server-settings/ntp (+test)
@@ -42,7 +44,8 @@ src/
 │           ├── credentials.ts    # credentialsRouter (/credentials); mibs, manufacturer-aliases, manufacturer-profiles
 │           ├── apiTokens.ts      # api-docs; apiTokensRouter (/api-tokens)
 │           ├── ha.ts             # haRouter (/ha); haEnrollRouter (/ha/enroll, PUBLIC)
-│           └── firmware.ts       # /server-settings/firmware/* (Repository)
+│           ├── firmware.ts       # /server-settings/firmware/* (Repository)
+│           └── agents.ts         # /server-settings/agents/*: SSH Deployment (windows-ssh), Intune publish, pinned SSH keys / TLS certs, server URL, installed, upgrade-all
 ├── services/                 # see references/services/*.md — one entry per file
 │   ├── crypto/identity:      apiTokenService, agentTokenService, authService, verificationService, eventService
 │   ├── integrations:         httpClient, integrationConfig, integrationService, integrationHealthService,
@@ -53,6 +56,11 @@ src/
 │   ├── outbound trust:       sshHostKeyService (SshHostKey TOFU), tlsCertPinService (TlsCertPin TOFU)
 │   ├── tags/enforcement:     customGroupService, tagService, tagReconciler, policyService, fortinetEnforcementService
 │   ├── agent/posture:        invitationCodeService, agentEnrollmentService, postureService, certPinService
+│   ├── agent deploy:         agentDeployService (push install / upgrade / uninstall lifecycle), agentInstallScripts
+│   │                         (the scripts + preseed, pure), windowsSshOnboardingService + sshOnboardingScript
+│   │                         (SSH Deployment card: deployment keypair, onboarding scripts), intunePublishService
+│   │                         (publish the onboarding pair to Intune, unassigned), settingsStore (typed Setting row),
+│   │                         agentChannelService (agent WS sessions, refresh-config / revoke over NOTIFY)
 │   ├── infra:                leaderElection, certInfo, nginxRenderer, nginxApplyService, backupService, capacityService,
 │   │                         updateService, agentDistService
 │   ├── settings (web):       webServerService, proxyConfigService, trustedCaService, webAccessSettingsService
@@ -71,7 +79,8 @@ src/
 │   ├── enforcementSyncJob.ts      # enforcer consumer for tag-change deltas
 │   ├── retentionPrune.ts          # leader-scheduled (6 h) audit-log + VerificationSession pruning to Setting sampleRetention
 │   ├── ouiRefresh.ts              # leader-scheduled weekly IEEE OUI database refresh (fetches on first run if missing/stale)
-│   └── scheduledBackup.ts         # leader-scheduled automatic backups (5-min tick, default off), prune + off-host copy
+│   ├── scheduledBackup.ts         # leader-scheduled automatic backups (5-min tick, default off), prune + off-host copy
+│   └── endpointSilenceJob.ts      # leader 60-s tick: online endpoints silent for 2 heartbeat intervals → offline (fleet-dark guard)
 ├── utils/
 │   ├── role.ts               # CHARON_ROLE → roleConfig() flags
 │   ├── logger.ts             # Pino logger
@@ -114,6 +123,8 @@ src/
 │   ├── entraClientCredentials.ts # the client-credentials token request shape (Graph)
 │   ├── graphThrottle.ts      # throttleDelayMs(): Retry-After / quota-reset → backoff ms (polaris azureArcService)
 │   ├── mac.ts                # MAC normalization (polaris)
+│   ├── agentServerUrl.ts     # the script-safe agent server URL allowlist (polaris)
+│   ├── agentSilence.ts       # silence window + cutoff with the listening-since / fleet-dark guards (polaris)
 │   ├── cidr.ts               # urlHost / bareHost / isIpv6Address (moved from services/credentials/)
 │   ├── trimTrailing.ts       # regex-free trailing trim (moved from services/credentials/)
 │   ├── text.ts               # truncate()

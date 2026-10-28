@@ -12,7 +12,7 @@ import { prisma } from "../../db.js";
 const router = Router();
 
 const querySchema = z.object({
-  kind: z.enum(["user", "group", "ou"]).optional(),
+  kind: z.enum(["user", "group", "ou", "device"]).optional(),
   integrationId: z.string().optional(),
   q: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(500).default(200),

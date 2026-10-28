@@ -48,6 +48,7 @@ in `stopSchedulers()`):
 
 | Job | Cadence | What it does |
 |---|---|---|
+| `src/jobs/endpointSilenceJob.ts` | every 60 s | marks `online` endpoints silent for 2 heartbeat intervals `offline`; abstains while every agent is silent (Charon not receiving) |
 | `src/jobs/retentionPrune.ts` | every 6 h | trims Events + expired/revoked VerificationSessions to the `sampleRetention` windows |
 | `src/jobs/ouiRefresh.ts` | weekly (fetches on first run if missing / stale) | refreshes the IEEE OUI database (`ouiService.refreshOuiDatabase()`) |
 | `src/jobs/scheduledBackup.ts` | 5-min tick (first tick after 2 min), runs when `isScheduledBackupDue()` | takes a scheduled backup, prunes old scheduled copies, optional off-host copy; default off |

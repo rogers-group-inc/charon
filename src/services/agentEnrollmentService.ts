@@ -13,6 +13,8 @@ import { consumeCode } from "./invitationCodeService.js";
 import { issueBearer } from "./agentTokenService.js";
 import { getAgentCertPins } from "./certPinService.js";
 import { logEvent } from "./eventService.js";
+import { markDeploymentEnrolled } from "./agentDeployService.js";
+import { AppError } from "../utils/errors.js";
 
 export interface EnrollInput {
   code: string;
@@ -21,6 +23,8 @@ export interface EnrollInput {
   osVersion?: string;
   arch?: string;
   agentVersion?: string;
+  /** Leaf-cert SHA-256 the agent observed; when sent it must be an agent pin. */
+  observedFingerprint?: string;
 }
 
 export interface EnrollResult {
@@ -33,6 +37,23 @@ export async function enroll(input: EnrollInput, ip: string | null): Promise<Enr
   const invitationCodeId = await consumeCode(input.code);
 
   const pins = await getAgentCertPins();
+
+  // Polaris's enroll check: an agent that pinned from its first request reports
+  // the leaf it saw. One that is not an agent pin means it reached something
+  // other than this server's certificate — refuse, and leave the code spent
+  // (consumed above) so a code that leaked through that path cannot be replayed.
+  if (input.observedFingerprint && !pins.includes(input.observedFingerprint.toLowerCase())) {
+    await logEvent({
+      level: "warning",
+      action: "endpoint.enroll_pin_mismatch",
+      resourceType: "invitation",
+      resourceId: invitationCodeId,
+      resourceName: input.hostname,
+      message: `Enrollment of "${input.hostname ?? "unknown"}" refused: it observed a certificate that is not an agent pin — the code is spent`,
+      details: { observed: input.observedFingerprint.toLowerCase(), ip },
+    });
+    throw new AppError(403, "The certificate this agent observed is not one of the server's agent pins");
+  }
 
   const endpoint = await prisma.endpoint.create({
     data: {
@@ -50,6 +71,9 @@ export async function enroll(input: EnrollInput, ip: string | null): Promise<Enr
   });
 
   const bearerToken = await issueBearer(endpoint.id);
+
+  // A code minted by a push deployment: link the Endpoint, mark it active.
+  await markDeploymentEnrolled(invitationCodeId, endpoint.id, input.agentVersion);
 
   await logEvent({
     action: "endpoint.enrolled",

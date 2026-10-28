@@ -15,7 +15,7 @@ dictates. Its trust model is business rule 4: **pin + bearer** — never system 
 |---|---|
 | the wire protocol: enroll response, heartbeat / posture cadence, the WS, config refresh, user login and binding | [references/agent-protocol.md](references/agent-protocol.md) |
 | enrollment internals and cert-pin rotation (the two canonical patterns), revocation | [references/enrollment-pinning.md](references/enrollment-pinning.md) |
-| the Rust / UI layout, how installers are built, versioned and served | [references/agent-build.md](references/agent-build.md) |
+| the Rust / UI layout, how installers are built, versioned and served; push deployment (SSH / WinRM install, upgrade, uninstall, the enrollment preseed, the SSH Deployment card, Intune publishing) | [references/agent-build.md](references/agent-build.md) |
 
 ## Invariants
 
@@ -33,6 +33,13 @@ dictates. Its trust model is business rule 4: **pin + bearer** — never system 
   `src/jobs/tagReconcileJob.ts → enqueueReconcile()` from the agent routes.
 - **The server image ships no Rust toolchain**; installers are built outside it and served from
   a manifest allowlist.
+- **Push deploy (business rule 12):** `endpoints` fullwrite; pinned SSH / WinRM (rule 11); the
+  installer's manifest SHA-256 is checked on the host before it runs; each install mints its own
+  single-use 10-minute code into a root / SYSTEM-only preseed; uninstall revokes the bearer.
+- **A revoked bearer's live WebSocket is closed too**, in whichever process holds it
+  (`agentTokenService → revokeBearer()` → `agentChannelService → publishDisconnect()`).
+- **Every pin-store change pushes `refresh-config`** to connected agents
+  (`certPinService` → `publishConfigRefresh("*")`).
 - An agent response shape (`enroll`, `/agents/config`, `/agent/auth-config`) is parsed by
   `agent/src-tauri/src/main.rs` — change server and agent together and bump `agent/VERSION`.
 

@@ -10,6 +10,7 @@
  * (services/agentDistService.ts) — so there is no on-server Build card.
  */
 
+import { basename } from "node:path";
 import { Router } from "express";
 import { listInstallers, resolveInstaller } from "../../services/agentDistService.js";
 import { requirePermission } from "../middleware/permissions.js";
@@ -27,7 +28,8 @@ router.get("/agents", installerLimiter, (_req, res) => res.json(listInstallers()
 router.get("/agents/download/:file", installerLimiter, (req, res) => {
   const p = resolveInstaller(String(req.params.file));
   if (!p) return res.status(404).json({ error: "Installer not found in manifest" });
-  res.download(p);
+  // dotfiles: "allow" — see routes/agentBinary.ts (the path is manifest-allowlisted).
+  res.download(p, basename(p), { dotfiles: "allow" });
 });
 
 export default router;

@@ -1,34 +1,35 @@
 /**
  * public/js/pinned-tls-certs.js — Pinned server identities (business rule
- * 113), shared by Server Settings → Web Server and the Windows SSH Deployment
- * card on Integrations. One surface for both kinds of pin: the TLS
- * certificates and the SSH host keys Polaris trusted on first use.
+ * 113 / 11), ported from polaris. Mounted on Server Settings → Web Server and
+ * on the SSH Deployment card (Server Settings → Maintenance). One surface for
+ * both kinds of pin: the TLS certificates and the SSH host keys Charon trusted
+ * on first use.
  *
- * window.PolarisPinnedTlsCerts.mount(containerEl) renders a one-line summary
+ * window.CharonPinnedTlsCerts.mount(containerEl) renders a one-line summary
  * (how many certificates and host keys are pinned, how many certificates
  * changed) and a "View pinned identities" button. The button opens a
- * slide-over listing every pin Polaris holds — WinRM listeners, devices it
+ * slide-over listing every pin Charon holds — WinRM listeners, devices it
  * upgrades, every FortiGate / FortiManager it talks to with SSL verification
  * off (rule 113(e)), and every host it reached over SSH — each with the
- * asset(s) at that address as links that open the asset panel in place, the
- * integration(s) that dial it (TLS), its subject or key type, fingerprint and
- * dates. One filter bar in the header narrows the cards: a search field and a
- * kind selector (client-side).
+ * endpoint(s) at that address (hostname / IP; Charon has no per-endpoint page
+ * to link to), the integration(s) that dial it (TLS), its subject or key
+ * type, fingerprint and dates. One filter bar in the header narrows the cards:
+ * a search field and a kind selector (client-side).
  *
  * A certificate whose server now presents a DIFFERENT one is listed first with
- * both SHA-256 fingerprints and "Trust new certificate", which pins exactly the
- * certificate shown (rule 113(f)); Delete stays, on both kinds, for a host
- * that was rebuilt and should simply be re-pinned on its next connection. An
- * SSH host key that changes is refused outright — there is no pending key to
- * trust, only the pin to delete.
+ * both SHA-256 fingerprints and "Trust new certificate", which sends exactly
+ * the pending fingerprint shown (rule 113(f)) — the server answers 409 if a
+ * different certificate has been presented since. Delete stays, on both kinds,
+ * for a host that was rebuilt and should simply be re-pinned on its next
+ * connection. An SSH host key that changes is refused outright — there is no
+ * pending key to trust, only the pin to delete.
  *
- * The pins held in a decommissioned agent host's archive (business rule 123)
- * are listed last, read-only, with an "Archived" badge and the asset they
- * belong to; the kind menu's Archived shows only those. They go back when the
- * asset is reactivated, never from here.
+ * Polaris's archive of decommissioned hosts' pins (its rule 123) does not
+ * exist in Charon, so there is no Archived kind here.
  *
- * Needs api.js and app.js (escapeHtml, showToast, showConfirm, permAtLeast,
- * raiseSlideover, wireSlideoverEscape, initSlideoverResize).
+ * Needs settings-api.js and settings-ui.js (escapeHtml, showToast,
+ * showConfirm, permAtLeast, raiseSlideover, wireSlideoverEscape,
+ * initSlideoverResize) — Server Settings page only.
  */
 (function () {
   "use strict";
@@ -62,11 +63,8 @@
         function (err) { return { rows: [], error: err }; }),
       api.serverSettings.sshHostKeysList().then(function (r) { return { rows: (r && r.hostKeys) || [] }; },
         function (err) { return { rows: [], error: err }; }),
-      // Rule 123's archives: shown, never acted on, so a failure is quiet.
-      api.serverSettings.archivedHostPinsList().then(function (r) { return { rows: (r && r.archivedPins) || [] }; },
-        function () { return { rows: [] }; }),
     ]).then(function (res) {
-      return { tls: res[0].rows, ssh: res[1].rows, archived: res[2].rows, tlsError: res[0].error, sshError: res[1].error };
+      return { tls: res[0].rows, ssh: res[1].rows, tlsError: res[0].error, sshError: res[1].error };
     });
   }
 
@@ -79,20 +77,18 @@
   function renderSummary(container, data) {
     var tls = data.tls.length;
     var ssh = data.ssh.length;
-    var archived = (data.archived || []).length;
     var changed = data.tls.filter(function (r) { return !!r.pendingFingerprint; }).length;
-    var text = tls + ssh + archived === 0
-      ? "Nothing pinned yet. A pin appears the first time Polaris connects to a host over SSH, or sends a password or " +
+    var text = tls + ssh === 0
+      ? "Nothing pinned yet. A pin appears the first time Charon connects to a host over SSH, or sends a password or " +
         "token to a server without verifying a CA: a WinRM listener, a device it upgrades, or a FortiGate / FortiManager " +
         "with SSL verification off."
-      : "Pinned: " + plural(tls, "certificate") + " · " + plural(ssh, "SSH host key") +
-        (archived ? " · " + archived + " archived" : "") + ".";
+      : "Pinned: " + plural(tls, "certificate") + " · " + plural(ssh, "SSH host key") + ".";
     var failed = [data.tlsError && "certificates", data.sshError && "SSH host keys"].filter(Boolean);
     container.innerHTML =
       '<div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">' +
         '<span style="font-size:0.85rem;color:var(--color-text-secondary)">' + escapeHtml(text) + "</span>" +
         (changed ? '<span class="badge badge-conflict">' + changed + " changed</span>" : "") +
-        (tls + ssh + archived ? '<button type="button" class="btn btn-sm btn-secondary" data-tls-pins-open>View pinned identities</button>' : "") +
+        (tls + ssh ? '<button type="button" class="btn btn-sm btn-secondary" data-tls-pins-open>View pinned identities</button>' : "") +
       "</div>" +
       (failed.length
         ? '<p class="empty-state" style="padding:0.35rem 0 0;margin:0">Could not load pinned ' + failed.join(" or ") + ": " +
@@ -148,7 +144,6 @@
               '<option value="">All kinds</option>' +
               '<option value="tls">TLS certificates</option>' +
               '<option value="ssh">SSH host keys</option>' +
-              '<option value="archived">Archived (decommissioned)</option>' +
             "</select>" +
           "</div>" +
         "</div>" +
@@ -160,7 +155,7 @@
     document.getElementById("tls-pins-close").addEventListener("click", close);
     document.getElementById("tls-pins-done").addEventListener("click", close);
     if (typeof wireSlideoverEscape === "function") wireSlideoverEscape(overlay, close);
-    if (typeof initSlideoverResize === "function") initSlideoverResize(document.getElementById("tls-pins-panel"), "polaris.panel.width.tlsPins");
+    if (typeof initSlideoverResize === "function") initSlideoverResize(document.getElementById("tls-pins-panel"), "charon.panel.width.tlsPins");
     document.getElementById("tls-pins-body").addEventListener("click", onBodyClick);
     var filters = document.getElementById("tls-pins-filters");
     filters.addEventListener("input", function () { renderPanel(lastData); });
@@ -174,11 +169,10 @@
   // Windows' certificate dialog prints it — matches a certificate's pinned or
   // now-presented SHA-256 with those ignored. Otherwise the value is split on
   // whitespace and every word must appear (case-insensitive) somewhere on the
-  // card: address, port, asset hostname or IP, integration, subject, key type
-  // or fingerprint — so "10.0 ssh-ed25519" narrows by both. The kind menu's
-  // TLS / SSH take archived pins of that kind too; Archived takes only those.
+  // card: address, port, endpoint hostname or IP, integration, subject, key
+  // type or fingerprint — so "10.0 ssh-ed25519" narrows by both.
 
-  var lastData = { tls: [], ssh: [], archived: [] };
+  var lastData = { tls: [], ssh: [] };
 
   function filterValues() {
     var q = document.querySelector('#tls-pins-filters [data-pin-filter="q"]');
@@ -192,9 +186,8 @@
 
   function haystack(r) {
     var parts = [r.host, r.host + ":" + r.port, r.subject, r.pendingSubject, r.keyType, r.fingerprint, r.pendingFingerprint,
-      r.kind === "ssh" ? "ssh host key" : "tls certificate", r.archived ? "archived decommissioned" : ""];
-    if (r.asset) parts.push(r.asset.hostname, r.asset.ipAddress);
-    (r.assets || []).forEach(function (a) { parts.push(a.hostname, a.ipAddress); });
+      r.kind === "ssh" ? "ssh host key" : "tls certificate"];
+    (r.endpoints || []).forEach(function (e) { parts.push(e.hostname, e.ipAddress); });
     (r.integrations || []).forEach(function (i) { parts.push(i.name); });
     return parts.filter(Boolean).join(" ").toLowerCase();
   }
@@ -208,13 +201,11 @@
   }
 
   // Changed certificates first (what an administrator opened this for), then
-  // by address so a host's certificate and host key sit together, and the
-  // archived ones (which nothing dials any more) last.
+  // by address so a host's certificate and host key sit together.
   function combined(data) {
     var all = data.tls.map(function (r) { return Object.assign({ kind: "tls" }, r); })
-      .concat(data.ssh.map(function (r) { return Object.assign({ kind: "ssh" }, r); }))
-      .concat((data.archived || []).map(function (r) { return Object.assign({}, r, { archived: true }); }));
-    function rank(r) { return r.pendingFingerprint ? 0 : r.archived ? 2 : 1; }
+      .concat(data.ssh.map(function (r) { return Object.assign({ kind: "ssh" }, r); }));
+    function rank(r) { return r.pendingFingerprint ? 0 : 1; }
     return all.sort(function (a, b) {
       var ca = rank(a);
       var cb = rank(b);
@@ -247,12 +238,13 @@
     loadPins().then(renderPanel);
   }
 
-  function assetLinks(r) {
-    if (!r.assets || !r.assets.length) return '<span style="color:var(--color-text-tertiary)">No asset at this address</span>';
-    return r.assets.map(function (a) {
-      var name = a.hostname || a.ipAddress || "Asset";
-      return '<a href="/assets.html#view=asset:' + encodeURIComponent(a.id) + '">' + escapeHtml(name) + "</a>" +
-        (a.hostname && a.ipAddress ? ' <span style="color:var(--color-text-tertiary)">' + escapeHtml(a.ipAddress) + "</span>" : "");
+  // The enrolled endpoints whose hostname or address is the pinned host.
+  function endpointList(r) {
+    if (!r.endpoints || !r.endpoints.length) return '<span style="color:var(--color-text-tertiary)">No endpoint at this address</span>';
+    return r.endpoints.map(function (e) {
+      var name = e.hostname || e.ipAddress || "Endpoint";
+      return escapeHtml(name) +
+        (e.hostname && e.ipAddress ? ' <span style="color:var(--color-text-tertiary)">' + escapeHtml(e.ipAddress) + "</span>" : "");
     }).join("<br>");
   }
 
@@ -275,6 +267,8 @@
     var actions = "";
     if (canManage) {
       if (changed) {
+        // data-pin-fp carries the RAW pending fingerprint exactly as the server
+        // sent it; the trust call echoes it back unchanged (rule 113(f)).
         actions += '<button type="button" class="btn btn-sm btn-primary" data-pin-trust="' + escapeHtml(r.id) + '" data-pin-fp="' +
           escapeHtml(r.pendingFingerprint) + '" data-pin-host="' + escapeHtml(hostPort) + '">Trust new certificate</button> ';
       }
@@ -283,7 +277,7 @@
     }
     return cardShell(r, changed, "tls-pin-card", "TLS certificate",
       changed ? '<span class="badge badge-conflict">Certificate changed</span>' : '<span class="badge badge-active">Pinned</span>',
-      row("Asset", assetLinks(r)) +
+      row("Endpoint", endpointList(r)) +
       (r.integrations && r.integrations.length
         ? row("Integration", r.integrations.map(function (i) { return escapeHtml(i.name); }).join(", "))
         : "") +
@@ -305,7 +299,7 @@
           escapeHtml(r.host + ":" + r.port) + '">Delete</button>'
       : "";
     return cardShell(r, false, "ssh-pin-card", "SSH host key", '<span class="badge badge-active">Pinned</span>',
-      row("Asset", assetLinks(r)) +
+      row("Endpoint", endpointList(r)) +
       row("Key type", escapeHtml(r.keyType || "—")) +
       // Already the `ssh-keygen -lf` form (SHA256:<base64>), so shown as is.
       row("Fingerprint", '<code class="mono" style="font-size:0.75rem;word-break:break-all">' + escapeHtml(r.fingerprint || "—") + "</code>", true) +
@@ -314,44 +308,22 @@
       actions);
   }
 
-  // Rule 123: a decommissioned agent host's pin, held off the live tables.
-  // Read-only — it goes back only when the asset is reactivated or its agent's
-  // check-in conflict is accepted, so Delete / Trust would bypass the rule.
-  function archivedCard(r) {
-    var a = r.asset || {};
-    var assetHtml = a.id
-      ? '<a href="/assets.html#view=asset:' + encodeURIComponent(a.id) + '">' + escapeHtml(a.hostname || a.ipAddress || "Asset") + "</a>" +
-        (a.hostname && a.ipAddress ? ' <span style="color:var(--color-text-tertiary)">' + escapeHtml(a.ipAddress) + "</span>" : "")
-      : '<span style="color:var(--color-text-tertiary)">—</span>';
-    var fp = r.kind === "ssh" ? r.fingerprint : fmt(r.fingerprint);
-    return cardShell(r, false, "archived-pin-card", r.kind === "ssh" ? "SSH host key" : "TLS certificate",
-      '<span class="badge badge-maintenance">Archived</span>',
-      row("Asset", assetHtml) +
-      (r.kind === "ssh" ? row("Key type", escapeHtml(r.keyType || "—")) : row("Subject", escapeHtml(r.subject || "—"))) +
-      row(r.kind === "ssh" ? "Fingerprint" : "SHA-256", '<code class="mono" style="font-size:0.75rem;word-break:break-all">' + escapeHtml(fp || "—") + "</code>", true) +
-      row("Archived", escapeHtml(when(r.archivedAt)) + ' <span style="color:var(--color-text-secondary)">on decommission &mdash; restored when the asset is reactivated</span>') +
-      row("First seen", escapeHtml(when(r.firstSeen))),
-      "");
-  }
-
   function renderPanel(data) {
     var body = document.getElementById("tls-pins-body");
     var meta = document.getElementById("tls-pins-meta");
     if (!body) return;
-    lastData = data = data || { tls: [], ssh: [], archived: [] };
+    lastData = data = data || { tls: [], ssh: [] };
     var rows = combined(data);
     var changed = data.tls.filter(function (r) { return !!r.pendingFingerprint; }).length;
-    var archivedCount = (data.archived || []).length;
     var f = filterValues();
     var filtering = !!(f.q || f.kind);
     var shown = !filtering ? rows : rows.filter(function (r) {
-      var kindOk = !f.kind || (f.kind === "archived" ? !!r.archived : r.kind === f.kind);
+      var kindOk = !f.kind || r.kind === f.kind;
       return kindOk && (!f.q || matches(r, f.q));
     });
     meta.innerHTML = '<span style="color:var(--color-text-secondary);font-size:0.85rem">' +
       (filtering ? shown.length + " of " : "") + rows.length + " pinned" +
-      (changed ? " · " + changed + " changed" : "") +
-      (archivedCount ? " · " + archivedCount + " archived" : "") + "</span>";
+      (changed ? " · " + changed + " changed" : "") + "</span>";
     var failed = [data.tlsError && "certificates", data.sshError && "SSH host keys"].filter(Boolean);
     var failHtml = failed.length
       ? '<p class="empty-state" style="padding:1rem 1.25rem 0;margin:0">Could not load pinned ' + failed.join(" or ") + ": " +
@@ -367,7 +339,6 @@
     }
     var canManage = typeof permAtLeast === "function" && permAtLeast("serverSettingsSystem", "write");
     body.innerHTML = failHtml + '<div style="padding:1rem 1.25rem">' + shown.map(function (r) {
-      if (r.archived) return archivedCard(r);
       return r.kind === "ssh" ? sshCard(r, canManage) : tlsCard(r, canManage);
     }).join("") + "</div>";
   }
@@ -388,13 +359,19 @@
       showConfirm(
         "Trust the new certificate of " + hostPort + "?\n\nSHA-256 " + fmt(fp) + "\n\n" +
         "Check it against the server first (on a FortiGate: System → Certificates, or `openssl s_client -connect " + hostPort + "`). " +
-        "From now on Polaris sends its password or token only to this certificate."
+        "From now on Charon sends its password or token only to this certificate."
       ).then(function (ok) {
         if (!ok) return;
         trust.disabled = true;
         api.serverSettings.tlsCertPinTrust(trust.getAttribute("data-pin-trust"), fp)
           .then(function () { afterChange("Trusted the new certificate of " + hostPort); })
-          .catch(function (err) { trust.disabled = false; showToast((err && err.message) || "Could not trust the certificate", "error"); });
+          .catch(function (err) {
+            trust.disabled = false;
+            showToast((err && err.message) || "Could not trust the certificate", "error");
+            // A 409 means the server has presented yet another certificate
+            // since this list was drawn — reload so the operator compares it.
+            if (err && err.status === 409) loadPanel();
+          });
       });
     } else if (del) {
       var hp = del.getAttribute("data-pin-host");
@@ -425,5 +402,5 @@
     }
   }
 
-  window.PolarisPinnedTlsCerts = { mount: mount, open: open, formatFingerprint: fmt };
+  window.CharonPinnedTlsCerts = { mount: mount, open: open, formatFingerprint: fmt };
 })();

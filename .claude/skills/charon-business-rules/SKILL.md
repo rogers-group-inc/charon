@@ -40,6 +40,8 @@ rule from 8 on has a narrative file.
 | touch a secret field, a token, a code, `CHARON_DATA_KEY` | 3, 3a, 9 |
 | change enrollment, the agent's TLS trust, cert upload or rotation | 4, 4a |
 | change API-token auth, token roles, CSRF for bearers | 8 |
+| open an outbound SSH / HTTPS connection that carries a secret; edit an integration's host / TLS | 11, 11a |
+| push-deploy, upgrade or uninstall the agent; change an install script or the enrollment preseed | 12 |
 | change HA node enrollment or the `/ha/enroll` surface | 9 |
 | add a scheduler, a periodic job, anything that must run exactly once | 5 |
 | gate code on the process role | 6 |
@@ -66,7 +68,10 @@ rule from 8 on has a narrative file.
 - [references/invariants.md](references/invariants.md) — every rule's invariant, in number order.
 - Narratives (rules 1–7 and lettered clauses on them have none by design):
   [references/narrative-8.md](references/narrative-8.md) (rule 8),
-  [references/narrative-9.md](references/narrative-9.md) (rule 9).
+  [references/narrative-9.md](references/narrative-9.md) (rule 9),
+  [references/narrative-11.md](references/narrative-11.md) (rule 11),
+  [references/narrative-12.md](references/narrative-12.md) (rule 12).
+- Rule 10 is claimed by the in-flight `worktree-users-auth-port` branch (`npm run rules:next`).
 
 ## Index
 
@@ -83,6 +88,9 @@ rule from 8 on has a narrative file.
 | 7 | The repo is public — no secrets, real hostnames, PII/COI/CIM | invariants | — |
 | 8 | API tokens act only through their bound role | invariants | narrative-8 |
 | 9 | An HA enrollment token buys only the right to ask | invariants | narrative-9 |
+| 11 | A secret is never sent to an unauthenticated server (SSH host key / TLS cert TOFU pins) | invariants | narrative-11 |
+| 11a | A stored secret follows its destination | invariants | narrative-11 |
+| 12 | A push deploy runs as root only behind fullwrite, a pinned transport, a verified installer and a sealed single-use code | invariants | narrative-12 |
 
 Related: `charon-change-impact` (where each rule is enforced in code),
 `charon-enforcement` (rules 1, 2, 5 in the pipeline), `charon-agent` (rule 4).

@@ -259,15 +259,29 @@ function renderCertsTab(container) {
       '</p>' +
     '</div>';
 
-  // Polaris's "Pinned server identities" card (rule 113 — TOFU pins for outbound
-  // WinRM / SSH / FortiGate-with-verify-off) is not rendered: Charon keeps no
-  // such pin store, and an always-empty list would read as protection that
-  // does not exist. pinned-tls-certs.js stays loaded but is never mounted.
+  // Pinned server identities (rules 11 / 113 — trust-on-first-use pins for
+  // outbound SSH host keys and TLS certificates: agent push deployment over
+  // SSH / WinRM, FortiGate / FortiManager with SSL verification off). The
+  // summary + slide-over is the shared pinned-tls-certs.js module, also
+  // mounted on the Maintenance tab's SSH Deployment card.
+  var pinsCardHtml =
+    '<div class="settings-card">' +
+      '<h4>Pinned Server Identities</h4>' +
+      '<p style="font-size:0.82rem;color:var(--color-text-secondary);margin-bottom:0.75rem">' +
+        'Charon records the SSH host key, or the TLS certificate of a WinRM listener or of a FortiGate / FortiManager ' +
+        'with SSL verification off, the first time it connects, and refuses to send a password or token if it later ' +
+        'changes. A changed certificate can be compared and trusted here; for a host that was legitimately rebuilt, ' +
+        'delete its pin and the next connection re-pins whatever answers.' +
+      '</p>' +
+      '<div id="webserver-pins"><p class="empty-state" style="padding:0.5rem 0;margin:0">Loading...</p></div>' +
+    '</div>';
 
   container.innerHTML = bannerHtml +
     '<div class="settings-cards-flow">' +
-      certCardHtml + proxyCardHtml + ipv6CardHtml + loginCardHtml + caCardHtml +
+      certCardHtml + proxyCardHtml + ipv6CardHtml + loginCardHtml + caCardHtml + pinsCardHtml +
     '</div>';
+
+  if (window.CharonPinnedTlsCerts) window.CharonPinnedTlsCerts.mount(document.getElementById("webserver-pins"));
 
   var adoptBtn = document.getElementById("proxy-adopt-btn");
   if (adoptBtn) adoptBtn.addEventListener("click", handleProxyAdopt);

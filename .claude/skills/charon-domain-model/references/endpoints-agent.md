@@ -11,6 +11,13 @@
   pins (canonical + staged, for dual-pin rotation). `boundUserKey` is the verified directory
   identity (drives tag resolution). `posture` is the raw blob; `postureState` is the evaluated
   enum. `currentIp` / `currentMac` feed Fortinet dynamic address-group membership.
+- **AgentDeployment** — one push deployment of the agent to a host (polaris ManagedAgent's
+  install lifecycle, keyed to a TARGET — `host` is the address dialed; the Endpoint only exists
+  after enrollment). `status` pending → uploading → enrolling → active (or failed / upgrading /
+  upgrade_failed / uninstalling / uninstalled). `credentialId` is a Credentials-tab `ssh` or
+  `winrm` row (SetNull). `invitationCodeId` (unique, SetNull) is the single-use, 10-minute code
+  the latest install minted into the host's root / SYSTEM-only preseed; enrolling with it sets
+  `endpointId` and `active` (`agentDeployService → markDeploymentEnrolled()`). Business rule 12.
 - **VerificationSession** — the short-lived `{user↔device↔IP}` binding created on a successful
   agent user login (`src/services/verificationService.ts → bindVerification()`); logout or
   expiry clears it. Retention prune removes expired/old sessions.
@@ -36,6 +43,33 @@ model InvitationCode {
 
   @@index([codePrefix])
   @@map("invitation_codes")
+}
+
+model AgentDeployment {
+  id                String           @id @default(uuid())
+  host              String           // the address dialed
+  osPlatform        String           @map("os_platform") // windows | linux | darwin
+  arch              String?          // detected at install time
+  transport         String           // ssh | winrm (winrm Windows-only)
+  credentialId      String?          @map("credential_id")
+  credential        Credential?      @relation(fields: [credentialId], references: [id], onDelete: SetNull)
+  directoryObjectId String?          @map("directory_object_id")
+  status            String           @default("pending")
+  lastError         String?          @map("last_error")
+  installerFilename String?          @map("installer_filename")
+  agentVersion      String?          @map("agent_version")
+  invitationCodeId  String?          @unique @map("invitation_code_id")
+  invitationCode    InvitationCode?  @relation(fields: [invitationCodeId], references: [id], onDelete: SetNull)
+  endpointId        String?          @unique @map("endpoint_id")
+  endpoint          Endpoint?        @relation(fields: [endpointId], references: [id], onDelete: SetNull)
+  createdBy         String           @map("created_by")
+  lastAttemptAt     DateTime?        @map("last_attempt_at")
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@index([status])
+  @@index([host])
+  @@map("agent_deployments")
 }
 
 /// An enrolled endpoint: the device + its agent enrollment, telemetry state,

@@ -33,7 +33,7 @@ commit (`/charon-docs-sync`).
 | Page | File | Gate (`Charon.can`) |
 |---|---|---|
 | Dashboard | `public/index.html` | — |
-| Endpoints | `public/endpoints.html` | `endpoints:read` |
+| Endpoints | `public/endpoints.html` (+ Deployments section: deploy modal and row actions at `endpoints:fullwrite`; the credential picker needs `credentials:read`, discovered devices `directory:read`) | `endpoints:read` |
 | Tags & Policies | `public/tags.html` | `tags:read` |
 | Groups | `public/groups.html` | `groups:read` |
 | Integrations | `public/integrations.html` | `integrations:read` |
@@ -51,9 +51,9 @@ commit (`/charon-docs-sync`).
 | Repository (`firmware`) | `server-settings-firmware.js` | `serverSettingsSystem` |
 | Customization (`customization`) | `server-settings-customization.js` | `serverSettingsSystem` |
 | Time & NTP (`ntp`) | `server-settings-ntp.js` | `serverSettingsSystem` |
-| Web Server (`certificates`) | `server-settings-webserver.js` (+ `pinned-tls-certs.js`) | `serverSettingsSystem` |
+| Web Server (`certificates`) | `server-settings-webserver.js` (+ `pinned-tls-certs.js`, mounted: the Pinned server identities card, `window.CharonPinnedTlsCerts`) | `serverSettingsSystem` |
 | Authentication (`auth`) — Charon's own | `server-settings-auth.js` | `serverSettingsSystem` |
-| Maintenance (`maintenance`) | `server-settings-maintenance.js` | `serverSettingsData` |
+| Maintenance (`maintenance`) | `server-settings-maintenance.js` (+ the Charon Agent card and `agent-ssh-onboarding.js`'s SSH Deployment card in `#agent-cards-slot`; their own gates: `endpoints`, `serverSettingsSystem`, `credentials`, `integrations`) | `serverSettingsData` |
 | Retention (`retention`) | `server-settings-maintenance.js` | `serverSettingsData` |
 | API Tokens (`api-tokens`) | `server-settings-api-tokens.js` | `apiTokens` |
 | High Availability (`ha`) | `server-settings-ha.js` | `serverSettingsSystem` |

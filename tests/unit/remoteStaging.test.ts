@@ -30,13 +30,13 @@ beforeEach(() => h.exec.mockReset());
 
 describe("Linux / macOS staging", () => {
   it("creates the directory with mktemp -d under umask 077 and accepts only what mktemp returns", async () => {
-    h.exec.mockResolvedValueOnce({ exitCode: 0, stdout: "/tmp/polaris-agent.Ab3dE5gH9k\n", stderr: "" });
-    await expect(makeUnixStageDir(client)).resolves.toBe("/tmp/polaris-agent.Ab3dE5gH9k");
-    expect(h.exec.mock.calls[0][1]).toBe("umask 077 && mktemp -d /tmp/polaris-agent.XXXXXXXXXX");
+    h.exec.mockResolvedValueOnce({ exitCode: 0, stdout: "/tmp/charon-agent.Ab3dE5gH9k\n", stderr: "" });
+    await expect(makeUnixStageDir(client)).resolves.toBe("/tmp/charon-agent.Ab3dE5gH9k");
+    expect(h.exec.mock.calls[0][1]).toBe("umask 077 && mktemp -d /tmp/charon-agent.XXXXXXXXXX");
   });
 
   it("refuses any other answer — a fixed name, an injection, a failure", async () => {
-    for (const stdout of ["/tmp/polaris-agent-install.sh", "/tmp/polaris-agent.Ab3dE5gH9k; rm -rf /", "/var/tmp/polaris-agent.Ab3dE5gH9k", ""]) {
+    for (const stdout of ["/tmp/charon-agent-install.sh", "/tmp/charon-agent.Ab3dE5gH9k; rm -rf /", "/var/tmp/charon-agent.Ab3dE5gH9k", ""]) {
       h.exec.mockResolvedValueOnce({ exitCode: 0, stdout, stderr: "" });
       await expect(makeUnixStageDir(client)).rejects.toMatchObject({ httpStatus: 502 });
     }
@@ -46,29 +46,29 @@ describe("Linux / macOS staging", () => {
 
   it("runs the script from the directory as root, passes the digest, and removes the directory keeping the exit code", () => {
     const sha = "a".repeat(64);
-    expect(unixStagedCommand("/tmp/polaris-agent.Ab3dE5gH9k", "install.sh", sha)).toBe(
-      `sudo -n bash /tmp/polaris-agent.Ab3dE5gH9k/install.sh /tmp/polaris-agent.Ab3dE5gH9k ${sha}; rc=$?; rm -rf /tmp/polaris-agent.Ab3dE5gH9k; exit $rc`,
+    expect(unixStagedCommand("/tmp/charon-agent.Ab3dE5gH9k", "install.sh", sha)).toBe(
+      `sudo -n bash /tmp/charon-agent.Ab3dE5gH9k/install.sh /tmp/charon-agent.Ab3dE5gH9k ${sha}; rc=$?; rm -rf /tmp/charon-agent.Ab3dE5gH9k; exit $rc`,
     );
-    expect(() => unixStagedCommand("/tmp/polaris-agent-install.sh", "install.sh")).toThrow();
-    expect(() => unixStagedCommand("/tmp/polaris-agent.Ab3dE5gH9k", "x;id")).toThrow();
-    expect(() => unixStagedCommand("/tmp/polaris-agent.Ab3dE5gH9k", "install.sh", "nothex")).toThrow();
+    expect(() => unixStagedCommand("/tmp/charon-agent-install.sh", "install.sh")).toThrow();
+    expect(() => unixStagedCommand("/tmp/charon-agent.Ab3dE5gH9k", "x;id")).toThrow();
+    expect(() => unixStagedCommand("/tmp/charon-agent.Ab3dE5gH9k", "install.sh", "nothex")).toThrow();
   });
 });
 
 describe("Windows staging", () => {
   it("uses a random directory under the SSH user's own temp folder", async () => {
-    const dir = "C:\\Users\\svc-polaris\\AppData\\Local\\Temp\\polaris-agent-0123456789abcdef0123456789abcdef";
+    const dir = "C:\\Users\\svc-polaris\\AppData\\Local\\Temp\\charon-agent-0123456789abcdef0123456789abcdef";
     h.exec.mockResolvedValueOnce({ exitCode: 0, stdout: `${dir}\r\n`, stderr: "" });
     await expect(makeWindowsStageDir(client)).resolves.toBe(dir);
     expect(h.exec.mock.calls[0][1]).toContain("[IO.Path]::GetTempPath()");
     expect(h.exec.mock.calls[0][1]).not.toMatch(/Windows\\\\?Temp/i);
-    expect(windowsStagedSftpPath(dir, "polaris-agent-install.ps1")).toBe(
-      "C:/Users/svc-polaris/AppData/Local/Temp/polaris-agent-0123456789abcdef0123456789abcdef/polaris-agent-install.ps1",
+    expect(windowsStagedSftpPath(dir, "charon-agent-install.ps1")).toBe(
+      "C:/Users/svc-polaris/AppData/Local/Temp/charon-agent-0123456789abcdef0123456789abcdef/charon-agent-install.ps1",
     );
   });
 
   it("refuses C:\\Windows\\Temp (every user can write it) and removes what it made", async () => {
-    const dir = "C:\\Windows\\Temp\\polaris-agent-0123456789abcdef0123456789abcdef";
+    const dir = "C:\\Windows\\Temp\\charon-agent-0123456789abcdef0123456789abcdef";
     h.exec.mockResolvedValueOnce({ exitCode: 0, stdout: dir, stderr: "" });
     h.exec.mockResolvedValueOnce({ exitCode: 0, stdout: "", stderr: "" });
     await expect(makeWindowsStageDir(client)).rejects.toThrow(/C:\\Windows\\Temp/);
@@ -76,7 +76,7 @@ describe("Windows staging", () => {
   });
 
   it("refuses a path carrying quotes or shell metacharacters", async () => {
-    for (const stdout of ["C:\\Users\\o'brien\\Temp\\polaris-agent-0123456789abcdef0123456789abcdef", "C:\\x\\polaris-agent-123", "garbage"]) {
+    for (const stdout of ["C:\\Users\\o'brien\\Temp\\charon-agent-0123456789abcdef0123456789abcdef", "C:\\x\\charon-agent-123", "garbage"]) {
       h.exec.mockResolvedValueOnce({ exitCode: 0, stdout, stderr: "" });
       await expect(makeWindowsStageDir(client)).rejects.toMatchObject({ httpStatus: 502 });
     }
@@ -109,7 +109,7 @@ describe.skipIf(!haveBash)("STAGED_SCRIPT_PRELUDE under bash", () => {
   });
 
   it("refuses a missing staging directory", () => {
-    const r = run("/nonexistent/polaris-agent.zzzzzzzzzz", "0".repeat(64));
+    const r = run("/nonexistent/charon-agent.zzzzzzzzzz", "0".repeat(64));
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/missing or is a link/);
   });

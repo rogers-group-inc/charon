@@ -32,6 +32,23 @@
         </table>
       </div>
 
+      <!-- Push deployments of the agent (agent-deployments API). Shown to
+           endpoints:read; deploy and every row action need endpoints:fullwrite. -->
+      <div class="page-header" id="deployments" style="margin-top:2rem">
+        <h2 style="font-size:1.1rem">Deployments</h2>
+        <div class="page-header-actions">
+          <button class="btn btn-primary" id="deployBtn" style="display:none">Deploy agent</button>
+        </div>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr><th>Host</th><th>OS / transport</th><th>Credential</th><th>Status</th><th>Agent</th><th>Endpoint</th><th>Last error</th><th>Last attempt</th><th></th></tr>
+          </thead>
+          <tbody id="depBody"><tr><td colspan="9" class="empty-state">Loading…</td></tr></tbody>
+        </table>
+      </div>
+
       <div class="page-header" style="margin-top:2rem"><h2 style="font-size:1.1rem">Invitation codes</h2></div>
       <div class="table-wrapper">
         <table>
@@ -63,6 +80,85 @@
       <div class="modal-footer">
         <button class="btn btn-secondary" id="inviteClose2">Close</button>
         <button class="btn btn-primary" id="inviteCreate">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="deployModal">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3>Deploy agent</h3>
+        <button class="btn-icon" id="deployClose" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="deployForm">
+          <p class="muted" style="margin:0 0 0.5rem">
+            Charon connects to each host over <strong>SSH or WinRM</strong> with the credential you choose and runs the
+            agent installer as <strong>root / Administrator</strong>. The host&rsquo;s SSH host key or WinRM certificate
+            is pinned the first time Charon connects, and a later change is refused (Server Settings &rarr; Web Server
+            &rarr; Pinned server identities). The installer leaves a <strong>single-use enrollment code, valid for
+            10 minutes</strong> and readable only by root / SYSTEM.
+          </p>
+          <p class="muted" style="margin:0 0 1rem">
+            A push-deployed agent enrolls on its own only once the agent runs as a background service (a later agent
+            release). Until then the deployment shows <em>Awaiting enrollment</em>; enroll the agent manually with an
+            invitation code.
+          </p>
+
+          <div style="display:flex;gap:8px;margin-bottom:0.75rem">
+            <button type="button" class="btn btn-sm btn-primary" id="dTabManual">Hosts</button>
+            <button type="button" class="btn btn-sm btn-secondary" id="dTabDiscovered">Discovered devices</button>
+          </div>
+
+          <div id="dPaneManual">
+            <div class="form-group">
+              <label for="dHosts">Hosts (one hostname or IP address per line)</label>
+              <textarea id="dHosts" rows="5" placeholder="host1.example.com&#10;10.0.0.25" spellcheck="false" style="font-family:var(--font-mono)"></textarea>
+            </div>
+            <div class="form-group">
+              <label for="dOs">Operating system</label>
+              <select id="dOs">
+                <option value="windows">Windows</option>
+                <option value="linux">Linux</option>
+                <option value="darwin">macOS</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="dPaneDiscovered" hidden>
+            <div class="form-group">
+              <label for="dFilter">Devices discovered from Active Directory / Entra ID / Intune</label>
+              <input type="text" id="dFilter" placeholder="Filter by name or hostname" autocomplete="off" spellcheck="false">
+            </div>
+            <p class="muted" id="dDevNote" style="margin:0 0 0.5rem"></p>
+            <div style="max-height:18rem;overflow:auto;border:1px solid var(--color-border);border-radius:var(--radius-md)">
+              <table style="width:100%;font-size:0.85rem">
+                <thead><tr><th style="width:2rem"><input type="checkbox" id="dDevAll" aria-label="Select all shown"></th><th>Device</th><th>Host</th><th>OS</th></tr></thead>
+                <tbody id="dDevBody"><tr><td colspan="4" class="empty-state">Loading…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top:1rem">
+            <label for="dTransport">Connect with</label>
+            <select id="dTransport">
+              <option value="ssh">SSH (Windows, Linux, macOS)</option>
+              <option value="winrm">WinRM (Windows only)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="dCred">Credential</label>
+            <select id="dCred"></select>
+            <p class="muted" id="dCredNote" style="margin:0.3rem 0 0"></p>
+          </div>
+          <p id="dSummary" class="muted" style="margin:0"></p>
+          <p id="deployError" class="form-error" hidden></p>
+        </div>
+        <div id="deployResult" hidden></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="deployCancel">Cancel</button>
+        <button class="btn btn-primary" id="deployGo">Deploy</button>
       </div>
     </div>
   </div>

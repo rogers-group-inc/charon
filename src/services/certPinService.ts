@@ -35,6 +35,12 @@ async function write(store: PinStore): Promise<void> {
     create: { key: KEY, value: store as any },
     update: { value: store as any },
   });
+  // Every pin change (stage / swap / retire / bootstrap) pushes refresh-config
+  // to every connected agent so it re-reads GET /agents/config and picks the
+  // new set up now, not on its next poll (rule 4a). Best-effort; never throws.
+  await import("./agentChannelService.js")
+    .then((m) => m.publishConfigRefresh("*"))
+    .catch(() => {});
 }
 
 /** Pins an agent should trust: canonical first, then any staged. */

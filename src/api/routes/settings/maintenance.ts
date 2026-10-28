@@ -28,7 +28,7 @@ import { createReadStream, existsSync, statSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve, sep } from "node:path";
 import { requirePermission } from "../../middleware/permissions.js";
-import { makeRateLimiter } from "../../middleware/rateLimits.js";
+import { adminActionLimiter, makeRateLimiter } from "../../middleware/rateLimits.js";
 import { logEvent } from "../../../services/eventService.js";
 import { AppError } from "../../../utils/errors.js";
 import { validateBackupPassword } from "../../../utils/backupPassword.js";
@@ -127,7 +127,7 @@ router.post("/database/backup", requirePermission("serverSettingsData", "write")
   } catch (err) { next(err); }
 });
 
-router.post("/database/restore", requirePermission("serverSettingsData", "fullwrite"), maintenanceLimiter, restoreUpload.single("file"), async (req, res, next) => {
+router.post("/database/restore", adminActionLimiter, requirePermission("serverSettingsData", "fullwrite"), maintenanceLimiter, restoreUpload.single("file"), async (req, res, next) => {
   // multer names the temp file; require containment under tmpdir() before touching it.
   const raw: string | undefined = (req.file as any)?.path;
   const uploadedPath = raw && resolve(raw).startsWith(tmpdir() + sep) ? resolve(raw) : undefined;
@@ -332,7 +332,7 @@ router.post("/security-tokens/generate", requirePermission("serverSettingsData",
 // Restarts the whole charon.target via systemd. Refused (409) in a container —
 // the operator restarts the container from the host — and on a host without
 // systemd (dev), where nothing would bring the process back.
-router.post("/restart", requirePermission("serverSettingsData", "fullwrite"), async (req, res, next) => {
+router.post("/restart", adminActionLimiter, requirePermission("serverSettingsData", "fullwrite"), async (req, res, next) => {
   try {
     if (runtimeIsContainer()) {
       throw new AppError(409, "Charon runs in a container and does not restart itself. Restart the Charon container(s) from your container host to apply.");
@@ -374,7 +374,7 @@ router.get("/updates/repo", requirePermission("serverSettingsData", "read"), asy
   try { res.json(await getUpdateRepoInfo()); } catch (err) { next(err); }
 });
 
-router.post("/updates/apply", requirePermission("serverSettingsData", "fullwrite"), async (req, res, next) => {
+router.post("/updates/apply", adminActionLimiter, requirePermission("serverSettingsData", "fullwrite"), async (req, res, next) => {
   try {
     const body = UpdateApplyBody.parse(req.body) ?? {};
     if (!isUpdateMechanismAvailable()) throw new AppError(409, "In-app updates are disabled in this deployment.");

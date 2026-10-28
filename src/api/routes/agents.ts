@@ -23,6 +23,7 @@ import { getAgentCertPins, recordDeliveredPins } from "../../services/certPinSer
 import { getActiveAuthMode, localLogin } from "../../services/authService.js";
 import { bindVerification, clearBinding } from "../../services/verificationService.js";
 import { requireAgentBearer } from "../middleware/auth.js";
+import { agentLoginLimiter } from "../middleware/rateLimits.js";
 import { prisma } from "../../db.js";
 import { enqueueReconcile } from "../../jobs/tagReconcileJob.js";
 import { AppError } from "../../utils/errors.js";
@@ -90,7 +91,7 @@ const loginSchema = z.object({
   // local mode posts credentials here.
 });
 
-agentsRouter.post("/login", async (req, res, next) => {
+agentsRouter.post("/login", agentLoginLimiter, async (req, res, next) => {
   try {
     const mode = await getActiveAuthMode();
     if (mode !== "local") {

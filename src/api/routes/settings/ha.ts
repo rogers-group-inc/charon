@@ -30,7 +30,7 @@
 import { Router, type Request } from "express";
 import { z } from "zod";
 import { requirePermission } from "../../middleware/permissions.js";
-import { makeRateLimiter } from "../../middleware/rateLimits.js";
+import { adminActionLimiter, makeRateLimiter } from "../../middleware/rateLimits.js";
 import { AppError } from "../../../utils/errors.js";
 import { logEvent } from "../../../services/eventService.js";
 import {
@@ -133,7 +133,7 @@ haRouter.post("/advisories", requirePermission("serverSettingsSystem", "read"), 
   }
 });
 
-haRouter.post("/enable", requirePermission("serverSettingsSystem", "fullwrite"), async (req, res, next) => {
+haRouter.post("/enable", adminActionLimiter, requirePermission("serverSettingsSystem", "fullwrite"), async (req, res, next) => {
   try {
     const body = EnableSchema.parse(req.body);
     const cfg = await enableHa(body, actorOf(req));
@@ -152,7 +152,7 @@ haRouter.post("/enable", requirePermission("serverSettingsSystem", "fullwrite"),
   }
 });
 
-haRouter.post("/disable", requirePermission("serverSettingsSystem", "fullwrite"), async (req, res, next) => {
+haRouter.post("/disable", adminActionLimiter, requirePermission("serverSettingsSystem", "fullwrite"), async (req, res, next) => {
   try {
     const cfg = await disableHa(actorOf(req));
     await logEvent({
@@ -174,7 +174,7 @@ haRouter.post("/disable", requirePermission("serverSettingsSystem", "fullwrite")
  * exists only in this response; storing it for a later download would defeat
  * hashing it.
  */
-haRouter.post("/tokens", requirePermission("serverSettingsSystem", "fullwrite"), async (req, res, next) => {
+haRouter.post("/tokens", adminActionLimiter, requirePermission("serverSettingsSystem", "fullwrite"), async (req, res, next) => {
   try {
     const { role } = TokenSchema.parse(req.body);
     const minted = await mintNodeToken(role as HaRole, actorOf(req));
@@ -201,7 +201,7 @@ haRouter.post("/tokens", requirePermission("serverSettingsSystem", "fullwrite"),
   }
 });
 
-haRouter.post("/enrollments/:id/approve", requirePermission("serverSettingsSystem", "fullwrite"), async (req, res, next) => {
+haRouter.post("/enrollments/:id/approve", adminActionLimiter, requirePermission("serverSettingsSystem", "fullwrite"), async (req, res, next) => {
   try {
     const id = String(req.params.id);
     const row = await approveEnrollment(id, actorOf(req));

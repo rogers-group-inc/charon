@@ -16,7 +16,7 @@ file.
 - `POST   /agents/heartbeat`    — agent bearer
 - `POST   /agents/posture`      — agent bearer; enqueues a reconcile when the state changed
 - `GET    /agents/config`       — agent bearer; current pins (rotation) + active auth mode
-- `POST   /agents/login`        — agent bearer; binds {user↔device↔IP}, enqueues reconcile
+- `POST   /agents/login`        — agent bearer; `agentLoginLimiter` (per endpoint); binds {user↔device↔IP}, enqueues reconcile
 - `POST   /agents/logout`       — agent bearer; clears the binding, enqueues reconcile
 - WS `GET /agents/ws`           — telemetry (bearer in `Sec-WebSocket-Protocol`)
 
@@ -90,16 +90,16 @@ declares its own `requirePermission`. "sys" = `serverSettingsSystem`, "data" =
   `POST /match-apply` (write), `GET /:id`, `POST /`, `PUT /:id`, `DELETE /:id`
 
 **Web Server** (`webServer.ts`) — anything touching TLS, pins, nginx or the login scope is fullwrite
-- `GET /server-settings/certificates` (read), `POST` (fullwrite, multipart), `DELETE /:id`
+- `GET /server-settings/certificates` (read), `POST` (fullwrite, multipart, `adminActionLimiter`), `DELETE /:id`
   (fullwrite) — trusted CA list, NOT the leaf
 - `GET /server-settings/https` (read) — served leaf-cert facts
 - `GET /server-settings/proxy` (read); `PUT /proxy`, `POST /proxy/adopt-managed-mode`,
-  `POST /proxy/apply` (fullwrite)
+  `POST /proxy/apply` (fullwrite; apply also `adminActionLimiter`)
 - `POST /server-settings/proxy/cert/preflight` (fullwrite, multipart cert + key) — validate a pair
-- `POST /server-settings/proxy/cert/rotate` (fullwrite) — refuses an unstaged pin (409)
+- `POST /server-settings/proxy/cert/rotate` (fullwrite, `adminActionLimiter`) — refuses an unstaged pin (409)
 - `GET /server-settings/agents/cert-pins/summary` (read) — per-pin uptake + the accepted store
-- `POST /server-settings/agents/cert-pins/bulk-add` (fullwrite) — stage a pin
-- `POST /server-settings/agents/cert-pins/bulk-remove` (fullwrite) — retire a pin; 409 for the
+- `POST /server-settings/agents/cert-pins/bulk-add` (fullwrite, `adminActionLimiter`) — stage a pin
+- `POST /server-settings/agents/cert-pins/bulk-remove` (fullwrite, `adminActionLimiter`) — retire a pin; 409 for the
   served cert's pin; the last pin is never retired (business rule 4a)
 - `GET|PUT /server-settings/dash` (read / fullwrite), `GET|PUT /ipv6` (read / write),
   `GET|PUT /login-access` (read / fullwrite)
@@ -107,13 +107,13 @@ declares its own `requirePermission`. "sys" = `serverSettingsSystem`, "data" =
 **Maintenance + Retention** (`maintenance.ts`, mounted at `/server-settings`)
 - `GET /server-settings/database`, `/capacity-advisor`, `/platform-lifecycle`, `/pg-tuning`,
   `/queue-mode` — sys read; `POST /capacity-advisor/stage` — sys write (stages `.env`)
-- `POST /database/backup` (data write); `POST /database/restore` (data fullwrite, multipart);
+- `POST /database/backup` (data write); `POST /database/restore` (data fullwrite, multipart, `adminActionLimiter`);
   `GET /database/backups`, `/database/backup-tooling` (data read); `DELETE /database/backups/:id`,
   `GET /database/backups/:id/download` (data write)
 - `GET /database/backup-schedule` (data read); `PUT` (data fullwrite — holds a passphrase)
-- `POST /queue-mode`, `POST /security-tokens/generate` (data write); `POST /restart` (data fullwrite)
+- `POST /queue-mode`, `POST /security-tokens/generate` (data write); `POST /restart` (data fullwrite, `adminActionLimiter`)
 - `GET /updates/check`, `/updates/status`, `/updates/repo`, `/updates/settings`,
-  `/updates/history` (data read); `POST /updates/apply` (data fullwrite); `POST /updates/dismiss`,
+  `/updates/history` (data read); `POST /updates/apply` (data fullwrite, `adminActionLimiter`); `POST /updates/dismiss`,
   `PUT /updates/settings` (data write); `GET /updates/activity` — no permission key (any
   signed-in user; redacted)
 - `GET|PUT /sample-retention` (data read / write); `GET|PUT /agent-event-log` (sys read / write)
@@ -146,7 +146,8 @@ declares its own `requirePermission`. "sys" = `serverSettingsSystem`, "data" =
 **High Availability** (`ha.ts`; root mount `/ha`)
 - `GET /ha/status`, `POST /ha/advisories` (sys read)
 - `POST /ha/enable`, `POST /ha/disable`, `POST /ha/tokens`, `POST /ha/enrollments/:id/approve`,
-  `POST /ha/enrollments/:id/reject`, `GET /ha/teardown-script` (sys **fullwrite**)
+  `POST /ha/enrollments/:id/reject`, `GET /ha/teardown-script` (sys **fullwrite**; enable, disable, tokens and approve also
+  `adminActionLimiter`)
 
 **Repository** (`firmware.ts`) — sys read to look, sys fullwrite to change
 - `GET /server-settings/firmware/tree`, `/assets` (always empty), `/images`, `/images/:id`,

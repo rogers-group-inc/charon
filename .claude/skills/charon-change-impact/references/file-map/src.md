@@ -17,7 +17,7 @@ src/
 │   │   ├── auth.ts           # session + API bearer + agent bearer (requireAuth, attachApiToken → 403 untrusted host)
 │   │   ├── csrf.ts           # synchronizer token; agent paths, exactly /ha/enroll, session-less bearers exempt
 │   │   ├── permissions.ts    # dynamic-role matrix: FUNCTION_KEYS, requirePermission, session / API-token role snapshot
-│   │   ├── rateLimits.ts     # login + enroll limiters + makeRateLimiter
+│   │   ├── rateLimits.ts     # login, enroll, agent-login, admin-action limiters + makeRateLimiter
 │   │   └── errorHandler.ts   # AppError → JSON
 │   └── routes/
 │       ├── auth.ts           # login, login/totp (Local Login Access IP gate), logout, me

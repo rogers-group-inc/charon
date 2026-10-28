@@ -70,6 +70,7 @@ import {
   setIpv6Enabled,
 } from "../../../services/webAccessSettingsService.js";
 import { describeIpScope } from "../../../utils/ipScope.js";
+import { adminActionLimiter } from "../../middleware/rateLimits.js";
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -141,7 +142,7 @@ router.get("/certificates", requirePermission("serverSettingsSystem", "read"), a
   } catch (err) { next(err); }
 });
 
-router.post("/certificates", requirePermission("serverSettingsSystem", "fullwrite"), upload.single("file"), async (req, res, next) => {
+router.post("/certificates", adminActionLimiter, requirePermission("serverSettingsSystem", "fullwrite"), upload.single("file"), async (req, res, next) => {
   try {
     if (!req.file) throw new AppError(400, "No file uploaded");
     if (req.body?.category === "server") {
@@ -225,7 +226,7 @@ router.post("/proxy/adopt-managed-mode", requirePermission("serverSettingsSystem
   } catch (err) { next(err); }
 });
 
-router.post("/proxy/apply", requirePermission("serverSettingsSystem", "fullwrite"), async (req, res, next) => {
+router.post("/proxy/apply", adminActionLimiter, requirePermission("serverSettingsSystem", "fullwrite"), async (req, res, next) => {
   try {
     const patch = req.body && Object.keys(req.body).length ? parseProxyPatch(req.body) : undefined;
     const result = await applyProxyConfig(patch);
@@ -265,7 +266,7 @@ router.post(
 
 // The swap step. The new pin must already be staged (step 2) — enforced in
 // the service so the fleet can never be stranded.
-router.post("/proxy/cert/rotate", requirePermission("serverSettingsSystem", "fullwrite"), async (req, res, next) => {
+router.post("/proxy/cert/rotate", adminActionLimiter, requirePermission("serverSettingsSystem", "fullwrite"), async (req, res, next) => {
   try {
     const { certPem, keyPem } = parse(RotateSchema, req.body);
     const result = await rotateCertAndKey(certPem, keyPem);
@@ -294,7 +295,7 @@ router.get("/agents/cert-pins/summary", requirePermission("serverSettingsSystem"
   } catch (err) { next(err); }
 });
 
-router.post("/agents/cert-pins/bulk-add", requirePermission("serverSettingsSystem", "fullwrite"), async (req, res, next) => {
+router.post("/agents/cert-pins/bulk-add", adminActionLimiter, requirePermission("serverSettingsSystem", "fullwrite"), async (req, res, next) => {
   try {
     const pin = parsePin(parse(PinSchema, req.body).pin);
     await stageNewPin(pin);
@@ -314,7 +315,7 @@ router.post("/agents/cert-pins/bulk-add", requirePermission("serverSettingsSyste
   } catch (err) { next(err); }
 });
 
-router.post("/agents/cert-pins/bulk-remove", requirePermission("serverSettingsSystem", "fullwrite"), async (req, res, next) => {
+router.post("/agents/cert-pins/bulk-remove", adminActionLimiter, requirePermission("serverSettingsSystem", "fullwrite"), async (req, res, next) => {
   try {
     const pin = parsePin(parse(PinSchema, req.body).pin);
     if (pin === (await getServedCertFingerprint())) {

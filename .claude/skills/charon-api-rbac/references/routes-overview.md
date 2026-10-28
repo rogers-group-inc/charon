@@ -50,5 +50,5 @@ Server tab's pin-uptake summary.
 
 `src/app.ts` also runs, before the router: the CSRF middleware, the idle-timeout middleware
 (`sessionConfig.autoLogoutMinutes`; an API request after the limit gets 401, a page load a
-redirect to `/login.html?reason=inactivity`), and the login limiter on the `/api/v1/auth/login`
+redirect to `/signed-out.html?reason=inactivity`), and the login limiter on the `/api/v1/auth/login`
 prefix (the `/password-change` step is skipped — it carries its own limiter).

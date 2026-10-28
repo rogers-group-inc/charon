@@ -38,8 +38,11 @@ commit (`/charon-docs-sync`).
 | Groups | `public/groups.html` | `groups:read` |
 | Integrations | `public/integrations.html` | `integrations:read` |
 | Events | `public/events.html` | `events:read` |
+| Users | `public/users.html` + `public/js/users.js` (polaris port) | nav: `users:read` OR `authentication:read`; Roles section `roles:read`; Group Mappings `users:fullwrite`; Authentication button `authentication:read` (Save / Test at write) |
+| My Account | `public/account.html` + `public/js/account.js` (user badge link) | — (any signed-in operator; own password / 2FA / passkeys) |
+| Signed out | `public/signed-out.html` | public — every logout lands here (no form) |
 | Server Settings | `public/server-settings.html` | nav: `serverSettingsSystem:read` or `serverSettingsData:read`; each tab gated separately (below) |
-| Login | `public/login.html` | public |
+| Login | `public/login.html` + `public/js/login.js` | public — password, passkey, SSO buttons (shown per `/auth/*/config` probe), second-factor and forced-change steps; `?local=1` / `?error` bypass "skip login page" |
 | First-run setup | `public/setup.html` | public, only before setup completes |
 
 ### Server Settings tab → gate (`public/js/server-settings.js → SETTINGS_TAB_PERMS`, read level)
@@ -52,7 +55,6 @@ commit (`/charon-docs-sync`).
 | Customization (`customization`) | `server-settings-customization.js` | `serverSettingsSystem` |
 | Time & NTP (`ntp`) | `server-settings-ntp.js` | `serverSettingsSystem` |
 | Web Server (`certificates`) | `server-settings-webserver.js` (+ `pinned-tls-certs.js`) | `serverSettingsSystem` |
-| Authentication (`auth`) — Charon's own | `server-settings-auth.js` | `serverSettingsSystem` |
 | Maintenance (`maintenance`) | `server-settings-maintenance.js` | `serverSettingsData` |
 | Retention (`retention`) | `server-settings-maintenance.js` | `serverSettingsData` |
 | API Tokens (`api-tokens`) | `server-settings-api-tokens.js` | `apiTokens` |
@@ -76,11 +78,15 @@ only `credentials` or `apiTokens` read gets no sidebar link (the nav checks the 
   `app.js` → the `#polaris-nav-ready` marker → `table-sf.js` when used → the page script. The
   head also carries the render-blocking `#polaris-nav-ready` expect link and
   `page-transitions.css` (frontend-shell.md → Page-change crossfade).
-- **The Server Settings page is a polaris port with its own client layer**: `settings-api.js`
-  (polaris `api.<namespace>.*`) and `settings-ui.js` (polaris `openModal` / `showConfirm` /
-  slide-overs / `permAtLeast`) are loaded ONLY by `public/server-settings.html`, where
-  `settings-api.js` replaces Charon's `api.js` (not loaded there). Never use them on another
-  page; a new tab module calls `settings-api.js`, not `window.api`.
+- **The polaris-port pages have their own client layer**: `settings-api.js` (polaris
+  `api.<namespace>.*`) and `settings-ui.js` (polaris `openModal` / `showConfirm` / slide-overs /
+  `permAtLeast` / `val` / `revealOverlay` / `PolarisPrefs`) are loaded ONLY by
+  `public/server-settings.html`, `public/users.html` and `public/account.html`, where
+  `settings-api.js` replaces Charon's `api.js` (not loaded there). Never mix the two layers on
+  one page; code on a port page calls `settings-api.js`, not `window.api`. The polaris
+  row-context menu is `public/js/row-menu.js` (`showRowMenu`); the self-service modals are
+  `password-self.js`, `totp-self.js`, `passkeys-self.js` (+ `webauthn.js`, which `login.js` also
+  loads standalone).
 - **Escape everything interpolated into HTML** with `Charon.escapeHtml`.
 - **Gate controls with the key the route actually checks** — a client gate naming another
   page's key fails silently (the control never renders).

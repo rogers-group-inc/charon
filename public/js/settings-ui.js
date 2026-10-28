@@ -15,6 +15,7 @@
 var currentUsername = null;
 var currentUserRole = null;
 var currentRolePermissions = {};
+var currentUserAuthProvider = "local"; // how THIS session signed in: local / ldap / saml / oidc / entra-proxy / passkey
 
 var _PERM_RANK = { none: 0, read: 1, write: 2, fullwrite: 3 };
 function permLevel(key) { return currentRolePermissions[key] || "none"; }
@@ -51,8 +52,69 @@ window.__charonUserReady = window.Charon.init().then(function (user) {
   currentUsername = user.username || null;
   currentUserRole = user.role || null;
   currentRolePermissions = user.permissions || {};
+  currentUserAuthProvider = user.authProvider || "local";
   return user;
 });
+
+// ─── More polaris app.js helpers (verbatim), for the Users page ──────────────
+
+function val(id) { return document.getElementById(id).value.trim(); }
+
+/**
+ * Reveal an overlay that animates in: add `.open` on the next animation frame
+ * so the transition has a start state, with a timeout floor because
+ * requestAnimationFrame does NOT fire in a hidden tab. Idempotent: whichever
+ * fires first wins. `after` runs once, immediately after the class lands.
+ */
+function revealOverlay(el, after) {
+  if (!el) return;
+  var opened = false;
+  var reveal = function () {
+    if (opened) return;
+    opened = true;
+    el.classList.add("open");
+    if (typeof after === "function") after();
+  };
+  requestAnimationFrame(reveal);
+  setTimeout(reveal, 50);
+}
+
+// Inline style string for a role badge given its stored color — only the
+// `--hue` of a `.hue-pill` (styles.css), so the caller's badge must carry that
+// class. Returns "" when the color is missing/invalid so the caller can fall
+// back to a neutral badge.
+function roleBadgeStyleFromColor(color) {
+  var m = /^#?([0-9a-fA-F]{6})$/.exec(String(color || "").trim());
+  return m ? "--hue:#" + m[1] : "";
+}
+
+// A pleasant random `#rrggbb` for the new-role color picker default — random
+// hue, fixed mid saturation/lightness so every default reads as a usable badge.
+function randomRoleColor() {
+  var h = Math.floor(Math.random() * 360), s = 0.62, l = 0.55;
+  var c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2;
+  var rgb = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x]
+    : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+  return "#" + rgb.map(function (v) {
+    return ("0" + Math.round((v + m) * 255).toString(16)).slice(-2);
+  }).join("");
+}
+
+// Per-user page prefs (polaris table-sf.js's PolarisPrefs), under
+// charon-prefs-<page>-<username>.
+window.PolarisPrefs = window.PolarisPrefs || {
+  save: function (page, username, obj) {
+    if (!username) return;
+    try { localStorage.setItem("charon-prefs-" + page + "-" + username, JSON.stringify(obj)); } catch (_) {}
+  },
+  load: function (page, username) {
+    if (!username) return null;
+    var raw;
+    try { raw = localStorage.getItem("charon-prefs-" + page + "-" + username); } catch (_) { return null; }
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch (_) { return null; }
+  },
+};
 
 // ─── polaris app.js helpers (verbatim) ────────────────────────────────────────
 

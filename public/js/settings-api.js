@@ -691,13 +691,12 @@ const api = {
     create:        (body)   => request("POST", "/users", body),
     resetPassword: (id, b)  => request("PUT", `/users/${id}/password`, b),
     updateRole:    (id, b)  => request("PUT", `/users/${id}/role`, b),
-    updateRegions: (id, b)  => request("PUT", `/users/${id}/regions`, b),
     delete:        (id)     => request("DELETE", `/users/${id}`),
     resetTotp:     (id)     => request("DELETE", `/users/${id}/totp`),
     passkeys:      (id)     => request("GET", `/users/${id}/passkeys`),
     revokePasskeys:(id)     => request("DELETE", `/users/${id}/passkeys`),
-    roleReviewNotifications: ()   => request("GET", "/users/role-review-notifications"),
-    dismissRoleReview:       (id) => request("DELETE", `/users/${id}/role-review`),
+    // Clears the "new SSO account — review its role" flag.
+    dismissRoleReview: (id) => request("DELETE", `/users/${id}/role-review`),
   },
   roles: {
     list:      ()        => request("GET", "/roles"),
@@ -705,7 +704,6 @@ const api = {
     create:    (body)    => request("POST", "/roles", body),
     update:    (id, b)   => request("PUT",  `/roles/${id}`, b),
     delete:    (id)      => request("DELETE", `/roles/${id}`),
-    markReviewed: (id)   => request("POST", `/roles/${id}/grant-review`),
     functions: ()        => request("GET", "/roles/functions"),
   },
   groupMappings: {
@@ -1427,8 +1425,6 @@ const api = {
   },
   serverSettings: {
     // Charon — Authentication tab (active login mode; also drives the agent GUI).
-    authModeGet:       ()        => request("GET",    "/server-settings/auth-mode"),
-    authModePut:       (body)    => request("PUT",    "/server-settings/auth-mode", body),
     // Polaris Agent — Build button + inventory on Maintenance tab.
     agentInventory:    ()        => request("GET",    "/server-settings/agents/inventory"),
     agentBuildStart:   ()        => request("POST",   "/server-settings/agents/build"),
@@ -1531,8 +1527,8 @@ const api = {
     // Local login source-IP restriction (login form + password endpoints).
     // The GET also reports the caller's IP as Polaris resolves it, which is
     // what reveals a trust-proxy misconfiguration before the scope is trusted.
+    // Read-only here (the Web Server card); editing is api.auth.updateLoginAccess.
     loginAccessGet:       ()      => request("GET",  "/server-settings/login-access"),
-    loginAccessPut:       (body)  => request("PUT",  "/server-settings/login-access", body),
     // API documentation (/api) source-IP scope. GET also reports the caller's
     // resolved IP (trust-proxy visibility, same as login-access); PUT answers
     // { apiDocs, callerAllowed, nginx } — warn on callerAllowed false.
@@ -1825,10 +1821,20 @@ const api = {
     // Self-service. Body: { currentPassword, newPassword }. Local accounts
     // only; the admin-side reset is api.users.resetPassword().
     changePassword: (body) => request("PUT", "/auth/password", body),
-    azureConfig: () => request("GET", "/auth/azure/config"),
-    azureSettings: () => request("GET", "/auth/azure/settings"),
-    updateAzureSettings: (body) => request("PUT", "/auth/azure/settings", body),
-    testAzureSettings: () => request("POST", "/auth/azure/test"),
+    samlConfig: () => request("GET", "/auth/saml/config"),
+    samlSettings: () => request("GET", "/auth/saml/settings"),
+    updateSamlSettings: (body) => request("PUT", "/auth/saml/settings", body),
+    testSaml: () => request("POST", "/auth/saml/test"),
+    samlLogout: () => request("POST", "/auth/saml/logout"),
+    // Session: idle timeout + "skip login page" (Charon keeps these out of the SAML row).
+    sessionSettings: () => request("GET", "/auth/session-settings"),
+    updateSessionSettings: (body) => request("PUT", "/auth/session-settings", body),
+    // Local Login Access (source-IP scope on the local credential paths).
+    loginAccess: () => request("GET", "/auth/login-access"),
+    updateLoginAccess: (body) => request("PUT", "/auth/login-access", body),
+    // The endpoint agent's sign-in mode (local / saml / oidc).
+    agentMode: () => request("GET", "/auth/agent-mode"),
+    updateAgentMode: (body) => request("PUT", "/auth/agent-mode", body),
     oidcConfig: () => request("GET", "/auth/oidc/config"),
     oidcSettings: () => request("GET", "/auth/oidc/settings"),
     updateOidcSettings: (body) => request("PUT", "/auth/oidc/settings", body),

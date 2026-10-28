@@ -148,7 +148,7 @@ app.use(async (req, res, next) => {
       return req.session.regenerate(() => {
         void logEvent({ action: "auth.logout.idle", actor: username, message: `${username} signed out after ${autoLogoutMinutes} idle minutes` });
         if (req.path.startsWith("/api/")) return next(new AppError(401, "Signed out after inactivity — please sign in again"));
-        if (req.method === "GET" && req.accepts("html")) return res.redirect("/login.html?reason=inactivity");
+        if (req.method === "GET" && req.accepts("html")) return res.redirect("/signed-out.html?reason=inactivity");
         next();
       });
     }
@@ -215,7 +215,7 @@ app.use(async (req, res, next) => {
 
 const protectedPages = [
   "/", "/index.html", "/endpoints.html", "/tags.html", "/groups.html",
-  "/integrations.html", "/users.html", "/server-settings.html", "/events.html",
+  "/integrations.html", "/users.html", "/account.html", "/server-settings.html", "/events.html",
 ];
 app.use(async (req, res, next) => {
   if (!protectedPages.includes(req.path)) return next();

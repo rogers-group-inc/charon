@@ -395,10 +395,13 @@
     var label = ROLE_LABEL[role] || role;
     // A polaris .hue-pill takes only --hue: styles.css derives the fill and
     // clamps the label per theme, so a red pill stays legible on daylight.
-    var pillColor = ROLE_COLOR[role] || "#6b7280";
-    var badge = document.createElement("div");
+    var pillColor = currentUser.roleColor || ROLE_COLOR[role] || "#6b7280";
+    // The badge opens My Account (own password, two-factor auth, passkeys).
+    var badge = document.createElement("a");
+    badge.href = "/account.html";
     badge.className = "user-badge";
-    badge.title = name + (label ? " (" + label + ")" : "");
+    badge.style.textDecoration = "none";
+    badge.title = name + (label ? " (" + label + ")" : "") + " — My account";
     badge.innerHTML =
       '<div class="user-badge-avatar" style="background:' + initialsColor(name) + '">' + escapeHtml(getInitials(name)) + "</div>" +
       '<span class="user-badge-name">' + escapeHtml(name) + "</span>" +
@@ -421,11 +424,13 @@
     box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>',
     plug: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a6 6 0 01-12 0V8h12z"/></svg>',
     activity: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>',
+    users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>',
     settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>',
     logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>',
   };
 
-  // href, label, icon, [permKey, level]
+  // href, label, icon, permKey — a key, or an array of keys any one of which
+  // (at read) shows the item.
   var NAV_ITEMS = [
     ["/index.html", "Dashboard", "grid", null],
     ["/endpoints.html", "Endpoints", "monitor", "endpoints"],
@@ -433,6 +438,8 @@
     ["/groups.html", "Groups", "box", "groups"],
     ["/integrations.html", "Integrations", "plug", "integrations"],
     ["/events.html", "Events", "activity", "events"],
+    // Accounts / roles need users:read; the Authentication modal needs authentication:read.
+    ["/users.html", "Users", "users", ["users", "authentication"]],
   ];
 
   // ─── Branding (Server Settings → Customization) ──────────────────────────────
@@ -488,7 +495,9 @@
     var current = window.location.pathname;
     if (current === "/") current = "/index.html";
 
-    var items = NAV_ITEMS.filter(function (n) { return can(n[3], "read"); }).map(function (n) {
+    var items = NAV_ITEMS.filter(function (n) {
+      return Array.isArray(n[3]) ? n[3].some(function (k) { return can(k, "read"); }) : can(n[3], "read");
+    }).map(function (n) {
       var active = current === n[0] ? " active" : "";
       return '<li><a href="' + n[0] + '" class="' + active.trim() + '">' + ICONS[n[2]] + "<span>" + n[1] + "</span></a></li>";
     }).join("");
@@ -518,8 +527,7 @@
     var lo = document.getElementById("btn-logout");
     if (lo) lo.addEventListener("click", function (e) {
       e.preventDefault();
-      clearUserCache();
-      fetch("/api/v1/auth/logout", { method: "POST", headers: csrfHeaders() }).finally(function () { location.href = "/login.html"; });
+      logout();
     });
 
     var v = document.getElementById("sidebar-version");
@@ -555,6 +563,38 @@
     } catch (e) { return false; }
   }
 
+  // ─── Sign-out ──────────────────────────────────────────────────────────────
+  // A SAML session signs out at the IdP too (single logout) when the IdP
+  // gave a logout URL; every other session just ends here. The landing is
+  // /signed-out.html (no form), so a "skip login page" install does not sign
+  // the operator straight back in.
+  function logout(reason) {
+    clearUserCache();
+    var saml = currentUser && currentUser.authProvider === "saml";
+    var landing = "/signed-out.html" + (reason ? "?reason=" + encodeURIComponent(reason) : "");
+    fetch(saml ? "/api/v1/auth/saml/logout" : "/api/v1/auth/logout", { method: "POST", headers: csrfHeaders() })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; })
+      .then(function (d) { location.href = (d && d.logoutUrl) || landing; });
+  }
+
+  // Client half of the idle timeout (Users → Authentication → Settings →
+  // Session). The server enforces it on the next request; this signs the
+  // page out on time even when it is sitting idle and making no requests.
+  var idleTimer = null;
+  function armIdleTimer() {
+    var minutes = currentUser && currentUser.autoLogoutMinutes;
+    if (!minutes || minutes <= 0) return;
+    function reset() {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(function () { logout("inactivity"); }, minutes * 60000);
+    }
+    ["pointerdown", "keydown", "wheel", "touchstart"].forEach(function (ev) {
+      document.addEventListener(ev, reset, { passive: true, capture: true });
+    });
+    reset();
+  }
+
   // ─── Lifecycle ───────────────────────────────────────────────────────────────
   function init(opts) {
     opts = opts || {};
@@ -568,6 +608,7 @@
         saveUserCache();
         renderNav();
         renderUserBadge();
+        if (!idleTimer) armIdleTimer();
         // Best-effort version stamp for the sidebar.
         fetch("/api/v1/server-settings/identification", { credentials: "same-origin" })
           .then(function (r) { return r.ok ? r.json() : null; })
@@ -594,6 +635,7 @@
     csrfHeaders: csrfHeaders,
     can: function (k, l) { return can(k, l); },
     user: function () { return currentUser; },
+    logout: logout,
     setBranding: setBranding,
     isLightTheme: isLightTheme,
     advanceTheme: advanceTheme,

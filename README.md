@@ -25,6 +25,9 @@ Fortinet estate (FortiManager + FortiGate) using dynamic, tag-driven firewall po
 - **Server:** Node.js + TypeScript, Express, Prisma, PostgreSQL. Multi-process by function
   (web UI/API, endpoint communications, Fortinet enforcement, background workers), coordinated
   through PostgreSQL + a job queue, fronted by nginx for TLS termination.
+- **Operator console:** role-based access with a per-function permission matrix; operators sign
+  in with local accounts (TOTP / passkeys), LDAP, SAML, OIDC or Entra App Proxy, all optional
+  and configured under Users → Authentication.
 - **Endpoint agent:** Tauri (Rust core + web GUI), small per-endpoint footprint, cross-platform.
 - **High availability:** primary/standby across datacenters via PostgreSQL streaming replication
   with application leader election; designed to sit behind an external GSLB.

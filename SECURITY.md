@@ -31,6 +31,9 @@ High-value areas for scrutiny:
 - **Server ↔ FortiGate / FortiManager** API authentication and the firewall-policy writeback
   (object ownership scoping, dry-run gating).
 - **User verification** (local / SAML / OIDC) and session/token signing.
+- **Operator sign-in**: local passwords with TOTP and passkeys (WebAuthn), LDAP bind,
+  SAML / OIDC SSO, Entra App Proxy header SSO (trusted connector IPs only), session
+  rotation / revocation / idle timeout, and the role-grant escalation guards.
 - **Secret handling** (encryption at rest, no secrets in source or logs).
 
 ## Cryptography

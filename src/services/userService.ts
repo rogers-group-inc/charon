@@ -25,6 +25,7 @@ import { logEvent } from "./eventService.js";
 import { assertPasswordMeetsPolicy } from "./passwordPolicyService.js";
 import { countAdminEquivalentUsers, isAdminEquivalentRole } from "./roleService.js";
 import { getOnlineUserIds, revokeUserSessions } from "./sessionRevocationService.js";
+import { deleteAllPasskeys } from "./passkeyService.js";
 
 const USER_SELECT = {
   id: true,
@@ -230,7 +231,7 @@ export async function listUserPasskeys(id: string) {
  */
 export async function revokePasskeys(id: string, actor: Actor): Promise<number> {
   const user = await getUserForAction(id);
-  const { count } = await prisma.userPasskey.deleteMany({ where: { userId: id } });
+  const count = await deleteAllPasskeys(id); // also drops in-flight ceremonies
   if (count === 0) throw new AppError(400, "This user has no passkeys registered.");
   await endSessionsOf(actor, id);
   await logEvent({

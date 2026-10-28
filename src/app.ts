@@ -30,6 +30,10 @@ import { logger } from "./utils/logger.js";
 import { AppError } from "./utils/errors.js";
 import { UPLOADS_DIR } from "./utils/paths.js";
 import { getSessionSettings, peekSessionSettings } from "./services/sessionSettingsService.js";
+import { stripUntrustedEntraProxyHeaders } from "./api/middleware/entraProxyHeaders.js";
+import { isEntraProxyLoginAvailable } from "./services/entraProxyAuthService.js";
+import { skipLoginSsoTarget } from "./services/authService.js";
+import { rememberLoginTarget } from "./utils/loginRedirect.js";
 import { logEvent } from "./services/eventService.js";
 import { roleConfig, type RoleConfig } from "./utils/role.js";
 import {
@@ -182,13 +186,44 @@ app.use("/api/v1/auth/login", (req, res, next) => (req.path === "/password-chang
 app.use("/api/v1/agents/enroll", enrollLimiter);
 
 // Protect dashboard pages — redirect unauthenticated users to login.
+// Entra App Proxy identity headers are unsigned: drop them from any request
+// not arriving from an allowlisted connector before anything reads them.
+app.use(stripUntrustedEntraProxyHeaders);
+
+// A signed-out navigation goes to sign-in: App Proxy silent auto-login when
+// this request came through a trusted connector, else straight to SSO under
+// "Skip login page", else the login form. Every SSO failure lands on
+// /login.html?error=… (not a protected page), so this cannot loop.
+async function sendToSignIn(req: express.Request, res: express.Response): Promise<void> {
+  if (await isEntraProxyLoginAvailable(req).catch(() => false)) {
+    return res.redirect("/api/v1/auth/entra-proxy/login?next=" + encodeURIComponent(req.originalUrl));
+  }
+  const sso = await skipLoginSsoTarget();
+  return res.redirect(sso ?? "/login.html");
+}
+
+// /login.html under "Skip login page" goes to SSO too, unless the request says
+// why the form must be drawn: ?error=… (an SSO attempt just failed — redirecting
+// again would ping-pong with the IdP) or ?local=1 (the anti-lockout path for
+// local / LDAP accounts and for when the IdP is down).
+app.use(async (req, res, next) => {
+  if (req.path !== "/login.html" || req.session?.userId) return next();
+  if ("error" in req.query || "local" in req.query) return next();
+  const sso = await skipLoginSsoTarget();
+  return sso ? res.redirect(sso) : next();
+});
+
 const protectedPages = [
   "/", "/index.html", "/endpoints.html", "/tags.html", "/groups.html",
   "/integrations.html", "/users.html", "/server-settings.html", "/events.html",
 ];
-app.use((req, res, next) => {
+app.use(async (req, res, next) => {
   if (!protectedPages.includes(req.path)) return next();
-  if (!req.session?.userId) return res.redirect("/login.html");
+  if (!req.session?.userId) {
+    // Remember where they were going before choosing how to bounce them.
+    rememberLoginTarget(req, res, req.originalUrl);
+    return sendToSignIn(req, res);
+  }
   return next();
 });
 

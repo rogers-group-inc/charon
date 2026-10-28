@@ -13,6 +13,8 @@
 
 import { Router } from "express";
 import authRouter from "./routes/auth.js";
+import authSsoRouter from "./routes/authSso.js";
+import authPasskeysRouter from "./routes/authPasskeys.js";
 import agentRouter from "./routes/agent.js";
 import eventsRouter from "./routes/events.js";
 import integrationsRouter from "./routes/integrations.js";
@@ -50,6 +52,8 @@ router.use(revalidateSessionUser);
 // ─── Public surfaces ─────────────────────────────────────────────────────────
 // Operator auth (login/logout/me) and the agent's public auth-config probe.
 router.use("/auth", authRouter);
+router.use("/auth", authSsoRouter); // SAML / OIDC / App Proxy flows + provider settings (self-gated)
+router.use("/auth", authPasskeysRouter); // passkey sign-in, second factor, self-service, policy (self-gated)
 router.use("/agent", agentRouter);
 // Login-page branding (name, subtitle, opt-in logo) — read before sign-in.
 router.use("/branding", publicBrandingRouter);

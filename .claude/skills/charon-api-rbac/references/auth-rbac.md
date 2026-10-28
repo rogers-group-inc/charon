@@ -73,7 +73,11 @@
 Synchronizer token per session, mirrored into a readable cookie so same-origin page JS echoes it
 in `X-CSRF-Token` on state-changing requests (`public/js/api.js` threads it). Agent paths
 (`/api/v1/agents/`) are exempt (`EXEMPT_PATH_PREFIXES`). Defense-in-depth on top of
-`SameSite=Lax` + strict JSON content types.
+`SameSite=Lax` + strict JSON content types. The pre-session sign-in paths are exempt by prefix
+too: `/api/v1/auth/login` (password, TOTP, passkey second factor, forced change — rate-limited),
+`/api/v1/auth/passkeys/login` (single-use challenge + signed assertion), `/api/v1/auth/saml/`
+(the ACS is a cross-site POST — the signed assertion is the guarantee) and `/api/v1/auth/oidc/`
+(state + PKCE).
 
 Two more exemptions:
 - **`/api/v1/ha/enroll`** (and `/api/v1/ha/enroll/<x>`) — matched EXACTLY, never as a prefix
@@ -115,7 +119,7 @@ Two more are attached per route, in the route file:
 - `adminActionLimiter` (15 min / 20) on the destructive Server Settings actions —
   `POST /server-settings/database/restore`, `/updates/apply`, `/restart`, `/certificates`
   (trusted-CA upload), `/proxy/apply`, `/proxy/cert/rotate`, `/agents/cert-pins/bulk-add|remove`,
-  `PUT /login-access` (the local-login source scope), and
+  `PUT /auth/login-access` (the local-login source scope), and
   `POST /ha/enable|disable|tokens|enrollments/:id/approve` — placed before
   `requirePermission`, **keyed by operator username** so admins on a shared jump host don't
   throttle each other. API-token callers have no session username, so they share their IP's

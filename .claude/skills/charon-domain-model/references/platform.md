@@ -55,6 +55,11 @@ model Event {
 | `cert.leaf` | `{ pem, certPath, keyPath }` — the served leaf certificate (the key stays on disk, 0600) | `src/services/webServerService.ts → rotateCertAndKey()` | `webServerService.ts` (HTTPS facts, rotate) |
 | `auth.mode` | `{ mode }` — the endpoint agent's sign-in mode (local / saml / oidc) | `src/services/authService.ts → setAgentAuthMode()` (`PUT /auth/agent-mode`) | `authService.ts → getActiveAuthMode()` (`GET /agent/auth-config`, `/agents/login`) |
 | `passwordPolicyConfig` | `{ minLength (8–128), requireLowercase/Uppercase/Number/Special, forceChangeOnLogin }` | `src/services/passwordPolicyService.ts` | every password write, the login re-check |
+| `saml` | `{ enabled, applicationUrl, idpEntityId, idpLoginUrl, idpLogoutUrl, idpCertificate, wantResponseSigned }` — no secret | `src/services/samlAuthService.ts` | SAML sign-in, `/auth/saml/config` |
+| `oidc` | `{ enabled, discoveryUrl, clientId, clientSecret (envelope), scopes, groupsClaim, usernameClaim, emailClaim, displayNameClaim }` | `src/services/oidcAuthService.ts` | OIDC sign-in |
+| `ldap` | `{ enabled, url, bindDn, bindPassword (envelope), searchBase, searchFilter, tlsVerify, displayNameAttr, emailAttr, userIdAttribute, groupAttribute, groupBaseDn, groupFilter }` | `src/services/ldapAuthService.ts` | `authService → passwordStep()` |
+| `entraProxy` | `{ enabled, trustedSourceIps[], objectIdHeader, usernameHeader, emailHeader, displayNameHeader, groupsHeader }` | `src/services/entraProxyAuthService.ts` | App Proxy login, the header-strip middleware |
+| `passkeyConfig` | `{ mode: off / login / second-factor / both, rpId, requireUserVerification }` | `src/services/passkeyService.ts` | passkey ceremonies, the password step's second-factor choice |
 | `sessionConfig` | `{ autoLogoutMinutes (0–1440, 0 = off), skipLoginPage }` | `src/services/sessionSettingsService.ts` | `src/app.ts` idle timeout, `/auth/me`, the login-page redirect |
 | `identification.name` | the server's display name | TODO: populate when a writer exists | `serverSettings.ts` (`GET /identification`) |
 | `posture.policy` | the operator-configured posture policy | `src/services/postureService.ts → setPosturePolicy()` | `postureService.ts → evaluatePosture()` |

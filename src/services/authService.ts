@@ -33,6 +33,10 @@ import { assertPasswordMeetsPolicy, passwordNeedsPolicyChange } from "./password
 import { verifyCodeStep, consumeBackupCode, generateSecret, generateBackupCodes, buildEnrollment } from "./totpService.js";
 import { claimTotpStep } from "./totpStepService.js";
 import { createSettingStore } from "./settingsStore.js";
+import { isLdapEnabled, authenticateLdapUser, findOrProvisionLdapUser } from "./ldapAuthService.js";
+import { isSamlEnabled, getSamlSettings, samlBaseUrl } from "./samlAuthService.js";
+import { isOidcEnabled, getOidcSettings } from "./oidcAuthService.js";
+import { getSessionSettings } from "./sessionSettingsService.js";
 
 export type AuthMode = "local" | "saml" | "oidc";
 
@@ -75,10 +79,45 @@ export async function setAgentAuthMode(mode: AuthMode, actor?: string): Promise<
   return mode;
 }
 
-/** Public agent-facing auth config (no secrets). Drives the agent login GUI. */
+/**
+ * Public agent-facing auth config (no secrets). Drives the agent login GUI.
+ * `params.ready` says whether the chosen provider is actually configured;
+ * the rest are the non-secret endpoints an agent browser flow would open.
+ * (The agent's SSO browser flow itself is not wired yet — agent/ui shows
+ * "complete the browser flow".)
+ */
 export async function getAgentAuthConfig(): Promise<{ mode: AuthMode; params: Record<string, unknown> }> {
   const mode = await getActiveAuthMode();
-  return { mode, params: {} };
+  if (mode === "saml") {
+    const s = await getSamlSettings();
+    return { mode, params: { ready: await isSamlEnabled(), loginPath: "/api/v1/auth/saml/login", entityId: samlBaseUrl(s) || null } };
+  }
+  if (mode === "oidc") {
+    const s = await getOidcSettings();
+    return { mode, params: { ready: await isOidcEnabled(), loginPath: "/api/v1/auth/oidc/login", issuer: s.discoveryUrl || null } };
+  }
+  return { mode, params: { ready: true, ldap: await isLdapEnabled().catch(() => false) } };
+}
+
+/** Is a browser SSO provider (SAML or OIDC) configured and enabled? */
+export async function ssoProviderReady(): Promise<boolean> {
+  return (await isSamlEnabled()) || (await isOidcEnabled());
+}
+
+/**
+ * "Skip login page": where an unauthenticated page load is sent instead of
+ * /login.html — SAML first, OIDC second — or null (flag off, no provider
+ * ready, or settings unreadable: fails OPEN so the login page stays reachable).
+ */
+export async function skipLoginSsoTarget(): Promise<string | null> {
+  try {
+    if (!(await getSessionSettings()).skipLoginPage) return null;
+    if (await isSamlEnabled()) return "/api/v1/auth/saml/login";
+    if (await isOidcEnabled()) return "/api/v1/auth/oidc/login";
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 // ─── Lockout helpers ────────────────────────────────────────────────────────
@@ -158,9 +197,35 @@ export async function passwordStep(
   password: string,
   ctx: LoginContext,
   hasPasskeySecondFactor: (userId: string) => Promise<boolean>,
-): Promise<PasswordStepResult> {
+): Promise<PasswordStepResult & { authProvider: "local" | "ldap" }> {
   await assertNotLocked(username, ctx, "Login");
   const user = await prisma.user.findUnique({ where: { username: username.trim() }, include: { role: true } });
+
+  // LDAP: an LDAP account, or an unknown name while LDAP is on (just-in-time
+  // provisioning). Same lockout counter; the directory owns MFA.
+  if (user?.authProvider === "ldap" || (!user && (await isLdapEnabled()))) {
+    // The local path always pays one argon2 verify; a name sent to LDAP pays
+    // it too, or "slow" would mean "a local account" on an LDAP install.
+    await verifyPassword(password, null);
+    try {
+      const result = await authenticateLdapUser(username, password);
+      const provisioned = await findOrProvisionLdapUser(result);
+      clearLockout(username);
+      return { user: provisioned, methods: { totp: false, passkey: false }, mustChangePassword: false, rehashed: false, authProvider: "ldap" };
+    } catch {
+      const tripped = await countFailure(username, ctx);
+      await logEvent({
+        action: "auth.login.failed",
+        level: "warning",
+        resourceType: "user",
+        resourceName: username,
+        message: `Failed LDAP login for "${username}"`,
+        details: { ip: ctx.ip, userAgent: ctx.userAgent, failures: tripped.failures },
+      });
+      throw new AppError(401, "Invalid username or password");
+    }
+  }
+
   const stored = user?.authProvider === "local" ? user.passwordHash : null;
   // Constant time: a null stored hash still burns a dummy argon2 verify.
   const { valid, needsRehash } = await verifyPassword(password, stored);
@@ -187,7 +252,7 @@ export async function passwordStep(
   const methods = resolveSecondFactors(user, await hasPasskeySecondFactor(user.id));
   // Cleared only when no factor is owed — see the module header.
   if (!methods.totp && !methods.passkey) clearLockout(username);
-  return { user, methods, mustChangePassword, rehashed: needsRehash };
+  return { user, methods, mustChangePassword, rehashed: needsRehash, authProvider: "local" };
 }
 
 /**

@@ -78,6 +78,7 @@ beforeEach(async () => {
     }),
   };
   prisma.setting = { findUnique: vi.fn().mockResolvedValue(null) };
+  prisma.userPasskey = { count: vi.fn().mockResolvedValue(0) };
   prisma.role = { findUnique: vi.fn(async () => OP_ROLE) };
 });
 

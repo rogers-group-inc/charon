@@ -32,6 +32,135 @@ hand-off (`src/utils/pendingAuth.ts`), never a parallel one.
 
 ---
 
+## services/ssoProvisioning.ts
+
+**What it owns:** the one find-or-provision path for SAML / OIDC / LDAP / App Proxy operators.
+**Public API:** `provisionExternalUser`, `deriveUsername`, `normalizeGroupList`,
+`DEFAULT_SSO_ROLE_NAME`; types `ExternalUserProfile`, `ExternalProvider`.
+**Cross-service deps:** `groupMappingService → resolveGroupsToAccess()`.
+**Used by:** `samlAuthService`, `oidcAuthService`, `ldapAuthService`, `entraProxyAuthService`.
+**Invariants:** a provisioned account has NO password (`passwordHash` null — the local path can
+never sign it in); a login whose groups map nothing keeps an existing user's role (a manual
+assignment is never clobbered) and gives a NEW user the built-in Read-Only role +
+`needsRoleReview`; SAML and App Proxy share `azureOid`, and the last login path owns
+`authProvider` + `ssoGroups`.
+**When changing this:** renaming the Read-Only role breaks the fallback (500 on first SSO login).
+
+---
+
+## services/samlAuthService.ts
+
+**What it owns:** SAML 2.0 operator SSO (`@node-saml`) and the `saml` Setting.
+**Public API:** `getSamlSettings`, `updateSamlSettings`, `defaultSamlSettings`,
+`parseSamlSettings`, `samlBaseUrl`, `isSamlEnabled`, `getSamlLoginUrl`, `validateSamlResponse`,
+`getSamlLogoutUrl`, `findOrProvisionSamlUser`, `testSamlSettings`, `resetSamlForTests`,
+`SAML_CALLBACK_PATH`.
+**Cross-service deps:** `settingsStore`, `ssoProvisioning`, `ssoProbe`,
+`src/utils/samlReplayCache.ts`.
+**Used by:** `src/api/routes/authSso.ts`, `authService` (`getAgentAuthConfig`,
+`skipLoginSsoTarget`).
+**Invariants:** assertions must be signed; a response naming InResponseTo is bound to its
+request; every assertion id is accepted once (process-local cache). The SP base is the
+operator's Application URL, else `CHARON_PUBLIC_URL` — with neither, SAML refuses rather than
+trusting a Host header.
+**When changing this:** the ACS path `/api/v1/auth/saml/callback` is configured at the IdP and
+is CSRF-exempt by prefix (`csrf.ts`); the callback is a cross-site POST, so the session cookie is
+usually absent there.
+
+---
+
+## services/oidcAuthService.ts
+
+**What it owns:** OIDC operator SSO (Authorization Code + PKCE, `openid-client` v6) and the
+`oidc` Setting.
+**Public API:** `getOidcSettings`, `getOidcSettingsForUi`, `updateOidcSettings`,
+`defaultOidcSettings`, `isOidcEnabled`, `getRedirectUri`, `buildAuthorizationUrl`,
+`handleCallback`, `findOrProvisionOidcUser`, `testOidcConnection`, `resetOidcForTests`,
+`OIDC_CALLBACK_PATH`.
+**Cross-service deps:** `settingsStore`, `ssoProvisioning`, `src/utils/settingSecret.ts`.
+**Used by:** `src/api/routes/authSso.ts`, `authService`.
+**Invariants:** `clientSecret` is sealed at rest (rule 3), masked on read, and never reused
+after the discovery URL or client id changes. The redirect URI is `CHARON_PUBLIC_URL`-based when
+set, else the request origin (the IdP only honours registered URIs). state / nonce / PKCE live
+in the session between login and callback.
+**When changing this:** the callback rebuilds the URL on the redirect URI's base — the library
+compares the two.
+
+---
+
+## services/ldapAuthService.ts
+
+**What it owns:** operator sign-in by binding AS the user against LDAP / AD, group lookup, and
+the `ldap` Setting.
+**Public API:** `getLdapSettings`, `getLdapSettingsMasked`, `updateLdapSettings`,
+`defaultLdapSettings`, `isLdapEnabled`, `authenticateLdapUser`, `findOrProvisionLdapUser`,
+`testLdapConnection`, `resetLdapForTests`.
+**Cross-service deps:** `ldapClient` (shared with `activeDirectoryService`), `settingsStore`,
+`ssoProvisioning`, `src/utils/settingSecret.ts`.
+**Used by:** `authService → passwordStep()` (LDAP accounts, and unknown names while LDAP is on),
+`src/api/routes/authSso.ts` (settings / test).
+**Invariants:** empty passwords are refused before any bind; the username is RFC 4515-escaped;
+an unknown name pays a dummy bind (timing); exactly one search match or fail closed;
+`bindPassword` sealed at rest and never reused after the URL or certificate check changes.
+**When changing this:** `tests/unit/ldapLoginTiming.test.ts` pins the bind count.
+
+---
+
+## services/entraProxyAuthService.ts
+
+**What it owns:** Entra Application Proxy header SSO and the `entraProxy` Setting.
+**Public API:** `getEntraProxySettings`, `updateEntraProxySettings`, `isEntraProxyEnabled`,
+`isTrustedEntraProxySource`, `isEntraProxyLoginAvailable`, `extractEntraProxyIdentity`,
+`findOrProvisionEntraProxyUser`, `testEntraProxyRequest`, `identityHeaderNames`,
+`defaultIdentityHeaderNames`, `clearEntraProxySettingsCache`.
+**Cross-service deps:** `settingsStore`, `src/utils/ipAllowlist.ts`, `ssoProvisioning`.
+**Used by:** `src/api/routes/authSso.ts`, `src/api/middleware/entraProxyHeaders.ts`,
+`src/app.ts → sendToSignIn()` (silent auto-login).
+**Invariants:** the headers are UNSIGNED — honoured only from an allowlisted connector source IP
+(`req.ip`, trust-proxy resolved); no allowlist = no header login; untrusted requests have the
+headers stripped (fail closed on a settings read error); duplicate headers are refused; header
+names can never be infrastructure headers.
+**When changing this:** behind a second proxy, `req.ip` is that proxy — the allowlist must name
+what Charon sees.
+
+---
+
+## services/passkeyService.ts
+
+**What it owns:** WebAuthn passkeys for local accounts (`@simplewebauthn/server`) — the
+`passkeyConfig` policy, the register / passwordless-login / second-factor ceremonies, and
+credential CRUD.
+**Public API:** `getPasskeySettings`, `savePasskeySettings`, `defaultPasskeySettings`,
+`normalizeRpId`, `passkeyLoginEnabled`, `passkeySecondFactorEnabled`, `requireRelyingParty`,
+`getPasskeyAvailability`, `anyLoginPasskeyRegistered`, `listPasskeys`, `countPasskeysByUser`,
+`renamePasskey`, `deletePasskey`, `deleteAllPasskeys`, `startRegistration`,
+`finishRegistration`, `startLogin`, `startSecondFactor`, `finishAuthentication`,
+`userHasPasskey`, `invalidatePasskeyCache`, `PASSKEY_SETTING_KEY`.
+**Cross-service deps:** `settingsStore`, `src/utils/webauthnChallenge.ts`,
+`src/utils/webauthnRp.ts`.
+**Used by:** `src/api/routes/authPasskeys.ts`, `src/api/routes/auth.ts` (second-factor check),
+`userService` (admin revoke).
+**Invariants:** a read failure answers mode "off" (never lets a credential sign someone in);
+never provisions a user; passwordless login names no credentials before the assertion
+(no enumeration); a counter going backwards refuses the login (clone signal); RP ID + origin
+are pinned at challenge issue time.
+**When changing this:** passkeys need a secure context and a hostname — `webauthnRp.ts` explains
+the refusals; the default mode is "both" (offering a stronger login refuses nothing).
+
+---
+
+## services/ssoProbe.ts
+
+**What it owns:** the SSRF-guarded "is this IdP URL reachable" probe for the Test buttons.
+**Public API:** `probeIdpUrl`; type `ProbeResult`.
+**Cross-service deps:** `services/credentials/netGuard.ts → isBlockedOutboundHost()`.
+**Used by:** `samlAuthService → testSamlSettings()`.
+**Invariants:** http(s) only, never a blocked range; any HTTP status = reachable; no redirects
+followed.
+**When changing this:** keep the guard ahead of the fetch.
+
+---
+
 ## services/userService.ts
 
 **What it owns:** operator account management for the Users page — list (online dot from the

@@ -23,6 +23,14 @@ declare module "express-session" {
     pendingAuth?: import("../utils/pendingAuth.js").PendingAuth;
     // How this session signed in: "local" | "ldap" | "saml" | "oidc" | "entra-proxy" | "passkey".
     authProvider?: string;
+    // SSO hand-off (pre-auth; dropped by the session rotation at sign-in,
+    // except the SAML logout pair which is stamped after it).
+    samlRelayState?: string;
+    samlNameID?: string;
+    samlSessionIndex?: string;
+    oidcState?: string;
+    oidcNonce?: string;
+    oidcCodeVerifier?: string;
   }
 }
 

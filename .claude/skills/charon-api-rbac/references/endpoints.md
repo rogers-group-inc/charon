@@ -21,8 +21,32 @@ Access gate and are CSRF-exempt (`/api/v1/auth/login` prefix).
   `GET /auth/totp/status`, `POST /auth/totp/enroll`, `POST /auth/totp/confirm` and
   `DELETE /auth/totp` (`totpCodeLimiter`)
 - Settings, `requireAuth` + `authentication` read (GET) / write (PUT):
-  `PUT /auth/password-policy`, `GET|PUT /auth/session-settings`, `GET|PUT /auth/agent-mode`
-  (the endpoint agent's sign-in mode; was `/server-settings/auth-mode`)
+  `PUT /auth/password-policy`, `GET|PUT /auth/session-settings` (turning `skipLoginPage` ON
+  needs a caller signed in via SAML / OIDC and a ready provider), `GET|PUT /auth/agent-mode`
+  (the endpoint agent's sign-in mode; was `/server-settings/auth-mode`),
+  `GET|PUT /auth/login-access` (PUT: `adminActionLimiter`; refuses a scope excluding the
+  caller's own IP; was `PUT /server-settings/login-access`)
+
+### Public — operator SSO (`src/api/routes/authSso.ts`, mounted at `/auth`)
+- `GET  /auth/saml/config`, `/auth/oidc/config`, `/auth/entra-proxy/config` — login-page probes
+  (booleans + a SAML brand hint); `ssoCallbackLimiter`
+- `GET  /auth/saml/login`, `/auth/oidc/login` — redirect to the IdP; `ssoEntryLimiter`
+- `POST /auth/saml/callback` — ACS (cross-site form POST, CSRF-exempt); `ssoCallbackLimiter`
+- `GET  /auth/oidc/callback`; `ssoCallbackLimiter`
+- `POST /auth/saml/logout` (`requireAuth`) — returns the IdP single-logout URL when the session came from SAML
+- `GET  /auth/entra-proxy/login` — App Proxy header login (trusted connector IPs only); `entraProxyLoginLimiter`
+- Every failure redirects to `/login.html?error=…`
+- Settings: `GET /auth/{saml,oidc,ldap,entra-proxy}/settings` (`authentication` read; secrets
+  masked), `PUT …/settings` and `POST …/test` (`authentication` write)
+
+### Passkeys (`src/api/routes/authPasskeys.ts`, mounted at `/auth`)
+- Public: `GET /auth/passkeys/config` (`ssoCallbackLimiter`), `POST /auth/passkeys/login/options`,
+  `POST /auth/passkeys/login` (passwordless; CSRF-exempt), `POST /auth/login/passkey/options`,
+  `POST /auth/login/passkey` (second factor, needs the pending password step) — all
+  `passkeyCeremonyLimiter` + Local Login Access
+- Self (`requireSessionUser`): `GET /auth/passkeys`, `POST /auth/passkeys/register/options`
+  (current password required), `POST /auth/passkeys/register`, `PATCH|DELETE /auth/passkeys/:id`
+- `GET|PUT /auth/passkey-settings` — `authentication` read / write
 
 ### Users — `users read` (`src/api/routes/users.ts`)
 - `GET    /users` — accounts + isOnline / totpEnabled / passkeyCount / needsRoleReview
@@ -141,7 +165,7 @@ declares its own `requirePermission`. "sys" = `serverSettingsSystem`, "data" =
 - `POST /server-settings/agents/cert-pins/bulk-remove` (fullwrite, `adminActionLimiter`) — retire a pin; 409 for the
   served cert's pin; the last pin is never retired (business rule 4a)
 - `GET|PUT /server-settings/ipv6` (read / write),
-  `GET|PUT /login-access` (read / fullwrite)
+  `GET /login-access` (read; the read-only Web Server card — editing is `PUT /auth/login-access`)
 
 **Maintenance + Retention** (`maintenance.ts`, mounted at `/server-settings`)
 - `GET /server-settings/database`, `/capacity-advisor`, `/platform-lifecycle`, `/pg-tuning`,

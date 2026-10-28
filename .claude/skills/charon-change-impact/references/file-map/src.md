@@ -18,10 +18,13 @@ src/
 │   │   ├── csrf.ts           # synchronizer token; agent paths, exactly /ha/enroll, session-less bearers exempt
 │   │   ├── permissions.ts    # dynamic-role matrix: FUNCTION_KEYS, requirePermission, session / API-token role snapshot, escalation guards
 │   │   ├── sessionRevalidate.ts # once a minute per session: user row still exists / role still the same
+│   │   ├── entraProxyHeaders.ts # strip App Proxy identity headers from untrusted sources
 │   │   ├── rateLimits.ts     # login, enroll, agent-login, admin-action, TOTP-code, password-change, passkey, SSO limiters + makeRateLimiter
 │   │   └── errorHandler.ts   # AppError → JSON
 │   └── routes/
 │       ├── auth.ts           # login steps (password / totp / password-change), logout, me, own password + TOTP, password policy, session settings, agent mode
+│       ├── authSso.ts        # SAML / OIDC / App Proxy flows + SAML / OIDC / LDAP / App Proxy settings (mounted at /auth)
+│       ├── authPasskeys.ts   # passkey sign-in, second factor, self-service, passkey policy (mounted at /auth)
 │       ├── users.ts          # operator accounts (Users page)
 │       ├── roles.ts          # role CRUD + /roles/functions catalogue
 │       ├── groupMappings.ts  # IdP group → role mappings (users:fullwrite)
@@ -51,6 +54,8 @@ src/
 │   ├── crypto/identity:      apiTokenService, agentTokenService, authService, verificationService, eventService
 │   ├── operators/auth:       userService, roleService, groupMappingService, sessionRevocationService, passwordPolicyService,
 │   │                         sessionSettingsService, totpService, totpStepService, settingsStore (shared Setting-row cache)
+│   ├── operator SSO:         samlAuthService, oidcAuthService, ldapAuthService, entraProxyAuthService, passkeyService,
+│   │                         ssoProvisioning (find-or-provision), ssoProbe (SSRF-guarded IdP reachability)
 │   ├── integrations:         httpClient, integrationConfig, integrationService, fortimanagerService, fortigateService,
 │   │                         activeDirectoryService, ldapClient, entraIdService, directoryTypes
 │   ├── tags/enforcement:     customGroupService, tagService, tagReconciler, policyService, fortinetEnforcementService
@@ -82,6 +87,12 @@ src/
 │   ├── passwordPolicy.ts     # password complexity rules, pure (evaluate, describe, parse, clamp)
 │   ├── loginLockout.ts       # per-username failure counter / 15-min lockout (process-local)
 │   ├── pendingAuth.ts        # half-finished login (second factor / forced change) held in the session
+│   ├── settingSecret.ts      # sealed + masked secret inside a Setting row; never follows a changed destination
+│   ├── loginRedirect.ts      # post-login landing: charon_next cookie + SAML RelayState
+│   ├── safeRedirect.ts       # reduce an untrusted ?next= to a same-origin path
+│   ├── samlReplayCache.ts    # each SAML assertion accepted once (process-local)
+│   ├── webauthnChallenge.ts  # in-flight passkey ceremonies (single-use, 5 min, process-local)
+│   ├── webauthnRp.ts         # WebAuthn relying party from the request (secure context, hostname, override)
 │   ├── version.ts            # major.minor + git commit count (CHARON_BUILD_COMMIT_COUNT)
 │   ├── paths.ts              # STATE_DIR, ENV_FILE, SETUP_COMPLETE_MARKER, BACKUP_DIR, UPLOADS_DIR, AGENT_DIST_DIR, FIRMWARE_DIR(+_INCOMING_DIR)
 │   ├── metricsServer.ts      # metrics-only listener for enforcer/worker

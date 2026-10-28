@@ -49,7 +49,7 @@ a disagreement. Values shown are placeholders or defaults — never real secrets
 |---|---|---|
 | `CHARON_LEADER_LOCK_KEY` | built-in constant | advisory-lock key both nodes contend on; override only for test isolation |
 | `CHARON_LEADER_RETRY_MS` | `10000` | standby retry interval |
-| `CHARON_PUBLIC_URL` | unset | surfaced to the GSLB via `/health` |
+| `CHARON_PUBLIC_URL` | unset | surfaced to the GSLB via `/health`; the SAML SP base when the SAML "Application URL" is blank; the OIDC redirect-URI base (else the request origin) |
 
 ## In-app updater
 

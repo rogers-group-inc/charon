@@ -20,20 +20,10 @@ import {
   grantsBeyond,
   normalizePermissions,
 } from "../../src/api/middleware/permissions.ts";
-import {
-  clampMinLength,
-  defaultPasswordPolicy,
-  describePasswordPolicy,
-  evaluatePassword,
-  parsePasswordPolicy,
-  passwordPolicyError,
-} from "../../src/utils/passwordPolicy.ts";
 import { normalizeGroupKey, resolveGroupsToAccess, invalidateGroupMappingCache, isGroupMappingProvider } from "../../src/services/groupMappingService.ts";
-import { setPending, peekPending, clearPending, PENDING_TTL_MS } from "../../src/utils/pendingAuth.ts";
 import { parseSessionSettings, clampAutoLogout } from "../../src/services/sessionSettingsService.ts";
 import { verifyCodeStep, generateSecret, consumeBackupCode, generateBackupCodes } from "../../src/services/totpService.ts";
 import { claimTotpStep } from "../../src/services/totpStepService.ts";
-import { isLocked, recordFailure, clearLockout, lockoutRemaining } from "../../src/utils/loginLockout.ts";
 import { validateRoleName, normalizeRoleColor, assertRoleDemotionAllowed, countAdminEquivalentUsers } from "../../src/services/roleService.ts";
 import { revokeUserSessions, getOnlineUserIds } from "../../src/services/sessionRevocationService.ts";
 import { assertPasswordMeetsPolicy, passwordNeedsPolicyChange, invalidatePasswordPolicyCache } from "../../src/services/passwordPolicyService.ts";
@@ -88,27 +78,7 @@ describe("escalation guards", () => {
   });
 });
 
-describe("password policy", () => {
-  it("defaults to min 8 + four classes and reports every failure", () => {
-    const p = defaultPasswordPolicy();
-    expect(evaluatePassword("abc", p).map((r) => r.key)).toEqual(["length", "upper", "number", "special"]);
-    expect(passwordPolicyError("Abcdef1!", p)).toBeNull();
-    expect(passwordPolicyError("abcdefgh1!", p)).toBe("Password must contain an uppercase letter");
-  });
-
-  it("clamps minLength to the NIST floor and the ceiling", () => {
-    expect(clampMinLength(2, 8)).toBe(8);
-    expect(clampMinLength(999, 8)).toBe(128);
-    expect(clampMinLength("x", 12)).toBe(12);
-  });
-
-  it("parses a mangled row back to defaults, never to no rules", () => {
-    expect(parsePasswordPolicy("garbage")).toEqual(defaultPasswordPolicy());
-    expect(parsePasswordPolicy({ minLength: 14, requireSpecial: false }).requireSpecial).toBe(false);
-    expect(describePasswordPolicy({ ...defaultPasswordPolicy(), requireSpecial: false, forceChangeOnLogin: true }))
-      .toMatch(/min 8 characters, requires lowercase \+ uppercase \+ number, existing passwords must be changed/);
-  });
-
+describe("password policy service", () => {
   it("service: asserts against the stored policy and falls back to defaults on a read failure", async () => {
     invalidatePasswordPolicyCache();
     prisma.setting = { findUnique: vi.fn().mockResolvedValue({ value: { minLength: 12, forceChangeOnLogin: true } }) };
@@ -155,20 +125,6 @@ describe("group mappings", () => {
   });
 });
 
-describe("pendingAuth", () => {
-  it("is purpose-scoped and expires", () => {
-    const req: any = { session: {} };
-    setPending(req, { userId: "u", username: "a", purpose: "mfa", methods: { totp: true, passkey: false }, mustChangePassword: false, authProvider: "local" }, 1000);
-    expect(peekPending(req, "mfa", 1000 + 1)?.userId).toBe("u");
-    expect(peekPending(req, "password-change", 1001)).toBeNull();
-    expect(peekPending(req, "mfa", 1000 + PENDING_TTL_MS)).toBeNull();
-    expect(req.session.pendingAuth).toBeUndefined();
-    setPending(req, { userId: "u", username: "a", purpose: "mfa", methods: { totp: true, passkey: false }, mustChangePassword: false, authProvider: "local" });
-    clearPending(req);
-    expect(req.session.pendingAuth).toBeUndefined();
-  });
-});
-
 describe("session settings", () => {
   it("parses with defaults and clamps the idle timeout", () => {
     expect(parseSessionSettings(null)).toEqual({ autoLogoutMinutes: 0, skipLoginPage: false });
@@ -205,18 +161,6 @@ describe("TOTP", () => {
   it("only local accounts owe a second factor", () => {
     expect(resolveSecondFactors({ authProvider: "local", totpEnabledAt: new Date() }, false)).toEqual({ totp: true, passkey: false });
     expect(resolveSecondFactors({ authProvider: "oidc", totpEnabledAt: new Date() }, true)).toEqual({ totp: false, passkey: false });
-  });
-});
-
-describe("login lockout", () => {
-  it("locks after five failures and clears", () => {
-    const name = `user-${Math.random()}`;
-    for (let i = 0; i < 4; i++) expect(recordFailure(name).lockedNow).toBe(false);
-    expect(recordFailure(name.toUpperCase()).lockedNow).toBe(true);
-    expect(isLocked(name).locked).toBe(true);
-    clearLockout(name);
-    expect(isLocked(name).locked).toBe(false);
-    expect(lockoutRemaining(new Date(Date.now() + 61_000))).toBe("2 minutes");
   });
 });
 

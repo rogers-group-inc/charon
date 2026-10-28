@@ -18,11 +18,18 @@ import { z } from "zod";
 import * as authService from "../../services/authService.js";
 import { ensureSessionRoleSnapshot, requirePermission, snapshotFromRole } from "../middleware/permissions.js";
 import { requireAuth, requireSessionUser } from "../middleware/auth.js";
-import { passwordChangeLimiter, totpCodeLimiter } from "../middleware/rateLimits.js";
+import { adminActionLimiter, passwordChangeLimiter, totpCodeLimiter } from "../middleware/rateLimits.js";
 import { prisma } from "../../db.js";
 import { AppError } from "../../utils/errors.js";
 import { logEvent } from "../../services/eventService.js";
-import { isLoginSourceAllowed } from "../../services/webAccessSettingsService.js";
+import {
+  isLoginSourceAllowed,
+  getLoginAccessSettings,
+  loginSourceAllowed,
+  previewLoginAccessSettings,
+  saveLoginAccessSettings,
+} from "../../services/webAccessSettingsService.js";
+import { describeIpScope } from "../../utils/ipScope.js";
 import { revokeUserSessions } from "../../services/sessionRevocationService.js";
 import { getPasswordPolicy, savePasswordPolicy } from "../../services/passwordPolicyService.js";
 import { getSessionSettings, saveSessionSettings, AUTO_LOGOUT_MAX_MINUTES } from "../../services/sessionSettingsService.js";
@@ -35,6 +42,7 @@ import {
 import { passwordInputSchema } from "../../utils/password.js";
 import { setPending, peekPending, clearPending } from "../../utils/pendingAuth.js";
 import { isLocked } from "../../utils/loginLockout.js";
+import { getPasskeySettings, passkeySecondFactorEnabled, userHasPasskey } from "../../services/passkeyService.js";
 
 // Capped: a failed login's Event carries whatever was typed, unauthenticated.
 const LoginSchema = z.object({
@@ -59,10 +67,16 @@ const SessionSettingsSchema = z.object({
   skipLoginPage: z.boolean().optional(),
 });
 const AgentModeSchema = z.object({ mode: z.enum(["local", "saml", "oidc"]) });
+const LoginAccessSchema = z.object({
+  enabled: z.boolean().optional(),
+  ipScope: z.enum(["rfc1918", "all", "custom"]).optional(),
+  // CIDR validation + normalization happens in the service.
+  allowedCidrs: z.array(z.string().max(64)).max(200).optional(),
+});
 
 const router = Router();
 
-const ctxOf = (req: Request): authService.LoginContext => ({ ip: req.ip, userAgent: req.get("user-agent") || undefined });
+export const ctxOf = (req: Request): authService.LoginContext => ({ ip: req.ip, userAgent: req.get("user-agent") || undefined });
 
 // ─── Session helpers ────────────────────────────────────────────────────────
 
@@ -96,15 +110,20 @@ export function stampLoginSession(req: Request, user: authService.UserWithRole, 
 }
 
 /** Issue the session for a fully authenticated user and answer the client. */
-async function finishLogin(req: Request, res: Response, user: authService.UserWithRole, authProvider: string, method: string): Promise<void> {
+export async function finishLogin(req: Request, res: Response, user: authService.UserWithRole, authProvider: string, method: string): Promise<void> {
   await regenerateSession(req);
   stampLoginSession(req, user, authProvider);
   await authService.recordLogin(user, method, ctxOf(req));
   res.json({ ok: true, username: user.username, role: user.role.name });
 }
 
+/** Passkeys count as a second factor when the install allows it AND the account holds one. */
+async function passkeySecondFactorFor(userId: string): Promise<boolean> {
+  return passkeySecondFactorEnabled(await getPasskeySettings()) && (await userHasPasskey(userId));
+}
+
 /** Every factor passed but the password fails a forced-change policy: park the session-less login. */
-async function demandPasswordChange(req: Request, res: Response, user: authService.UserWithRole, via: string): Promise<void> {
+export async function demandPasswordChange(req: Request, res: Response, user: authService.UserWithRole, via: string): Promise<void> {
   setPending(req, {
     userId: user.id,
     username: user.username,
@@ -118,9 +137,10 @@ async function demandPasswordChange(req: Request, res: Response, user: authServi
 }
 
 // Local Login Access (Users → Authentication → Settings): optional source-IP
-// scope on the LOCAL credential paths only — SSO is never restricted. Fails
-// open on a settings read error so a DB blip is never a lockout.
-async function assertLoginSourceAllowed(req: Request): Promise<void> {
+// scope on the LOCAL credential paths only (password incl. LDAP, TOTP, forced
+// change, passkeys) — SSO is never restricted. Fails open on a settings read
+// error so a DB blip is never a lockout.
+export async function assertLoginSourceAllowed(req: Request): Promise<void> {
   if (!(await isLoginSourceAllowed(req.ip ?? ""))) {
     throw new AppError(403, "Local login is not permitted from this network");
   }
@@ -133,7 +153,7 @@ router.post("/login", async (req, res, next) => {
     await assertLoginSourceAllowed(req);
     const { username, password } = LoginSchema.parse(req.body);
     clearPending(req);
-    const result = await authService.passwordStep(username, password, ctxOf(req), async () => false);
+    const result = await authService.passwordStep(username, password, ctxOf(req), passkeySecondFactorFor);
     const { user, methods, mustChangePassword } = result;
 
     if (methods.totp || methods.passkey) {
@@ -141,7 +161,7 @@ router.post("/login", async (req, res, next) => {
       return res.json({ mfaRequired: true, methods });
     }
     if (mustChangePassword) return demandPasswordChange(req, res, user, "password");
-    await finishLogin(req, res, user, "local", result.rehashed ? "local, rehashed" : "local");
+    await finishLogin(req, res, user, result.authProvider, result.rehashed ? "local, rehashed" : result.authProvider);
   } catch (err) {
     next(err);
   }
@@ -330,6 +350,18 @@ router.put("/session-settings", requireAuth, requirePermission("authentication",
   try {
     const input = SessionSettingsSchema.parse(req.body ?? {});
     const before = await getSessionSettings();
+    // Lockout guard: hiding the login page bounces every visitor to SSO, so
+    // turning it ON needs a working SSO provider AND a caller who is signed in
+    // through SSO right now (proof the round trip works). Turning it off is
+    // always allowed — that is the recovery path. ?local=1 still shows the form.
+    if (input.skipLoginPage === true && !before.skipLoginPage) {
+      if (req.session?.authProvider !== "saml" && req.session?.authProvider !== "oidc") {
+        throw new AppError(400, "Enable “Skip login page” only while signed in through SAML or OIDC — that proves SSO works before the login page is hidden.");
+      }
+      if (!(await authService.ssoProviderReady())) {
+        throw new AppError(400, "Configure and enable a SAML or OIDC provider before enabling “Skip login page”.");
+      }
+    }
     const updated = await saveSessionSettings(input);
     await logEvent({
       action: "session_settings.updated",
@@ -340,6 +372,45 @@ router.put("/session-settings", requireAuth, requirePermission("authentication",
       details: { before, after: updated },
     });
     res.json(updated);
+  } catch (err) { next(err); }
+});
+
+// ─── Local Login Access (source-IP scope on the local credential paths) ─────
+
+router.get("/login-access", requireAuth, requirePermission("authentication", "read"), async (req, res, next) => {
+  try {
+    // callerIp reveals a trust-proxy misconfiguration before the scope is relied on.
+    res.json({ loginAccess: await getLoginAccessSettings(), callerIp: req.ip ?? "" });
+  } catch (err) { next(err); }
+});
+
+router.put("/login-access", adminActionLimiter, requireAuth, requirePermission("authentication", "write"), async (req, res, next) => {
+  try {
+    const input = LoginAccessSchema.parse(req.body ?? {});
+    const before = await getLoginAccessSettings();
+    // Anti-lockout: refuse a scope that excludes the admin saving it.
+    const prospective = await previewLoginAccessSettings(input);
+    const callerIp = req.ip ?? "";
+    if (prospective.enabled && !loginSourceAllowed(callerIp, prospective)) {
+      throw new AppError(
+        400,
+        `Your own source IP (${callerIp || "unknown"}) is outside that scope — saving it would lock you out of the local login page. ` +
+          "Add a network covering it, or apply the restriction from an allowed network.",
+      );
+    }
+    const updated = await saveLoginAccessSettings(input);
+    await logEvent({
+      level: updated.enabled ? "warning" : "info",
+      action: "login_access.updated",
+      resourceType: "setting",
+      resourceName: "loginAccessConfig",
+      actor: req.session?.username ?? req.apiToken?.name,
+      message: updated.enabled
+        ? `Local login restricted to ${describeIpScope(updated.ipScope, updated.allowedCidrs)}`
+        : "Local login source-IP restriction removed",
+      details: { before, after: updated },
+    });
+    res.json({ loginAccess: updated, callerIp });
   } catch (err) { next(err); }
 });
 

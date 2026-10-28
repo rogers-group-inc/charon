@@ -34,7 +34,7 @@ import * as aliasService from "../../../services/credentials/manufacturerAliasSe
 import { probeCredentialAgainstHost, snmpWalkRaw } from "../../../services/credentials/credentialProbeService.js";
 import { type HttpProbeDiagnostics } from "../../../services/credentials/httpCheck.js";
 import { normalizeProbeTarget } from "../../../services/credentials/probeTarget.js";
-import { resolveAllowedHost, guardedLookup } from "../../../services/credentials/netGuard.js";
+import { resolveAllowedHost, guardedLookup } from "../../../utils/netGuard.js";
 import {
   listMibs,
   getMib,

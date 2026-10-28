@@ -19,7 +19,16 @@ The repo has three compose files; only `compose.dev.yml` is the per-worktree dev
 
 ## Bring it up
 
-From the worktree root (the stack bind-mounts the worktree, so hot reload edits this branch):
+From the worktree root (the stack bind-mounts the worktree's `src/`, `public/`, `prisma/`):
+
+> **Trap (2026-10-28): the app container may be running `node dist/index.js`, not tsx.** On
+> this PC podman compose has built the app from the production `Dockerfile` rather than
+> `Dockerfile.dev`. The bind-mounted `public/` is then live, but the server code is the `dist/`
+> compiled at stack creation, and `up -d --build` on a running stack re-tags the image without
+> recreating the container. File events from a Windows bind mount don't reach `--watch` in the
+> podman VM anyway. After server changes: `down` (no `-v`) then `up -d --build`, and confirm with
+> `podman exec <app> sh -c "tr '\0' ' ' < /proc/2/cmdline"` and `ls dist/<new file>` before
+> trusting a live test.
 
     podman machine start                                  # idempotent
     printf '%s %s\n' "$(date -u +%FT%TZ)" "dev stack charon-<slug> pg=<pgport> app=<appport>" > DEVLOCK

@@ -3,7 +3,8 @@
  *
  * pg-boss is the ONLY coordination channel between roles (no direct
  * process-to-process coupling). Queues:
- *   - charon.directory-sync   — worker: pull users/groups/OUs from AD/Entra/Intune
+ *   - charon.directory-sync   — worker: one directory discovery run (AD / Entra+Intune
+ *                               users, groups, OUs, devices) — jobs/directoryDiscoveryJob.ts
  *   - charon.tag-reconcile    — worker: recompute an endpoint's effective tag set
  *   - charon.enforcement-sync — enforcer: apply tag/policy deltas to Fortinet
  *   - charon.posture-eval     — worker: evaluate posture → PostureState

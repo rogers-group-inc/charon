@@ -4,12 +4,12 @@
  *
  * The URL is operator-supplied, so it is SSRF-guarded like integration hosts:
  * http(s) only, and never a blocked range (loopback, link-local / cloud
- * metadata, multicast — credentials/netGuard.ts). Any HTTP status counts as
+ * metadata, multicast — utils/netGuard.ts). Any HTTP status counts as
  * reachable (an IdP login endpoint answers a bare HEAD with 200, 302 or 405);
  * only a transport failure is a failure. Redirects are not followed.
  */
 
-import { isBlockedOutboundHost } from "./credentials/netGuard.js";
+import { isBlockedOutboundHost } from "../utils/netGuard.js";
 
 export interface ProbeResult {
   ok: boolean;

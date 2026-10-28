@@ -3,7 +3,9 @@
 Moved verbatim from TEMPLATES.md (its frontend entries).
 
 ### Table / modal / toast (frontend)
-**Ref:** `public/js/integrations.js` (cards + data-driven modal) and
+**Ref:** `public/js/integrations.js` (ported from polaris: integration-card list +
+the script-built `openIntegrationModal` shell with one form builder per type, folder-card
+page, read-only API consoles, live discovery pill) and
 `public/js/endpoints.js` (table + modal). Use `window.api.{get,post,put,patch,del}`,
 `window.Charon.{init,toast,escapeHtml,can}`. Tabs: the folder-tabs section below.
 Polaris design system: `.layout` shell, `.page-header > h2`, `.table-wrapper >

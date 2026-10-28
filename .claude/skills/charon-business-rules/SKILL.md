@@ -1,6 +1,6 @@
 ---
 name: charon-business-rules
-description: "The numbered Charon business rules — each invariant and the incident that forced it. Load BEFORE changing any behavior around Fortinet writes and the charon-* ownership namespace, the dry-run / enforce toggle (EnforcementMode), at-rest secrets and their masking, bearer / API-token / invitation-code hashing, CHARON_DATA_KEY, agent trust (leaf-cert pin, dual-pin rotation, bearer revocation), leader election and which schedulers run where, API-token role binding, HA node enrollment, Credentials-tab secrets, process roles and roleConfig() flags, or anything that could put secrets, hostnames or real data into this public repo; whenever code, a commit or a doc cites 'business rule N' / 'rule N' / 'rule Na'; and when asked to add or retire a rule, or which rule number is free next."
+description: "The numbered Charon business rules — each invariant and the incident that forced it. Load BEFORE changing any behavior around Fortinet writes and the charon-* ownership namespace, outbound SSH / TLS trust-on-first-use pins (SshHostKey, TlsCertPin) and a stored secret following its destination, agent push deployment (install scripts, the enrollment preseed, installer SHA-256), the dry-run / enforce toggle (EnforcementMode), at-rest secrets and their masking, bearer / API-token / invitation-code hashing, CHARON_DATA_KEY, agent trust (leaf-cert pin, dual-pin rotation, bearer revocation), leader election and which schedulers run where, API-token role binding, HA node enrollment, Credentials-tab secrets, process roles and roleConfig() flags, or anything that could put secrets, hostnames or real data into this public repo; whenever code, a commit or a doc cites 'business rule N' / 'rule N' / 'rule Na'; and when asked to add or retire a rule, or which rule number is free next."
 user-invocable: false
 ---
 
@@ -42,6 +42,8 @@ rule from 8 on has a narrative file.
 | change API-token auth, token roles, CSRF for bearers | 8 |
 | change who may create / re-role / reset an account, edit a role matrix, or map an IdP group | 10 |
 | store a provider secret (OIDC, LDAP) in a Setting row | 3, 3b |
+| open an outbound SSH / HTTPS connection that carries a secret; edit an integration's host / TLS | 11, 11a |
+| push-deploy, upgrade or uninstall the agent; change an install script or the enrollment preseed | 12 |
 | change HA node enrollment or the `/ha/enroll` surface | 9 |
 | add a scheduler, a periodic job, anything that must run exactly once | 5 |
 | gate code on the process role | 6 |
@@ -69,7 +71,9 @@ rule from 8 on has a narrative file.
 - Narratives (rules 1–7 and lettered clauses on them have none by design):
   [references/narrative-8.md](references/narrative-8.md) (rule 8),
   [references/narrative-9.md](references/narrative-9.md) (rule 9),
-  [references/narrative-10.md](references/narrative-10.md) (rule 10).
+  [references/narrative-10.md](references/narrative-10.md) (rule 10),
+  [references/narrative-11.md](references/narrative-11.md) (rule 11),
+  [references/narrative-12.md](references/narrative-12.md) (rule 12).
 
 ## Index
 
@@ -88,6 +92,9 @@ rule from 8 on has a narrative file.
 | 8 | API tokens act only through their bound role | invariants | narrative-8 |
 | 9 | An HA enrollment token buys only the right to ask | invariants | narrative-9 |
 | 10 | Nobody grants authority they do not hold | invariants | narrative-10 |
+| 11 | A secret is never sent to an unauthenticated server (SSH host key / TLS cert TOFU pins) | invariants | narrative-11 |
+| 11a | A stored secret follows its destination | invariants | narrative-11 |
+| 12 | A push deploy runs as root only behind fullwrite, a pinned transport, a verified installer and a sealed single-use code | invariants | narrative-12 |
 
 Related: `charon-change-impact` (where each rule is enforced in code),
 `charon-enforcement` (rules 1, 2, 5 in the pipeline), `charon-agent` (rule 4).

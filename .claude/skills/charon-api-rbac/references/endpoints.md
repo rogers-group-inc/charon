@@ -87,12 +87,29 @@ Access gate and are CSRF-exempt (`/api/v1/auth/login` prefix).
 - `GET    /endpoints/:id`                — includes tags
 - `POST   /endpoints/:id/revoke`         — `endpoints write`
 
+### Agent push deployments — `endpoints read` (`src/api/routes/agentDeploy.ts`, mounted at `/agent-deployments`)
+- `GET    /agent-deployments`                — list (never the invitation code id)
+- `POST   /agent-deployments`                — 202; bulk targets, transport, credential — **`endpoints fullwrite`**, `adminActionLimiter` (business rule 12)
+- `POST   /agent-deployments/:id/retry`      — retry / reinstall (fresh single-use code) — **`endpoints fullwrite`**
+- `POST   /agent-deployments/:id/upgrade`    — **`endpoints fullwrite`**
+- `POST   /agent-deployments/:id/uninstall`  — revokes the endpoint's bearer — **`endpoints fullwrite`**
+- `DELETE /agent-deployments/:id`            — forget the record — **`endpoints fullwrite`**
+
+### Public — agent installer download (`src/api/routes/agentBinary.ts`)
+- `GET    /agents/binary/:file` — manifest installers only, `agentBinaryLimiter`; mounted BEFORE `/agents` (whose router demands a bearer). The Windows push install pulls from here pinning the agent cert and checking the SHA-256.
+
 ### Integrations — `integrations read` (`src/api/routes/integrations.ts`)
 - `GET    /integrations/types`
 - `GET    /integrations`, `GET /integrations/:id` — secrets masked
-- `POST   /integrations`, `PUT /integrations/:id`, `DELETE /integrations/:id` — `integrations write`
+- `GET    /integrations/health-summary` — enabled integrations whose last test failed (sidebar poll)
+- `GET    /integrations/discoveries` — queued / running discovery runs
+- `GET    /integrations/:id/fmg-activity` — FortiManager worker-lane snapshot (fortimanager only)
+- `POST   /integrations`, `PUT /integrations/:id`, `DELETE /integrations/:id` — `integrations write`; the config is parsed with its type's schema on create AND update (`CONFIG_SCHEMAS`; SSRF host guard)
 - `POST   /integrations/:id/test`, `POST /integrations/test` (unsaved config) — `integrations write`
-- `POST   /integrations/:id/discover` — `integrations write`
+- `POST   /integrations/:id/test/fortigate-sample` — FMG direct mode, one random managed gate — `integrations write`
+- `POST   /integrations/:id/discover` — 202, queues a run (directory sources only) — `integrations write`
+- `DELETE /integrations/:id/discover` — cancel a run — **`integrations fullwrite`**
+- `POST   /integrations/:id/query` — READ-ONLY API console with the stored credentials (FMG `get`, FortiGate / Graph GET, LDAP search), audited — **`integrations fullwrite`**
 - `PATCH  /integrations/:id/enforcement` — **`enforcement fullwrite`** (dry_run ⇄ enforce)
 - `GET    /integrations/:id/enforcement-state` — `enforcement read`
 
@@ -164,6 +181,16 @@ declares its own `requirePermission`. "sys" = `serverSettingsSystem`, "data" =
 - `POST /server-settings/agents/cert-pins/bulk-add` (fullwrite, `adminActionLimiter`) — stage a pin
 - `POST /server-settings/agents/cert-pins/bulk-remove` (fullwrite, `adminActionLimiter`) — retire a pin; 409 for the
   served cert's pin; the last pin is never retired (business rule 4a)
+
+**Agents** (`agents.ts`, mounted at `/server-settings`; ported from polaris)
+- `GET|PUT /server-settings/agents/windows-ssh` (sys read / write) — SSH Deployment onboarding config
+- `POST /server-settings/agents/windows-ssh/generate` (sys write **+ `credentials write`**, `adminActionLimiter`) — the deployment keypair
+- `GET /server-settings/agents/windows-ssh/script?platform=&kind=` (sys read) — onboarding remediation / detection script
+- `GET /server-settings/agents/script-publish/targets` (sys read); `POST /script-publish/intune` (sys write **+ `integrations fullwrite`**) — always UNASSIGNED
+- `GET /server-settings/agents/ssh-host-keys`, `GET /tls-cert-pins`, `GET /archived-host-pins` (sys read); `DELETE /ssh-host-keys/:id`, `DELETE /tls-cert-pins/:id`, `POST /tls-cert-pins/:id/trust {fingerprint}` (sys write) — business rule 11
+- `GET|PUT /server-settings/agents/server-url` (sys read / write) — override + effective URL (allowlisted)
+- `GET /server-settings/agents/installed`, `/installed-summary` (`endpoints read`)
+- `POST /server-settings/agents/upgrade-all` (sys write **+ `endpoints fullwrite`**, `adminActionLimiter`)
 - `GET|PUT /server-settings/ipv6` (read / write),
   `GET /login-access` (read; the read-only Web Server card — editing is `PUT /auth/login-access`)
 

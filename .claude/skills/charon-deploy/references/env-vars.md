@@ -26,6 +26,7 @@ a disagreement. Values shown are placeholders or defaults — never real secrets
 | `CHARON_METRICS_BIND` | `127.0.0.1` | |
 | `DATABASE_POOL_SIZE` | `25` | |
 | `CHARON_PGBOSS_POOL_SIZE` | `10` | |
+| `CHARON_FORTIOS_PER_GATE_CONCURRENCY` | `2` | in-flight FortiOS REST requests per FortiGate (`src/utils/fortiosRequestGate.ts`); keep below FortiOS's API-key lockout threshold (3 failed authorisations) |
 | `CHARON_ADVISOR_PROCESS_COUNT` | unset → 1 when the role is `all`, else 4 | how many app processes open DB pools — the Capacity Advisor's `max_connections` sizing (`src/services/capacityAdvisorService.ts → estimateProcessCount()`) |
 
 ## State and container detection

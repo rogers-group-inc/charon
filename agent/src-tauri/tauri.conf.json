@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Charon Agent",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "identifier": "com.rogersgroup.charon.agent",
   "build": {
     "frontendDist": "../ui"
@@ -23,7 +23,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["msi", "nsis", "app", "dmg", "appimage", "deb"],
+    "targets": ["msi", "nsis", "app", "dmg", "appimage", "deb", "rpm"],
     "icon": ["icons/icon.png"],
     "category": "Utility",
     "shortDescription": "Charon ZTNA endpoint agent",

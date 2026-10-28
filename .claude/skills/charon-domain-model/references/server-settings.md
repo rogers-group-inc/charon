@@ -35,7 +35,7 @@ model — see tags-enforcement.md.
   Unique on `(manufacturer, model, moduleName)`; `manufacturer` null = generic.
 - **ManufacturerProfile** — an operator-editable per-manufacturer SNMP telemetry profile;
   `manufacturer` is the canonical (alias-mapped) form. `matchPattern` is an operator regex
-  (`src/services/credentials/safeRegex.ts` guards it).
+  (`src/utils/safeRegex.ts` guards it).
 - **ManufacturerProfileMetric** — one row per System-tab metric a profile owns, unique on
   `(profileId, metricKey)`; cascades with the profile.
 - **ManufacturerProfileMetricOverride** — a scoped row under a metric (device-type default,

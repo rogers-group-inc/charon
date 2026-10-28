@@ -23,10 +23,11 @@
 
 import { prisma } from "../db.js";
 import { decryptConfig } from "./integrationConfig.js";
-import { fgWrite, type FortiGateConfig } from "./fortigateService.js";
+import { fgGet, fgWrite, type FortiGateConfig } from "./fortigateService.js";
 import { logEvent } from "./eventService.js";
 import { recordEnforcementApply, setEnforcementDrift } from "../metrics.js";
 import { logger } from "../utils/logger.js";
+import { AppError } from "../utils/errors.js";
 
 const PREFIX = "charon-";
 
@@ -162,13 +163,16 @@ async function applyDirectFortiGate(
  *  group if missing. Reads the current members (the group is charon-owned, so
  *  this is not rewriting an operator object), then writes the new member set. */
 async function ensureGroupMember(cfg: FortiGateConfig, group: string, member: string, present: boolean): Promise<void> {
-  const { fgGet } = await import("./fortigateService.js");
   let members: string[] = [];
   let exists = true;
   try {
-    const res = await fgGet<{ results?: Array<{ member?: Array<{ name: string }> }> }>(cfg, `/api/v2/cmdb/firewall/addrgrp/${encodeURIComponent(group)}`);
-    members = (res.results?.[0]?.member ?? []).map((m) => m.name);
-  } catch {
+    // fgGet unwraps the FortiOS envelope to `results` (an array for a CMDB table path).
+    const rows = await fgGet<Array<{ member?: Array<{ name: string }> }>>(cfg, `/api/v2/cmdb/firewall/addrgrp/${encodeURIComponent(group)}`);
+    members = (rows?.[0]?.member ?? []).map((m) => m.name);
+  } catch (err) {
+    // Only "not found" means "create it". Any other failure (auth pause, 5xx,
+    // transport) must surface — treating it as absent would POST a duplicate.
+    if (!(err instanceof AppError) || err.httpStatus !== 404) throw err;
     exists = false;
   }
   const set = new Set(members);

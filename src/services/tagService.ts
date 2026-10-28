@@ -6,9 +6,10 @@
  * currently holds and WHY (audit breadcrumb) — the heart of the reconciler.
  *
  * Matching by source kind:
- *   directory_group → the bound user is a member of the group (memberOf DN /
- *                     group externalId). [Entra group membership requires the
- *                     richer discovery added later; AD memberOf works today.]
+ *   directory_group → the bound user is a member of the group: the source's
+ *                     ref equals an entry of the user's attributes.memberOf —
+ *                     a group DN for AD, a (transitive) group object id for
+ *                     Entra (discovery/directoryDiscovery).
  *   directory_ou    → the bound user's DN sits under the OU's DN.
  *   custom_group    → the bound user is in the resolved custom-group member set.
  *   posture         → the endpoint's PostureState equals the source ref.

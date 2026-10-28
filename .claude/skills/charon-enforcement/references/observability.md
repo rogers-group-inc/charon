@@ -8,7 +8,10 @@ metrics-only server (enforcer/worker). Series: `charon_http_request_duration`,
 `charon_agent_ws_connections`, `charon_tag_reconcile_duration`,
 `charon_enforcement_apply_total`, `charon_enforcement_drift`,
 `charon_integration_test_total`, `charon_discovery_duration`, `charon_is_leader`,
-`charon_pgboss_queue_jobs`, `charon_job_duration`/`_total`, `charon_process_role`.
+`charon_pgboss_queue_jobs`, `charon_job_duration`/`_total`, `charon_process_role`,
+`charon_fmg_worker_queue_depth` / `charon_fmg_worker_inflight` /
+`charon_fmg_worker_native_inflight` (per FortiManager integration: the proxy lane's queue and
+in-flight flag, the native lane's in-flight count — `fmgWorker.ts`).
 
 ## Conventions
 

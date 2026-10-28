@@ -16,63 +16,42 @@
   <div class="layout">
     <aside class="sidebar" id="sidebar"></aside>
     <main class="main">
+      <div class="page-top-sticky">
       <div class="page-header">
         <h2>Integrations</h2>
-        <div class="page-header-actions">
-          <button class="btn btn-primary" id="addBtn">+ Integration</button>
-        </div>
+        <div class="page-header-actions" id="page-header-actions"></div>
       </div>
 
-      <p class="muted">
-        FortiManager &amp; FortiGate are enforcement targets; Active Directory,
-        Entra ID &amp; Intune are directory / posture sources. Secrets are
-        encrypted at rest and never shown after saving. Discovery is read-only.
-      </p>
+      <!-- Folder tabs over one page-sized card (polaris's Integrations layout,
+           styles.css "Folder CARD"). One tab today; the strip is where a second
+           panel slots in. -->
+      <div class="table-head-row folder-head-card">
+        <div class="page-tabs page-tabs-glass" id="integration-tabs">
+          <button class="page-tab active" data-tab="integrations">Integrations</button>
+        </div>
+        <!-- + Add Integration sits at the card's top right (polaris). -->
+        <div class="table-head-controls">
+          <button class="btn btn-primary" id="btn-add-integration" style="display:none">+ Add Integration</button>
+        </div>
+      </div>
+      </div>
 
-      <div id="cards" class="dashboard-grid" style="margin-top:1rem">
-        <div class="empty-state">Loading…</div>
+      <div class="folder-card folder-body">
+      <div class="folder-card-scroll">
+      <div class="page-tab-panel active" id="tab-integrations">
+        <div id="integrations-health"></div>
+        <div id="integrations-list">
+          <p class="empty-state">Loading...</p>
+        </div>
+      </div>
+      </div>
       </div>
     </main>
   </div>
 
-  <div class="modal-overlay" id="modal">
-    <div class="modal">
-      <div class="modal-header">
-        <h3 id="modalTitle">Add Integration</h3>
-        <span style="flex:1"></span>
-        <span class="modal-lock" title="Secrets are encrypted at rest (AES-256-GCM)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-        </span>
-        <button class="btn-icon" id="cancelBtn" aria-label="Close">&times;</button>
-      </div>
-      <div class="modal-body">
-        <!-- Step 1: type picker -->
-        <div id="typePicker">
-          <p class="muted" style="margin-top:0">Select the type of integration to add:</p>
-          <div class="type-picker" id="typeCards"></div>
-        </div>
-        <!-- Step 2: config form -->
-        <form id="cfgForm" hidden>
-          <select id="fType" style="display:none"></select>
-          <div class="form-group">
-            <label for="fName">Name</label>
-            <input id="fName" type="text" required>
-          </div>
-          <div id="typeFields"></div>
-          <p id="testResult" class="muted"></p>
-          <p id="modalError" class="form-error" hidden></p>
-        </form>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" id="backBtn" hidden>← Back</button>
-        <span style="flex:1"></span>
-        <button type="button" class="btn btn-secondary" id="testBtn" hidden>Test</button>
-        <button type="submit" class="btn btn-primary" id="saveBtn" form="cfgForm" hidden>Save</button>
-      </div>
-    </div>
-  </div>
-
+  <script src="/js/page-top-curtain.js"></script>
   <script src="/js/api.js"></script>
+  <script src="/js/folder-tabs.js"></script>
   <script src="/js/brand-logo.js"></script>
   <script src="/js/app.js"></script>
   <span id="polaris-nav-ready" hidden></span>

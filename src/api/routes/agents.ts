@@ -26,6 +26,7 @@ import { requireAgentBearer } from "../middleware/auth.js";
 import { agentLoginLimiter } from "../middleware/rateLimits.js";
 import { prisma } from "../../db.js";
 import { enqueueReconcile } from "../../jobs/tagReconcileJob.js";
+import { AGENT_HEARTBEAT_INTERVAL_SEC } from "../../jobs/endpointSilenceJob.js";
 import { AppError } from "../../utils/errors.js";
 
 // ─── Public: enrollment ──────────────────────────────────────────────────────
@@ -38,6 +39,10 @@ const enrollSchema = z.object({
   osVersion: z.string().optional(),
   arch: z.string().optional(),
   agentVersion: z.string().optional(),
+  // SHA-256 (hex) of the leaf certificate the agent saw on this connection. A
+  // pinned agent (push-deployed preseed) sends it; when present it must be one
+  // of the agent pins, or the enrollment is refused and the code burned.
+  observedFingerprint: z.string().regex(/^[0-9a-fA-F]{64}$/).optional(),
 });
 
 agentsEnrollRouter.post("/", async (req, res, next) => {
@@ -80,7 +85,7 @@ agentsRouter.get("/config", async (req, res, next) => {
     // Record the pin set this agent was handed — Server Settings → Web Server's
     // rotate dialog tallies uptake from it. Best-effort: never fail the config.
     await recordDeliveredPins(req.agent!.endpointId, pins).catch(() => undefined);
-    res.json({ serverCertPins: pins, authMode: mode, heartbeatIntervalSec: 60 });
+    res.json({ serverCertPins: pins, authMode: mode, heartbeatIntervalSec: AGENT_HEARTBEAT_INTERVAL_SEC });
   } catch (err) { next(err); }
 });
 

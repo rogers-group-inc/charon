@@ -62,6 +62,7 @@ enum DirectoryObjectKind {
   user
   group
   ou
+  device // a computer object (AD) or Entra / Intune device — deployment targets + device facts
 }
 
 /// Per-integration enforcement mode. dry_run (default) logs intended Fortinet
@@ -194,7 +195,7 @@ model Setting {
 
 model Integration {
   id              String    @id @default(uuid())
-  type            String // "fortimanager" | "fortigate" | "activedirectory" | "entraid" | "intune"
+  type            String // "fortimanager" | "fortigate" | "activedirectory" | "entraid" (Intune = entraid config.enableIntune)
   name            String
   config          Json      @default("{}") // connection settings; secret fields are AES-256-GCM envelopes
   enabled         Boolean   @default(true)
@@ -218,6 +219,86 @@ model Integration {
   @@map("integrations")
 }
 
+/// Live state of an integration's discovery run (ported from Polaris). One row
+/// per integration: the web process enqueues it, the worker runs it and heartbeats
+/// `workerHeartbeatAt`; the leader's reaper fails a run whose worker went silent.
+/// The device counters are for the Fortinet types (FortiGates reached under a
+/// FortiManager); a directory run reports its object counts in `completedCount`.
+model DiscoveryRun {
+  id                  String    @id @default(uuid())
+  integrationId       String    @unique
+  integrationName     String
+  type                String // mirrors Integration.type
+  status              String    @default("queued") // queued | running | completed | aborted | error
+  actor               String // who triggered it (username or "auto-discovery")
+  startedAt           DateTime? // set by the worker at run start
+  updatedAt           DateTime  @updatedAt
+  finishedAt          DateTime?
+  totalDevices        Int?
+  completedCount      Int       @default(0)
+  skippedOfflineCount Int       @default(0)
+  skippedErrorCount   Int       @default(0)
+  activeDevices       Json      @default("[]") // [{ name, startedAt }]
+  slowAlerted         Boolean   @default(false)
+  slowAlertedDevices  Json      @default("[]") // string[] of device names already slow-alerted
+  cancelRequested     Boolean   @default(false) // web sets this; the worker polls it and aborts
+  workerHeartbeatAt   DateTime? // last write from the worker; drives the stale-run reaper
+  scopeDeviceName     String? // set when the run is scoped to one FortiGate; NULL = full run
+  createdAt           DateTime  @default(now())
+
+  @@index([status])
+  @@map("discovery_runs")
+}
+
+/// Trust-on-first-use pin of an SSH server's host key (ported from Polaris). Every
+/// outbound SSH connection (credential probes, agent push install / upgrade /
+/// uninstall) pins the first key seen for host:port and refuses a different key
+/// BEFORE authenticating, unless its credential sets `verifyHostKey: false`.
+/// Plain table, no Endpoint FK — a target is pinned before it has enrolled, and
+/// the pin is keyed by the address actually dialed. Deleting a row re-opens
+/// first-use trust for that host (the documented re-key recovery; audited).
+model SshHostKey {
+  id          String   @id @default(uuid())
+  host        String
+  port        Int      @default(22)
+  keyType     String // "ssh-ed25519", "ecdsa-sha2-nistp256", "ssh-rsa", ...
+  fingerprint String // "SHA256:<base64, unpadded>" — same form `ssh-keygen -lf` prints
+  firstSeen   DateTime @default(now())
+  lastSeen    DateTime @default(now())
+
+  @@unique([host, port])
+  @@map("ssh_host_keys")
+}
+
+/// Trust-on-first-use pin of the TLS leaf certificate a server presented, for the
+/// HTTPS connections that carry a secret WITHOUT verifying a CA chain (an
+/// integration with verifySsl off, WinRM, credential probes). The first
+/// connection to host:port pins the leaf SHA-256; a later connection presenting a
+/// different certificate is refused BEFORE the request carrying the secret is
+/// written. A CA-verified connection is not pinned.
+model TlsCertPin {
+  id                 String    @id @default(uuid())
+  host               String
+  port               Int
+  fingerprint        String // leaf certificate SHA-256, colon-separated hex (Node's fingerprint256)
+  subject            String    @default("") // the certificate's subject CN, for display
+  firstSeen          DateTime  @default(now())
+  lastSeen           DateTime  @default(now())
+  /// The certificate presented INSTEAD of the pinned one, kept so an
+  /// administrator can trust exactly that certificate ("Trust new certificate")
+  /// rather than deleting the pin and trusting whatever answers next. Cleared
+  /// when trusted, or when the pinned certificate comes back.
+  pendingFingerprint String?   @map("pending_fingerprint")
+  pendingSubject     String?   @map("pending_subject")
+  pendingSeenAt      DateTime? @map("pending_seen_at")
+  /// Until when the NEXT changed certificate is accepted and re-pinned without a
+  /// person (`allowRepin`).
+  repinUntil         DateTime? @map("repin_until")
+
+  @@unique([host, port])
+  @@map("tls_cert_pins")
+}
+
 model Credential {
   id        String   @id @default(uuid())
   name      String   @unique
@@ -231,6 +312,7 @@ model Credential {
   updatedAt DateTime @updatedAt
 
   customWidgets ManufacturerCustomWidget[] @relation("ManufacturerCustomWidgetCredential")
+  agentDeployments AgentDeployment[]
 
   @@index([type])
   @@map("credentials")
@@ -252,10 +334,54 @@ model InvitationCode {
   createdAt  DateTime  @default(now())
   revokedAt  DateTime? @map("revoked_at")
 
-  endpoints Endpoint[]
+  endpoints  Endpoint[]
+  /// Set when the code was minted by a push deployment (single use, 10-minute TTL).
+  deployment AgentDeployment?
 
   @@index([codePrefix])
   @@map("invitation_codes")
+}
+
+/// A push deployment of the Charon agent to one host (ported from polaris's
+/// ManagedAgent install lifecycle, keyed to a TARGET rather than an Asset —
+/// Charon has no asset inventory, and the Endpoint row only exists once the
+/// agent has enrolled). Install / upgrade / uninstall run over SSH (any OS) or
+/// WinRM (Windows) with a Server Settings → Credentials credential. Every run
+/// that installs mints a single-use, short-lived invitation code into a
+/// root/SYSTEM-only enrollment file on the host; the deployment becomes
+/// `active` when the agent enrolls with that code.
+model AgentDeployment {
+  id                String           @id @default(uuid())
+  /// The address dialed (IP or DNS name). SSH / TLS identities are pinned by it.
+  host              String
+  /// windows | linux | darwin
+  osPlatform        String           @map("os_platform")
+  /// Detected on the host at install time (x64 | arm64 | …); null until then.
+  arch              String?
+  /// ssh | winrm (winrm is Windows-only)
+  transport         String
+  credentialId      String?          @map("credential_id")
+  credential        Credential?      @relation(fields: [credentialId], references: [id], onDelete: SetNull)
+  /// The discovered device this target came from (AD computer / Entra device), if any.
+  directoryObjectId String?          @map("directory_object_id")
+  /// pending | uploading | enrolling | active | failed | upgrading | upgrade_failed | uninstalling | uninstalled
+  status            String           @default("pending")
+  lastError         String?          @map("last_error")
+  /// The installer file (manifest filename) the last install / upgrade used.
+  installerFilename String?          @map("installer_filename")
+  agentVersion      String?          @map("agent_version")
+  invitationCodeId  String?          @unique @map("invitation_code_id")
+  invitationCode    InvitationCode?  @relation(fields: [invitationCodeId], references: [id], onDelete: SetNull)
+  endpointId        String?          @unique @map("endpoint_id")
+  endpoint          Endpoint?        @relation(fields: [endpointId], references: [id], onDelete: SetNull)
+  createdBy         String           @map("created_by")
+  lastAttemptAt     DateTime?        @map("last_attempt_at")
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@index([status])
+  @@index([host])
+  @@map("agent_deployments")
 }
 
 /// An enrolled endpoint: the device + its agent enrollment, telemetry state,
@@ -290,6 +416,8 @@ model Endpoint {
   // Enrollment: invitation → one-time enrollment token → long-lived bearer.
   invitationCodeId String?         @map("invitation_code_id")
   invitationCode   InvitationCode? @relation(fields: [invitationCodeId], references: [id], onDelete: SetNull)
+  /// The push deployment that installed this endpoint's agent, if it was push-deployed.
+  deployment       AgentDeployment?
 
   // Long-lived per-agent bearer, stored ONLY as SHA-384. Wire format
   // `charon_<base64url>`. Bound at issuance; rotated on revoke+re-enroll.

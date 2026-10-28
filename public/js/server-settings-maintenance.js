@@ -1385,7 +1385,10 @@ async function loadDatabaseInfo() {
       // wants six columns, and pairing it with Updates would recreate the
       // column crush the advisor card already had to solve.
       lifecycleHtml +
-      // ── Polaris Agent card ──
+      // ── Charon Agent card + SSH Deployment card ── (filled by initAgentCards:
+      // each section is gated on the key ITS route checks, which are not this
+      // tab's serverSettingsData key.)
+      '<div id="agent-cards-slot"></div>' +
       // ── Backup / Restore / History / Scheduled — four columns ──
       '<div class="settings-cards-row-4">' +
 
@@ -1504,9 +1507,247 @@ async function loadDatabaseInfo() {
     initUpdateControls();
     initCapacityActions();
     initCapacityAdvisorActions();
+    initAgentCards();
   } catch (err) {
     container.innerHTML = '<div class="settings-card"><p class="empty-state">Error: ' + escapeHtml(err.message) + '</p></div>';
   }
+}
+
+// ─── Charon Agent card ──────────────────────────────────────────────────────
+//
+// Ported from polaris public/js/agent-build.js (installed summary, upgrade-all,
+// server URL). Charon builds no installers on the server — they are built in
+// CI and dropped under data/agents/<version>/ with a manifest — so polaris's
+// Build, Clean up, auto-build / auto-upgrade, code-signing and cert-pin
+// rotation panes are gone (cert-pin rotation lives on the Web Server tab).
+//
+// Sections and the gate each one's route checks:
+//   Installers        GET /server-settings/maintenance/agents   serverSettingsData:read (this tab)
+//   Push-deployed     GET /agents/installed-summary            endpoints:read
+//     Upgrade all     POST /agents/upgrade-all                 serverSettingsSystem:write + endpoints:fullwrite
+//   Agent server URL  GET/PUT /agents/server-url               serverSettingsSystem:read / write
+// The SSH Deployment card below it (agent-ssh-onboarding.js) is
+// serverSettingsSystem:read.
+
+var _agentSummaryPollTimer = null;
+var AGENT_DEPLOY_STATUS_BADGE = {
+  pending: "badge-info", uploading: "badge-info", enrolling: "badge-warning", active: "badge-active",
+  failed: "badge-conflict", upgrading: "badge-info", upgrade_failed: "badge-conflict",
+  uninstalling: "badge-info", uninstalled: "badge-deprecated",
+};
+var AGENT_DEPLOY_STATUS_LABEL = {
+  pending: "Pending", uploading: "Uploading", enrolling: "Awaiting enrollment", active: "Active",
+  failed: "Failed", upgrading: "Upgrading", upgrade_failed: "Upgrade failed",
+  uninstalling: "Uninstalling", uninstalled: "Uninstalled",
+};
+
+function initAgentCards() {
+  var slot = document.getElementById("agent-cards-slot");
+  if (!slot) return;
+  var showSsh = permAtLeast("serverSettingsSystem", "read");
+  slot.innerHTML =
+    '<div class="settings-card" id="agent-card">' +
+      '<h4>Charon Agent</h4>' +
+      '<p class="hint" style="margin-bottom:0.75rem">Installers are built in CI and placed under ' +
+        '<code>data/agents/&lt;version&gt;/</code> with a <code>manifest.json</code>; push deployment and upgrades ' +
+        'install the manifest&rsquo;s version. Deployments are listed on <a href="/endpoints.html#deployments">Endpoints</a>.</p>' +
+      '<div id="agent-installers-body"><p class="empty-state" style="padding:0.5rem 0;margin:0">Loading...</p></div>' +
+      (permAtLeast("endpoints", "read") ? '<div id="agent-installed-summary"></div>' : '') +
+      (permAtLeast("serverSettingsSystem", "read") ? '<div id="agent-server-url"></div>' : '') +
+    '</div>' +
+    (showSsh
+      ? '<div class="settings-card" id="agent-ssh-onboarding-card">' +
+          '<h4>SSH Deployment</h4>' +
+          '<p class="hint" style="margin-bottom:0.75rem">Prepare hosts for push deployment: Charon holds one deployment ' +
+            'keypair, and an onboarding script you roll out with your own tooling installs its public half for an ' +
+            'administrative account on each host. The managed SSH credentials this creates are the ones to pick when ' +
+            'you deploy the agent from Endpoints.</p>' +
+          '<div id="agent-ssh-onboarding-body"><p class="empty-state" style="padding:0.5rem 0;margin:0">Loading...</p></div>' +
+        '</div>'
+      : '');
+
+  loadAgentInstallers();
+  refreshAgentInstalledSummary();
+  loadAgentServerUrl();
+  if (showSsh && window.CharonAgentSshOnboarding) window.CharonAgentSshOnboarding.init();
+}
+
+function loadAgentInstallers() {
+  var body = document.getElementById("agent-installers-body");
+  if (!body) return;
+  api.serverSettings.agentInstallers().then(function (r) {
+    var manifest = r && r.manifest;
+    var present = (r && r.present) || [];
+    if (!manifest) {
+      body.innerHTML = '<p class="empty-state" style="padding:0.5rem 0;margin:0">No installers available &mdash; no ' +
+        '<code>manifest.json</code> under <code>data/agents/</code>. Push deployment and upgrades need one.</p>';
+      return;
+    }
+    var files = manifest.files || [];
+    var rows = files.map(function (f) {
+      var have = present.indexOf(f.filename) >= 0;
+      return '<tr>' +
+        '<td style="padding:4px 8px"><code>' + escapeHtml((f.platform || "?") + "-" + (f.arch || "?")) + '</code></td>' +
+        '<td style="padding:4px 8px;word-break:break-all">' + escapeHtml(f.filename) + '</td>' +
+        '<td style="padding:4px 8px;text-align:center">' +
+          (f.sha256
+            ? '<span style="color:var(--color-success)" title="' + escapeHtml(f.sha256) + '">&#10003;</span>'
+            : '<span style="color:var(--color-warning)" title="No SHA-256 in the manifest — push deployment will not use this file">none</span>') +
+        '</td>' +
+        '<td style="padding:4px 8px;text-align:center">' +
+          (have
+            ? '<a href="' + escapeHtml(api.serverSettings.agentInstallerDownloadUrl(f.filename)) + '">Download</a>'
+            : '<span style="color:var(--color-warning)">missing</span>') +
+        '</td>' +
+      '</tr>';
+    }).join("");
+    body.innerHTML =
+      '<div class="db-info-grid" style="margin-bottom:0.5rem">' +
+        '<div class="db-info-label">Manifest version</div>' +
+        '<div class="db-info-value">v' + escapeHtml(manifest.version || "?") + '</div>' +
+      '</div>' +
+      (files.length
+        ? '<table style="width:100%;border-collapse:collapse;font-size:0.85rem">' +
+            '<thead><tr style="border-bottom:1px solid var(--color-border)">' +
+              '<th style="padding:4px 8px;text-align:left;font-weight:600;color:var(--color-text-secondary)">Platform</th>' +
+              '<th style="padding:4px 8px;text-align:left;font-weight:600;color:var(--color-text-secondary)">File</th>' +
+              '<th style="padding:4px 8px;text-align:center;font-weight:600;color:var(--color-text-secondary)">SHA-256</th>' +
+              '<th style="padding:4px 8px;text-align:center;font-weight:600;color:var(--color-text-secondary)">On disk</th>' +
+            '</tr></thead><tbody>' + rows + '</tbody></table>'
+        : '<p class="empty-state" style="padding:0.5rem 0;margin:0">The manifest lists no installer files.</p>');
+  }).catch(function (err) {
+    body.innerHTML = '<p class="empty-state" style="padding:0.5rem 0;margin:0">Could not load the installers: ' +
+      escapeHtml((err && err.message) || "unknown error") + '</p>';
+  });
+}
+
+// Push-deployed agents vs the manifest version, with Upgrade all. Polls every
+// 5 s while an upgrade is in flight so the counts tick down live; stops once
+// nothing is upgrading (no background work after the card settles).
+function refreshAgentInstalledSummary() {
+  var slot = document.getElementById("agent-installed-summary");
+  if (!slot) return;
+  if (_agentSummaryPollTimer) { clearTimeout(_agentSummaryPollTimer); _agentSummaryPollTimer = null; }
+  api.serverSettings.agentInstalledSummary().then(function (s) {
+    if (!document.getElementById("agent-installed-summary")) return;
+    slot.innerHTML = _agentInstalledSummaryHtml(s);
+    _wireAgentInstalledSummary(s);
+    var by = (s && s.byStatus) || {};
+    if ((by.upgrading || 0) > 0) _agentSummaryPollTimer = setTimeout(refreshAgentInstalledSummary, 5000);
+  }).catch(function (err) {
+    slot.innerHTML = '<p class="empty-state" style="padding:0.5rem 0;margin:0">Could not load push-deployed agents: ' +
+      escapeHtml((err && err.message) || "unknown error") + '</p>';
+  });
+}
+
+function _agentInstalledSummaryHtml(s) {
+  var by = (s && s.byStatus) || {};
+  var total = Object.keys(by).reduce(function (n, k) { return n + (by[k] || 0); }, 0);
+  var head = '<div style="margin-top:0.75rem;padding-top:0.5rem;border-top:1px solid var(--color-border);font-size:0.85rem">' +
+    '<div style="color:var(--color-text-secondary);margin-bottom:0.4rem">Push-deployed agents</div>';
+  if (!total) {
+    return head + '<p class="hint" style="margin:0">None yet. Deploy the agent to hosts from ' +
+      '<a href="/endpoints.html#deployments">Endpoints &rarr; Deployments</a>.</p></div>';
+  }
+  var order = ["active", "enrolling", "pending", "uploading", "upgrading", "upgrade_failed", "failed", "uninstalling", "uninstalled"];
+  var badges = order.filter(function (k) { return by[k]; }).map(function (k) {
+    return '<span class="badge ' + (AGENT_DEPLOY_STATUS_BADGE[k] || "") + '" style="margin-right:4px">' +
+      escapeHtml(AGENT_DEPLOY_STATUS_LABEL[k] || k) + ': ' + by[k] + '</span>';
+  }).join("");
+  var upgrading = by.upgrading || 0;
+  var outdated = (s && s.outdated) || 0;
+  var canUpgrade = permAtLeast("serverSettingsSystem", "write") && permAtLeast("endpoints", "fullwrite");
+  var versionLine = s && s.currentVersion
+    ? (outdated
+        ? '<strong>' + outdated + '</strong> agent' + (outdated === 1 ? '' : 's') + ' not on v' + escapeHtml(s.currentVersion) + '.'
+        : 'Every active agent runs v' + escapeHtml(s.currentVersion) + ' (current).')
+    : 'No installer manifest, so there is no current version to compare against.';
+  var btn = "";
+  if (canUpgrade && outdated > 0 && upgrading === 0 && s.currentVersion) {
+    btn = '<button class="btn btn-sm btn-secondary" id="btn-agent-upgrade-all">Upgrade all</button>';
+  } else if (upgrading > 0) {
+    btn = '<button class="btn btn-sm btn-secondary" disabled>Upgrading...</button>';
+  }
+  return head +
+    '<div style="margin-bottom:0.4rem">' + badges + '</div>' +
+    '<div style="display:flex;align-items:center;gap:0.5rem">' +
+      '<span style="flex:1">' + versionLine + '</span>' + btn +
+    '</div>' +
+  '</div>';
+}
+
+function _wireAgentInstalledSummary(s) {
+  var btn = document.getElementById("btn-agent-upgrade-all");
+  if (!btn) return;
+  btn.addEventListener("click", function () {
+    var n = s.outdated || 0;
+    showConfirm(
+      "Upgrade " + n + " push-deployed agent" + (n === 1 ? "" : "s") + " to v" + s.currentVersion + "?\n\n" +
+      "Charon connects to each host over SSH / WinRM with its deployment credential and runs the new installer as " +
+      "root / Administrator. Each host briefly restarts its agent; the agent keeps its bearer and certificate pins, " +
+      "so no re-enrollment is needed."
+    ).then(function (ok) {
+      if (!ok) return;
+      btn.disabled = true;
+      api.serverSettings.agentUpgradeAll().then(function (r) {
+        showToast("Started " + (r.started || 0) + " upgrade" + (r.started === 1 ? "" : "s") + " to v" + (r.targetVersion || "?") +
+          (r.current ? " — " + r.current + " already current" : ""), "success");
+        refreshAgentInstalledSummary();
+      }).catch(function (err) {
+        showToast("Upgrade all failed: " + ((err && err.message) || "unknown error"), "error");
+        btn.disabled = false;
+      });
+    });
+  });
+}
+
+// The URL a push-deployed agent calls back to. Shows the effective value; the
+// input edits the override, and saving it empty clears the override.
+function loadAgentServerUrl() {
+  var slot = document.getElementById("agent-server-url");
+  if (!slot) return;
+  api.serverSettings.agentServerUrlGet().then(function (r) {
+    var override = r && r.override != null ? r.override : null;
+    var effective = (r && r.effective) || null;
+    var canWrite = permAtLeast("serverSettingsSystem", "write");
+    slot.innerHTML =
+      '<div style="margin-top:0.75rem;padding-top:0.5rem;border-top:1px solid var(--color-border);font-size:0.85rem">' +
+        '<label for="agent-server-url-input" style="display:block;margin-bottom:0.3rem;color:var(--color-text-secondary)">' +
+          'Agent server URL' +
+          (override != null ? ' <span class="badge badge-info" style="margin-left:0.4rem">Override</span>' : '') +
+        '</label>' +
+        '<div style="display:flex;gap:0.5rem;align-items:center">' +
+          '<input type="text" id="agent-server-url-input" value="' + escapeHtml(override || "") + '" ' +
+            'placeholder="' + escapeHtml(effective || "https://charon.example.com") + '" ' +
+            'style="flex:1;font-family:var(--font-mono, monospace);font-size:0.85rem"' + (canWrite ? '' : ' disabled') + '>' +
+          (canWrite ? '<button class="btn btn-sm btn-secondary" id="btn-agent-server-url-save">Save</button>' : '') +
+        '</div>' +
+        '<p class="hint" style="margin:0.3rem 0 0">Effective: ' +
+          (effective
+            ? '<code>' + escapeHtml(effective) + '</code>'
+            : '<span style="color:var(--color-warning)">none &mdash; set <code>CHARON_PUBLIC_URL</code> or an override here, or push deployment cannot run</span>') +
+          '. ' + (override != null ? 'Clear the field and save to drop the override.' : 'Inferred from the server; type a URL to override it.') +
+        '</p>' +
+      '</div>';
+    var save = document.getElementById("btn-agent-server-url-save");
+    var input = document.getElementById("agent-server-url-input");
+    if (save && input) {
+      save.addEventListener("click", function () {
+        var raw = (input.value || "").trim();
+        save.disabled = true;
+        api.serverSettings.agentServerUrlSet(raw === "" ? null : raw).then(function () {
+          showToast(raw ? "Agent server URL updated" : "Agent server URL override cleared", "success");
+          loadAgentServerUrl();
+        }).catch(function (err) {
+          showToast("Could not save the agent server URL: " + ((err && err.message) || "unknown error"), "error");
+          save.disabled = false;
+        });
+      });
+    }
+  }).catch(function (err) {
+    slot.innerHTML = '<p class="empty-state" style="padding:0.5rem 0;margin:0">Could not load the agent server URL: ' +
+      escapeHtml((err && err.message) || "unknown error") + '</p>';
+  });
 }
 
 // ─── Backup Logic ───────────────────────────────────────────────────────────

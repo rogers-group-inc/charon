@@ -41,6 +41,10 @@ export async function revokeBearer(endpointId: string): Promise<void> {
     where: { id: endpointId },
     data: { bearerRevokedAt: new Date(), status: "revoked" },
   });
+  // The bearer is checked at WS upgrade only — close a live socket too, in
+  // whichever process holds it (rule 4). Dynamic import: no static edge to ws/pg.
+  const { publishDisconnect } = await import("./agentChannelService.js");
+  await publishDisconnect([endpointId]);
 }
 
 /**

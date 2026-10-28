@@ -37,6 +37,9 @@ import usersRouter from "./routes/users.js";
 import rolesRouter from "./routes/roles.js";
 import groupMappingsRouter from "./routes/groupMappings.js";
 import { agentsEnrollRouter, agentsRouter } from "./routes/agents.js";
+import agentBinaryRouter from "./routes/agentBinary.js";
+import agentDeployRouter from "./routes/agentDeploy.js";
+import settingsAgentsRouter from "./routes/settings/agents.js";
 import { requireAuth, attachApiToken } from "./middleware/auth.js";
 import { requirePermission } from "./middleware/permissions.js";
 import { revalidateSessionUser } from "./middleware/sessionRevalidate.js";
@@ -62,6 +65,9 @@ router.use("/branding", publicBrandingRouter);
 // bearer, never a session. The WS upgrade (/agents/ws) is handled separately in
 // app.ts on the HTTP server.
 router.use("/agents/enroll", agentsEnrollRouter);
+// Installer download for Windows push installs (pinned + SHA-256-checked on the
+// host; manifest files only). Before /agents, whose router demands a bearer.
+router.use("/agents/binary", agentBinaryRouter);
 router.use("/agents", agentsRouter);
 
 // HA node enrollment (the node scripts the High Availability tab mints).
@@ -74,6 +80,7 @@ router.use("/ha/enroll", haEnrollRouter);
 // ─── Authenticated surfaces ────────────────────────────────────────────────
 router.use(requireAuth);
 router.use("/endpoints", requirePermission("endpoints", "read"), endpointsRouter);
+router.use("/agent-deployments", requirePermission("endpoints", "read"), agentDeployRouter);
 router.use("/integrations", requirePermission("integrations", "read"), integrationsRouter);
 router.use("/directory", requirePermission("directory", "read"), directoryRouter);
 router.use("/groups", requirePermission("groups", "read"), groupsRouter);
@@ -89,7 +96,7 @@ router.use("/server-settings/maintenance", maintenanceRouter);
 for (const r of [
   settingsNtpRouter, settingsIdentificationRouter, settingsWebServerRouter,
   settingsMaintenanceRouter, settingsCustomizationRouter, settingsCredentialsRouter,
-  settingsApiTokensRouter, settingsHaRouter,
+  settingsApiTokensRouter, settingsHaRouter, settingsAgentsRouter,
 ]) router.use("/server-settings", r);
 router.use("/credentials", credentialsRouter);
 router.use("/api-tokens", apiTokensRouter);

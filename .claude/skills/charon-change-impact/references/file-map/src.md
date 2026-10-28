@@ -39,6 +39,8 @@ src/
 │       ├── policies.ts       # Charon-managed policies
 │       ├── serverSettings.ts # ha (summary), identification
 │       ├── maintenance.ts    # agent installers only (/server-settings/maintenance/agents)
+│       ├── agentDeploy.ts    # /agent-deployments: list (endpoints read); deploy / retry / upgrade / uninstall / delete (endpoints FULLWRITE)
+│       ├── agentBinary.ts    # PUBLIC GET /agents/binary/:file — manifest installers only, rate-limited (Windows pinned download)
 │       ├── events.ts         # audit log
 │       └── settings/         # Server Settings tabs ported from polaris; each route declares its own requirePermission
 │           ├── ntp.ts            # /server-settings/ntp (+test)
@@ -48,17 +50,27 @@ src/
 │           ├── customization.ts  # branding (+logo), reboot
 │           ├── credentials.ts    # credentialsRouter (/credentials); mibs, manufacturer-aliases, manufacturer-profiles
 │           ├── apiTokens.ts      # api-docs; apiTokensRouter (/api-tokens)
-│           └── ha.ts             # haRouter (/ha); haEnrollRouter (/ha/enroll, PUBLIC)
+│           ├── ha.ts             # haRouter (/ha); haEnrollRouter (/ha/enroll, PUBLIC)
+│           └── agents.ts         # /server-settings/agents/*: SSH Deployment (windows-ssh), Intune publish, pinned SSH keys / TLS certs, server URL, installed, upgrade-all
 ├── services/                 # see references/services/*.md — one entry per file
 │   ├── crypto/identity:      apiTokenService, agentTokenService, authService, verificationService, eventService
 │   ├── operators/auth:       userService, roleService, groupMappingService, sessionRevocationService, passwordPolicyService,
 │   │                         sessionSettingsService, totpService, totpStepService, settingsStore (shared Setting-row cache)
 │   ├── operator SSO:         samlAuthService, oidcAuthService, ldapAuthService, entraProxyAuthService, passkeyService,
 │   │                         ssoProvisioning (find-or-provision), ssoProbe (SSRF-guarded IdP reachability)
-│   ├── integrations:         httpClient, integrationConfig, integrationService, fortimanagerService, fortigateService,
-│   │                         activeDirectoryService, ldapClient, entraIdService, directoryTypes
+│   ├── integrations:         httpClient, integrationConfig, integrationService, integrationHealthService,
+│   │                         fortimanagerService, fmgWorker, fmgActivityService, fortigateService,
+│   │                         activeDirectoryService, ldapClient, entraIdService, directoryTypes,
+│   │                         discoveryRunState (DiscoveryRun live state)
+│   ├── discovery/            directoryDiscovery (trigger / runDiscovery / mirror write / guarded sweep)
+│   ├── outbound trust:       sshHostKeyService (SshHostKey TOFU), tlsCertPinService (TlsCertPin TOFU)
 │   ├── tags/enforcement:     customGroupService, tagService, tagReconciler, policyService, fortinetEnforcementService
 │   ├── agent/posture:        invitationCodeService, agentEnrollmentService, postureService, certPinService
+│   ├── agent deploy:         agentDeployService (push install / upgrade / uninstall lifecycle), agentInstallScripts
+│   │                         (the scripts + preseed, pure), windowsSshOnboardingService + sshOnboardingScript
+│   │                         (SSH Deployment card: deployment keypair, onboarding scripts), intunePublishService
+│   │                         (publish the onboarding pair to Intune, unassigned),
+│   │                         agentChannelService (agent WS sessions, refresh-config / revoke over NOTIFY)
 │   ├── infra:                leaderElection, certInfo, nginxRenderer, nginxApplyService, backupService, capacityService,
 │   │                         updateService, agentDistService
 │   ├── settings (web):       webServerService, proxyConfigService, trustedCaService, webAccessSettingsService
@@ -69,14 +81,16 @@ src/
 │   ├── settings (ha):        haService, haEnrollmentService
 │   └── credentials/          credentialService, credentialProbeService, mibService, oidRegistry, stdMibLibrary (+ stdMibs/*.txt),
 │                             manufacturerAliasService, manufacturerProfileService, manufacturerProfilePortabilityService,
-│                             netGuard (SSRF guard), safeRegex, regexSafety + pure helpers (see services/server-settings.md)
+│                             regexSafety + pure helpers (see services/server-settings.md)
 ├── jobs/
 │   ├── integrationHealthCheck.ts  # leader schedules every 10 min; worker consumes
+│   ├── directoryDiscoveryJob.ts   # leader: 15-min due-check scheduler + 60-s stale-run reaper; worker: charon.directory-sync consumer
 │   ├── tagReconcileJob.ts         # enqueueReconcile(); worker consumer
 │   ├── enforcementSyncJob.ts      # enforcer consumer for tag-change deltas
 │   ├── retentionPrune.ts          # leader-scheduled (6 h) audit-log + VerificationSession pruning to Setting sampleRetention
 │   ├── ouiRefresh.ts              # leader-scheduled weekly IEEE OUI database refresh (fetches on first run if missing/stale)
-│   └── scheduledBackup.ts         # leader-scheduled automatic backups (5-min tick, default off), prune + off-host copy
+│   ├── scheduledBackup.ts         # leader-scheduled automatic backups (5-min tick, default off), prune + off-host copy
+│   └── endpointSilenceJob.ts      # leader 60-s tick: online endpoints silent for 2 heartbeat intervals → offline (fleet-dark guard)
 ├── utils/
 │   ├── role.ts               # CHARON_ROLE → roleConfig() flags
 │   ├── logger.ts             # Pino logger
@@ -106,7 +120,33 @@ src/
 │   ├── ipScope.ts            # source-IP scope matching (Local Login Access)
 │   ├── haAdvisories.ts       # HA guidance arithmetic (RTT bands, WAL rate, RPO/RTO, install shape)
 │   ├── assetTypeMatch.ts     # device-type inference rules (pure; AssetTypeDef.matchRules)
-│   └── deviceFilterCondition.ts # asset-tag auto-assign filter vocabulary + zod schema + guards
+│   ├── deviceFilterCondition.ts # asset-tag auto-assign filter vocabulary + zod schema + guards
+│   │   ── ported from polaris: outbound trust + integration plumbing ──
+│   ├── tlsDispatcher.ts      # tlsFetch(): per-request undici dispatcher; verify off ⇒ TlsCertPin TOFU dispatcher
+│   ├── pinnedTlsAgent.ts     # node:https Agent that checks the leaf against TlsCertPin after handshake, before the request
+│   ├── remoteExec.ts         # withSshClient / sshExec / sftpPut / buildHostVerifier (SshHostKey TOFU, fails closed)
+│   ├── remoteStaging.ts      # per-run mktemp -d staging dir on a remote host
+│   ├── winrm.ts              # WinRS client (pinned TLS when unverified)
+│   ├── sshKeygen.ts          # ed25519 keypair generation with retry
+│   ├── netGuard.ts           # SSRF guard for operator-supplied outbound hosts (moved from services/credentials/)
+│   ├── guardedFetch.ts       # fetch whose DNS lookup goes through netGuard
+│   ├── secretMask.ts         # the mask sentinel + isMaskedSecret (moved from services/credentials/)
+│   ├── secretDestination.ts  # a stored secret follows its destination (restoreStoredSecrets)
+│   ├── configSecretFields.ts # which config keys are secrets, anywhere in a JSON tree
+│   ├── integrationFilter.ts  # include/exclude wildcard filtering for discovery
+│   ├── wildcard.ts           # compileWildcard / compilePattern (regex mode on RE2)
+│   ├── safeRegex.ts          # operator regexes on re2js (moved from services/credentials/)
+│   ├── fortiosRequestGate.ts # per-FortiGate request pacing + 401 pause (FortiOS API-key lockout)
+│   ├── fortiosEnvelope.ts    # FortiOS response envelope parsing (system status, HA peers)
+│   ├── entraClientCredentials.ts # the client-credentials token request shape (Graph)
+│   ├── graphThrottle.ts      # throttleDelayMs(): Retry-After / quota-reset → backoff ms (polaris azureArcService)
+│   ├── mac.ts                # MAC normalization (polaris)
+│   ├── agentServerUrl.ts     # the script-safe agent server URL allowlist (polaris)
+│   ├── agentSilence.ts       # silence window + cutoff with the listening-since / fleet-dark guards (polaris)
+│   ├── cidr.ts               # urlHost / bareHost / isIpv6Address (moved from services/credentials/)
+│   ├── trimTrailing.ts       # regex-free trailing trim (moved from services/credentials/)
+│   ├── text.ts               # truncate()
+│   └── sleep.ts              # promise sleep
 ├── setup/
 │   ├── detectSetup.ts        # getSetupState(), markSetupComplete()
 │   ├── setupServer.ts        # first-run wizard server
@@ -122,5 +162,5 @@ public/      vanilla JS + HTML, no build step (see charon-ui-canon)
 agent/       Tauri endpoint agent: src-tauri/ (Rust core), ui/ (web GUI) (see charon-agent)
 deploy/      install-rhel.sh, setup-ha.sh, HA.md, systemd/, nginx/, scripts/ (see charon-deploy)
 scripts/     check-docs.mjs, check-versions.mjs, next-rule-number.mjs, copy-build-assets.mjs
-tests/       setup.ts (dotenv), unit/
+tests/       setup.ts (dotenv), unit/, integration/ (DB-backed; _helpers.ts skips unless DATABASE_URL names a *_test DB), helpers/ (tlsFixtures.ts: throwaway self-signed TLS certs minted in memory — no key is ever committed)
 ```

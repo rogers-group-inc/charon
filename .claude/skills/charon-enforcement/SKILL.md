@@ -1,6 +1,6 @@
 ---
 name: charon-enforcement
-description: "How Charon works end to end — the identity + posture → ZTNA tag → Fortinet pipeline: directory discovery from Active Directory / Entra ID / Intune into the DirectoryObject mirror, tag sources (directory group, OU, custom group, posture), the user↔device binding, the reconciler and effective tags, the enforcement-sync queue, Fortinet writeback to FortiGate / FortiManager (charon-<tag> address groups, charon-ep-* addresses, dry-run vs enforce, drift), integration testConnection and the 10-minute health check, the pg-boss queue registry, process roles (web / endpoint / enforcer / worker / migrate), boot path, leader election and HA, and the charon_* Prometheus metrics. Load when a task touches tags, reconcile, discovery, an integration type, enforcement, drift, a pg-boss queue or job, a process role, leader election / failover / GSLB, /health or /metrics, or asks why an endpoint has (or lacks) a tag or why a firewall did (or didn't) change."
+description: "How Charon works end to end — the identity + posture → ZTNA tag → Fortinet pipeline: directory discovery from Active Directory / Entra ID (+ Intune) into the DirectoryObject mirror (DiscoveryRun lifecycle, the scheduled discovery, the guarded removal sweep, the FortiOS request gate and the FortiManager worker lanes), tag sources (directory group, OU, custom group, posture), the user↔device binding, the reconciler and effective tags, the enforcement-sync queue, Fortinet writeback to FortiGate / FortiManager (charon-<tag> address groups, charon-ep-* addresses, dry-run vs enforce, drift), integration testConnection and the 10-minute health check, the pg-boss queue registry, process roles (web / endpoint / enforcer / worker / migrate), boot path, leader election and HA, and the charon_* Prometheus metrics. Load when a task touches tags, reconcile, discovery, an integration type, enforcement, drift, a pg-boss queue or job, a process role, leader election / failover / GSLB, /health or /metrics, or asks why an endpoint has (or lacks) a tag or why a firewall did (or didn't) change."
 ---
 
 # Charon enforcement pipeline
@@ -28,8 +28,10 @@ govern every step that leaves the process.
 - **Reconcile enqueues enforcement only on change.** A login that changes nothing writes nothing.
 - **FMG enforce stays dry-run** until the policy-package install flow is completed and reviewed;
   only direct-FortiGate enforce writes today.
-- **Entra group membership** for `directory_group` sources needs richer discovery than exists;
-  AD `memberOf` works today.
+- **`directory_group` matches `memberOf` directly**: a user's `attributes.memberOf` holds group
+  DNs for AD and transitive group object ids for Entra, so the source's `ref` is a DN (AD) or a
+  group id (Entra). A user the directory no longer returns is removed by the guarded discovery
+  sweep, and with it the tags its membership granted.
 - **Schedulers run only on the leader; consumers run on their role** — the same job can be
   produced on `web` and consumed on `worker` (rules 5, 6).
 - **Scale-check at 100 and 2000 endpoints**: a fleet-wide reconcile (tag/source edit, directory

@@ -1,26 +1,21 @@
 /**
- * src/services/credentials/safeRegex.ts — operator-supplied regexes (polaris
+ * src/utils/safeRegex.ts — operator-supplied regexes (polaris
  * business rule 116), Charon adaptation.
  *
- * Polaris compiles every operator pattern on `re2js` (linear-time RE2) so a
- * pathological pattern can never park a monitor worker. Charon does not carry
- * the re2js dependency, and — more to the point — never RUNS these patterns
- * against device data: there is no monitoring path, only save-time validation
- * and the occasional Test Connection body match against a capped response. So
- * this module keeps polaris's API and its RE2 *syntax* contract (no lookaround,
- * no backreferences — a pattern exported to polaris must still compile there)
- * and backs it with the native engine plus two guards:
+ * Every operator pattern compiles on `re2js` (linear-time RE2), as in polaris,
+ * so a pathological pattern can never park a worker: operator patterns run at
+ * save-time validation, against a capped Test Connection body, and as
+ * integration discovery filters over every discovered directory object
+ * (utils/wildcard.ts → compilePattern). RE2 has no lookaround and no
+ * backreferences; both are refused with an operator-readable reason.
  *
- *   - a static refusal (safeRegexProblem — every operator pattern's save-time
- *     check) of the classic catastrophic shapes: a repeated group that itself
- *     repeats, e.g. `(a+)+`, `(.*)*`, `(\w+\s?)*`;
- *   - callers clamp short subjects (clampRegexSubject), as in polaris; an HTTP
- *     check body is already capped by the probe (MAX_BODY_BYTES).
- *
- * Swap the engine for re2js if Charon ever starts polling devices.
+ * Charon addition: safeRegexProblem (the save-time check) still refuses the
+ * classic nested-quantifier shapes (`(a+)+`) — harmless on RE2, but it keeps a
+ * pattern portable to any engine an export lands on.
  */
 
-import { AppError } from "../../utils/errors.js";
+import { RE2JS } from "re2js";
+import { AppError } from "./errors.js";
 
 export interface SafeRegex {
   /** The operator's pattern, as typed. */
@@ -90,46 +85,54 @@ export function hasNestedQuantifier(pattern: string): boolean {
   return false;
 }
 
-/** Compile `pattern`. Throws AppError(400) with an operator-readable reason. */
+function describeRe2Error(pattern: string, message: string): string {
+  if (/\(\?[=!<]/.test(pattern)) {
+    return `Regex "${pattern}" uses lookahead or lookbehind, which is not supported (patterns run on the linear-time RE2 engine). Rewrite it without (?= (?! (?<= (?<!.`;
+  }
+  if (/\\[1-9]/.test(pattern)) {
+    return `Regex "${pattern}" uses a backreference (\\1 …), which is not supported (patterns run on the linear-time RE2 engine).`;
+  }
+  return `Invalid regex "${pattern}": ${message.replace(/^error parsing regexp:\s*/i, "")}`;
+}
+
+/** Compile `pattern` on RE2. Throws AppError(400) with an operator-readable reason. */
 export function compileSafeRegex(pattern: string, opts: SafeRegexOptions = {}): SafeRegex {
   if (typeof pattern !== "string") throw new AppError(400, "Regex must be a string");
   const key = `${opts.ignoreCase ? "i" : ""}\u0000${pattern}`;
   const hit = cache.get(key);
   if (hit) return hit;
-  if (/\(\?[=!]|\(\?<[=!]/.test(pattern)) {
-    throw new AppError(400, `Regex "${pattern}" uses lookahead or lookbehind, which is not supported (patterns must stay RE2-compatible). Rewrite it without (?= (?! (?<= (?<!.`);
-  }
-  if (/\\[1-9]/.test(pattern)) {
-    throw new AppError(400, `Regex "${pattern}" uses a backreference (\\1 …), which is not supported (patterns must stay RE2-compatible).`);
-  }
-  let re: RegExp;
+  let re: RE2JS;
   try {
-    re = new RegExp(pattern, opts.ignoreCase ? "i" : "");
+    re = RE2JS.compile(pattern, opts.ignoreCase ? RE2JS.CASE_INSENSITIVE : 0);
   } catch (err) {
-    throw new AppError(400, `Invalid regex "${pattern}": ${err instanceof Error ? err.message : String(err)}`);
+    throw new AppError(400, describeRe2Error(pattern, err instanceof Error ? err.message : String(err)));
   }
-  const toArr = (m: RegExpExecArray): Array<string | undefined> => Array.from(m, (g) => (g === undefined ? undefined : g));
   const compiled: SafeRegex = {
     source: pattern,
     test(s: string): boolean {
-      re.lastIndex = 0;
-      return re.test(String(s));
+      return re.matcher(String(s)).find();
     },
     exec(s: string): Array<string | undefined> | null {
-      re.lastIndex = 0;
-      const m = re.exec(String(s));
-      return m ? toArr(m) : null;
+      const m = re.matcher(String(s));
+      if (!m.find()) return null;
+      const out: Array<string | undefined> = [];
+      for (let i = 0; i <= m.groupCount(); i++) {
+        const g = m.group(i);
+        out.push(g === null || g === undefined ? undefined : g);
+      }
+      return out;
     },
     execAll(s: string): SafeMatch[] {
-      const g = new RegExp(re.source, re.flags + "g");
-      const subject = String(s);
+      const m = re.matcher(String(s));
       const all: SafeMatch[] = [];
-      let m: RegExpExecArray | null;
-      while ((m = g.exec(subject)) !== null) {
-        const one = toArr(m) as SafeMatch;
-        one.index = m.index;
+      while (m.find()) {
+        const one = [] as unknown as SafeMatch;
+        for (let i = 0; i <= m.groupCount(); i++) {
+          const g = m.group(i);
+          one.push(g === null || g === undefined ? undefined : g);
+        }
+        one.index = m.start();
         all.push(one);
-        if (m[0] === "") g.lastIndex++;
       }
       return all;
     },

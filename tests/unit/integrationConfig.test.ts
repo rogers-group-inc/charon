@@ -21,11 +21,28 @@ describe("integration config secrets", () => {
   });
 
   it("preserves the stored secret when the mask is resubmitted (preserved-on-unchanged)", () => {
-    const stored = writeConfig("fortigate", null, { host: "fw", apiToken: "abc123" });
-    const updated = writeConfig("fortigate", stored, { host: "fw2", apiToken: SECRET_MASK });
-    expect(updated.host).toBe("fw2");
+    const stored = writeConfig("fortigate", null, { host: "fw", apiToken: "abc123", vdom: "root" });
+    const updated = writeConfig("fortigate", stored, { host: "fw", apiToken: SECRET_MASK, vdom: "dmz" });
+    expect(updated.vdom).toBe("dmz");
     expect(updated.apiToken).toBe(stored.apiToken); // unchanged ciphertext
     expect(decryptConfig("fortigate", updated).apiToken).toBe("abc123");
+  });
+
+  it("refuses to reuse a stored secret when its destination moves (secret follows its destination)", () => {
+    // Only keys the stored row HAS are compared (a key never stored is not a move).
+    const stored = writeConfig("fortigate", null, { host: "fw", apiToken: "abc123", verifySsl: true });
+    expect(() => writeConfig("fortigate", stored, { host: "fw2", apiToken: SECRET_MASK })).toThrow(/"host" was changed/);
+    expect(() => writeConfig("fortigate", stored, { host: "fw", verifySsl: false, apiToken: "" })).toThrow(/"verifySsl" was changed/);
+    // Re-entering the secret with the new destination is fine.
+    const moved = writeConfig("fortigate", stored, { host: "fw2", apiToken: "new-token" });
+    expect(decryptConfig("fortigate", moved).apiToken).toBe("new-token");
+  });
+
+  it("treats FortiManager's direct-mode FortiGate token as a secret", () => {
+    const stored = writeConfig("fortimanager", null, { host: "fmg", apiToken: "a", useProxy: false, fortigateApiToken: "gate-token" });
+    expect(isEncryptedEnvelope(stored.fortigateApiToken as string)).toBe(true);
+    expect(readConfigMasked("fortimanager", stored).fortigateApiToken).toBe(SECRET_MASK);
+    expect(() => writeConfig("fortimanager", stored, { useProxy: true, fortigateApiToken: SECRET_MASK })).toThrow(/"useProxy" was changed/);
   });
 
   it("round-trips a secret through decrypt", () => {

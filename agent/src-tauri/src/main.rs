@@ -18,9 +18,10 @@
 mod client;
 mod config;
 mod posture;
+mod preseed;
 
 use config::AgentConfig;
-use serde::Serialize;
+use serde::Deserialize;
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{Manager, State};
@@ -29,7 +30,8 @@ struct AppState {
     cfg: Mutex<AgentConfig>,
 }
 
-#[derive(Serialize)]
+// Deserialize: the enroll response is parsed with resp.json().
+#[derive(Deserialize)]
 struct EnrollResponse {
     #[serde(rename = "endpointId")]
     endpoint_id: String,
@@ -126,6 +128,47 @@ fn hostname() -> String {
         .unwrap_or_else(|_| "unknown".into())
 }
 
+/// Enroll from a push-deploy preseed (preseed.rs): pinned from the first
+/// request, reporting the leaf fingerprint observed. Returns the enrolled config.
+async fn enroll_from_preseed(p: &preseed::Preseed) -> Result<AgentConfig, String> {
+    let server_url = p.server_url.trim_end_matches('/').to_string();
+    let (http, observed) = client::pinned_client_observed(&p.pins).map_err(|e| e.to_string())?;
+    // One pinned round trip first so the verifier has recorded which pin the
+    // server presented; the enroll body carries it.
+    let _ = http
+        .get(format!("{}/api/v1/agent/auth-config", server_url))
+        .send()
+        .await
+        .map_err(|e| format!("Server unreachable over the pinned connection: {e}"))?;
+    let observed_fp = observed.lock().ok().and_then(|o| o.clone());
+    let body = serde_json::json!({
+        "code": p.code,
+        "hostname": hostname(),
+        "osPlatform": std::env::consts::OS,
+        "arch": std::env::consts::ARCH,
+        "agentVersion": env!("CARGO_PKG_VERSION"),
+        "observedFingerprint": observed_fp,
+    });
+    let resp = http
+        .post(format!("{}/api/v1/agents/enroll", server_url))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("Enrollment failed: HTTP {}", resp.status()));
+    }
+    let parsed: EnrollResponse = resp.json().await.map_err(|e| e.to_string())?;
+    let cfg = AgentConfig {
+        server_url,
+        bearer: parsed.bearer_token,
+        endpoint_id: parsed.endpoint_id,
+        cert_pins: parsed.server_cert_pins,
+    };
+    cfg.save().map_err(|e| e.to_string())?;
+    Ok(cfg)
+}
+
 /// Background telemetry loop — heartbeat + posture every 60s once enrolled.
 async fn telemetry_loop(cfg: AgentConfig) {
     if !cfg.is_enrolled() {
@@ -164,9 +207,28 @@ fn main() {
         .setup(move |app| {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
+                // A push-deployed, not-yet-enrolled agent consumes its preseed
+                // (readable only by a privileged process — rule 12).
+                if !loop_cfg.is_enrolled() {
+                    if let Some(p) = preseed::load() {
+                        match enroll_from_preseed(&p).await {
+                            Ok(cfg) => {
+                                preseed::remove();
+                                if let Some(state) = handle.try_state::<AppState>() {
+                                    *state.cfg.lock().unwrap() = cfg.clone();
+                                }
+                                telemetry_loop(cfg).await;
+                                return;
+                            }
+                            // A refused or expired code can never succeed: drop
+                            // the file so the next start does not retry it.
+                            Err(e) if e.contains("HTTP 403") => preseed::remove(),
+                            Err(_) => {}
+                        }
+                    }
+                }
                 telemetry_loop(loop_cfg).await;
             });
-            let _ = handle;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![enroll, get_auth_config, login, is_enrolled])

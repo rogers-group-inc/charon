@@ -1031,8 +1031,6 @@ const api = {
     delete: (id)     => request("DELETE", `/integrations/${id}`),
     test:   (id, name) => trackedRequest("Testing " + (name || "integration"), "POST", `/integrations/${id}/test`),
     testFortigateSample:    (id)   => trackedRequest("Testing random FortiGate", "POST", `/integrations/${id}/test/fortigate-sample`),
-    testFortigateSampleNew: (body) => trackedRequest("Testing random FortiGate", "POST", "/integrations/test/fortigate-sample", body),
-    register:(id, b) => request("POST", `/integrations/${id}/register`, b),
     discover:(id, name) => trackedRequest("Discovering " + (name || "DHCP"), "POST", `/integrations/${id}/discover`),
     testNew:(body)   => trackedRequest("Testing connection", "POST", "/integrations/test", body),
     query:         (id, body) => request("POST", `/integrations/${id}/query`, body),
@@ -1040,18 +1038,6 @@ const api = {
     healthSummary: ()    => request("GET", "/integrations/health-summary"),
     fmgActivity:   (id)  => request("GET", `/integrations/${id}/fmg-activity`),
     abortDiscover: (id)  => request("DELETE", `/integrations/${id}/discover`),
-    interfaceAggregate:        (id, klass) => request("GET", `/integrations/${id}/interface-aggregate?class=${encodeURIComponent(klass)}`),
-    interfaceAggregatePreview: (id, body)  => request("POST", `/integrations/${id}/interface-aggregate/preview`, body),
-    interfaceAggregateApply:   (id, klass) => trackedRequest("Applying auto-monitor interfaces", "POST", `/integrations/${id}/interface-aggregate/apply`, { class: klass }),
-    storageAggregate:          (id, klass) => request("GET", `/integrations/${id}/storage-aggregate?class=${encodeURIComponent(klass)}`),
-    storageAggregatePreview:   (id, body)  => request("POST", `/integrations/${id}/storage-aggregate/preview`, body),
-    storageAggregateApply:     (id, klass) => trackedRequest("Applying auto-monitor storage", "POST", `/integrations/${id}/storage-aggregate/apply`, { class: klass }),
-    autoMonitorAssetsPreflight: (id, proposed) => request("POST", `/integrations/${id}/auto-monitor-assets/preflight`, { proposed: proposed }),
-    llmRegenerateToken: (id) => request("POST", `/integrations/${id}/llm/regenerate-token`),
-    llmProbeTools:      (body) => trackedRequest("Checking tool calling", "POST", "/integrations/llm/probe-tools", body),
-    // Generic API Preview tab: the first page, mapped (nothing is written).
-    genericApiPreview:  (body) => trackedRequest("Reading the first page", "POST", "/integrations/generic-api/preview", body),
-    llmCheckTools:      (id)   => trackedRequest("Checking tool calling", "POST", `/integrations/${id}/llm/check-tools`),
   },
   // The floating AI assistant (public/js/assistant.js, business rule 95). The
   // streamed ask (POST /conversations/:id/messages) is NOT here: request()
@@ -1350,18 +1336,13 @@ const api = {
     testWebPush: ()       => request("POST",  "/delivery-channels/web-push/test"),
   },
   serverSettings: {
-    // Charon — Authentication tab (active login mode; also drives the agent GUI).
-    // Polaris Agent — Build button + inventory on Maintenance tab.
-    agentInventory:    ()        => request("GET",    "/server-settings/agents/inventory"),
-    agentBuildStart:   ()        => request("POST",   "/server-settings/agents/build"),
-    agentBuildCurrent: ()        => request("GET",    "/server-settings/agents/build/current"),
-    agentBuildStatus:  (id)      => request("GET",    `/server-settings/agents/build/${id}`),
-    agentBuildCancel:  (id)      => request("DELETE", `/server-settings/agents/build/${id}`),
-    agentPrune:        ()        => request("POST",   "/server-settings/agents/prune"),
-    agentAutoBuildSettingGet:   () => request("GET",    "/server-settings/agents/auto-build-setting"),
-    agentAutoBuildSettingSet:   (b)=> request("PUT",    "/server-settings/agents/auto-build-setting", { enabled: !!b }),
-    agentAutoUpgradeSettingGet: () => request("GET",    "/server-settings/agents/auto-upgrade-setting"),
-    agentAutoUpgradeSettingSet: (b)=> request("PUT",    "/server-settings/agents/auto-upgrade-setting", { enabled: !!b }),
+    // Charon Agent card (Maintenance tab): push-deployed agents vs the
+    // installer manifest, upgrade-all, and the agent server URL. Charon builds
+    // no installers itself (no build / prune / signing / auto-build routes).
+    // The prebuilt installers (manifest + files present on disk) come from the
+    // serverSettingsData-gated maintenance router; downloads are plain GETs.
+    agentInstallers:            () => request("GET",    "/server-settings/maintenance/agents"),
+    agentInstallerDownloadUrl:  (file) => API_BASE + "/server-settings/maintenance/agents/download/" + encodeURIComponent(file),
     agentInstalledSummary:      () => request("GET",    "/server-settings/agents/installed-summary"),
     agentInstalledList:         () => request("GET",    "/server-settings/agents/installed"),
     agentUpgradeAll:            () => request("POST",   "/server-settings/agents/upgrade-all"),
@@ -1370,9 +1351,7 @@ const api = {
     agentCertPinsSummary:     () => request("GET",    "/server-settings/agents/cert-pins/summary"),
     agentCertPinBulkAdd:      (pin) => request("POST", "/server-settings/agents/cert-pins/bulk-add", { pin }),
     agentCertPinBulkRemove:   (pin) => request("POST", "/server-settings/agents/cert-pins/bulk-remove", { pin }),
-    // Windows SSH deployment card (Integrations → Polaris Agent). Routes live
-    // under /server-settings/agents/* like the agent-build card's, even though
-    // the UI renders on the Integrations page.
+    // SSH Deployment card (Server Settings → Maintenance, agent-ssh-onboarding.js).
     agentWindowsSshGet:       () => request("GET",  "/server-settings/agents/windows-ssh"),
     agentWindowsSshSave:      (cfg) => request("PUT", "/server-settings/agents/windows-ssh", cfg),
     agentWindowsSshGenerate:  () => request("POST", "/server-settings/agents/windows-ssh/generate"),
@@ -1385,17 +1364,6 @@ const api = {
     scriptPublishTargets:     () => request("GET", "/server-settings/agents/script-publish/targets"),
     scriptPublishIntune:      (integrationId) =>
       trackedRequest("Publishing to Intune", "POST", "/server-settings/agents/script-publish/intune", { integrationId }),
-    // Arc: listing is read-only; arcRun EXECUTES the script on the named
-    // machines, which is why it takes an explicit id list and never a filter.
-    arcMachines:              (integrationId) =>
-      trackedRequest("Listing Arc machines", "GET",
-        "/server-settings/agents/script-publish/arc/machines?integrationId=" + encodeURIComponent(integrationId)),
-    arcRun:                   (integrationId, armIds) =>
-      trackedRequest("Running on Arc machines", "POST", "/server-settings/agents/script-publish/arc",
-        { integrationId, armIds }),
-    arcRunResult:             (integrationId, armId) =>
-      request("GET", "/server-settings/agents/script-publish/arc/result?integrationId=" +
-        encodeURIComponent(integrationId) + "&armId=" + encodeURIComponent(armId)),
     // Pinned SSH host keys (trust-on-first-use). Deleting one re-opens
     // first-use trust for that host — the recovery path after a rebuild.
     sshHostKeysList:          () => request("GET",    "/server-settings/agents/ssh-host-keys"),
@@ -1405,16 +1373,6 @@ const api = {
     // Rule 113(f): trust exactly the changed certificate the operator compared.
     tlsCertPinTrust:          (id, fingerprint) => request("POST", "/server-settings/agents/tls-cert-pins/" + encodeURIComponent(id) + "/trust", { fingerprint: fingerprint }),
     sshHostKeyDelete:         (id) => request("DELETE", "/server-settings/agents/ssh-host-keys/" + encodeURIComponent(id)),
-    // Agent code signing (internal-CA PKCS#12) — masked secret config + dry-run test.
-    agentSigningGet:          ()    => request("GET",  "/server-settings/agents/signing"),
-    agentSigningSet:          (cfg) => request("PUT",  "/server-settings/agents/signing", cfg),
-    agentSigningTest:         ()    => trackedRequest("Testing code signing", "POST", "/server-settings/agents/signing/test"),
-    // The .pfx and its password travel together: installKeystore validates
-    // before promoting, so a wrong password fails the upload instead of
-    // replacing a working keystore with one that breaks the next build.
-    agentSigningUploadKeystore: (file, password) =>
-      uploadFileFields("/server-settings/agents/signing/keystore", file, { password: password }),
-    agentSigningDeleteKeystore: () => request("DELETE", "/server-settings/agents/signing/keystore"),
     getNtp:      ()       => request("GET", "/server-settings/ntp"),
     updateNtp:   (body)   => request("PUT", "/server-settings/ntp", body),
     testNtp:     (body)   => trackedRequest("Testing NTP sync", "POST", "/server-settings/ntp/test", body),

@@ -153,7 +153,7 @@ the refusals; the default mode is "both" (offering a stronger login refuses noth
 
 **What it owns:** the SSRF-guarded "is this IdP URL reachable" probe for the Test buttons.
 **Public API:** `probeIdpUrl`; type `ProbeResult`.
-**Cross-service deps:** `services/credentials/netGuard.ts → isBlockedOutboundHost()`.
+**Cross-service deps:** `src/utils/netGuard.ts → isBlockedOutboundHost()`.
 **Used by:** `samlAuthService → testSamlSettings()`.
 **Invariants:** http(s) only, never a blocked range; any HTTP status = reachable; no redirects
 followed.
@@ -302,7 +302,7 @@ cannot be replayed at login.
 `invalidate`; type `SettingStore`.
 **Cross-service deps:** none.
 **Used by:** `webAccessSettingsService`, `passwordPolicyService`, `sessionSettingsService`,
-`authService` (`auth.mode`).
+`authService` (`auth.mode`), `windowsSshOnboardingService` (the SSH Deployment card's config).
 **Invariants:** the cache is per process — a write reaches other processes / the HA peer within
 `ttlMs`; the store has no read-failure opinion (each caller picks its own fallback).
 **When changing this:** none of its adopters may rely on read-after-write across processes.

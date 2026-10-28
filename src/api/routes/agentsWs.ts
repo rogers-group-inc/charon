@@ -19,6 +19,7 @@ import { enqueueReconcile } from "../../jobs/tagReconcileJob.js";
 import { prisma } from "../../db.js";
 import { logger } from "../../utils/logger.js";
 import { incAgentWs, decAgentWs } from "../../metrics.js";
+import { attach, isAttached, startConfigRefreshListener, type Frame } from "../../services/agentChannelService.js";
 
 const WS_PATH = "/api/v1/agents/ws";
 
@@ -56,30 +57,31 @@ export function attachAgentWsUpgradeHandler(server: Server): void {
     const now = new Date();
     void prisma.endpoint.update({ where: { id: endpointId }, data: { status: "online", wsConnectedAt: now, lastSeenAt: now } }).catch(() => {});
 
-    ws.on("message", (raw) => {
-      let msg: any;
-      try { msg = JSON.parse(raw.toString()); } catch { return; }
-      void handleFrame(endpointId, msg).catch((err) => logger.warn({ err: err?.message, endpointId }, "agent WS frame failed"));
-    });
+    // The session manager owns the socket's lifecycle (ping / pong, replace-on-
+    // redial, malformed-frame close) and the server→agent verbs (refresh-config).
+    attach(endpointId, ws, handleFrame);
 
     ws.on("close", () => {
       decAgentWs();
+      // A replaced socket's late close must not mark a live endpoint offline.
+      if (isAttached(endpointId)) return;
       void prisma.endpoint.update({ where: { id: endpointId }, data: { status: "offline", wsDisconnectedAt: new Date() } }).catch(() => {});
     });
-
-    ws.on("error", (err) => logger.warn({ err: err?.message, endpointId }, "agent WS error"));
   });
 
+  // Config refreshes published by other processes (pin staging, auth-mode changes).
+  void startConfigRefreshListener();
   logger.info({ path: WS_PATH }, "Agent telemetry WebSocket handler attached");
 }
 
-async function handleFrame(endpointId: string, msg: any): Promise<void> {
-  if (msg?.type === "heartbeat") {
+async function handleFrame(endpointId: string, frame: Frame): Promise<void> {
+  const msg = (frame.payload ?? {}) as Record<string, any>;
+  if (frame.type === "heartbeat") {
     await prisma.endpoint.update({
       where: { id: endpointId },
       data: { lastSeenAt: new Date(), currentIp: msg.ip ?? undefined, currentMac: msg.mac ?? undefined },
     });
-  } else if (msg?.type === "posture" && msg.posture) {
+  } else if (frame.type === "posture" && msg.posture) {
     const { changed } = await ingestPosture(endpointId, msg.posture);
     if (changed) await enqueueReconcile(endpointId);
   }

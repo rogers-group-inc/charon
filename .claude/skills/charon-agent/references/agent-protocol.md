@@ -18,7 +18,7 @@ via the provider callback.
 | heartbeat | `POST /api/v1/agents/heartbeat` (bearer) | `src/api/routes/agents.ts` (inline Endpoint update) |
 | posture | `POST /api/v1/agents/posture` (bearer) | `src/services/postureService.ts → ingestPosture()`; reconcile on change |
 | config / pin refresh | `GET /api/v1/agents/config` (bearer) | `src/services/certPinService.ts → getAgentCertPins()` + auth mode |
-| user login / logout | `POST /api/v1/agents/login`, `/logout` (bearer) | `src/services/verificationService.ts → bindVerification()` / `clearBinding()`; reconcile |
+| user login / logout | `POST /api/v1/agents/login` (bearer, `agentLoginLimiter`), `/logout` (bearer) | `src/services/verificationService.ts → bindVerification()` / `clearBinding()`; reconcile |
 | telemetry | WS `/api/v1/agents/ws` (bearer in `Sec-WebSocket-Protocol`) | `src/api/routes/agentsWs.ts` — open → `online`, close → `offline`; posture over WS reconciles on change |
 
 ## Agent side (`agent/src-tauri/src/`)

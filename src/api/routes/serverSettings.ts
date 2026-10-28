@@ -20,6 +20,7 @@ import { renderAndApply } from "../../services/nginxApplyService.js";
 import { prisma } from "../../db.js";
 import { AppError } from "../../utils/errors.js";
 import { requirePermission } from "../middleware/permissions.js";
+import { adminActionLimiter } from "../middleware/rateLimits.js";
 import { logEvent } from "../../services/eventService.js";
 import { getAppVersion } from "../../utils/version.js";
 
@@ -52,7 +53,7 @@ router.get("/certificates", requirePermission("serverSettingsSystem", "read"), a
 
 const uploadSchema = z.object({ certPem: z.string().min(1), keyPem: z.string().min(1), serverName: z.string().min(1), endpointPort: z.number().int().optional(), webPort: z.number().int().optional() });
 
-router.post("/certificates", requirePermission("serverSettingsSystem", "fullwrite"), async (req, res, next) => {
+router.post("/certificates", adminActionLimiter, requirePermission("serverSettingsSystem", "fullwrite"), async (req, res, next) => {
   try {
     const body = uploadSchema.parse(req.body);
     if (!isValidCertPem(body.certPem)) throw new AppError(400, "certPem is not a valid certificate");

@@ -57,3 +57,30 @@
 
 /* Lock glyph in the Add-Integration modal header (secrets-encrypted hint). */
 .modal-lock { display: inline-flex; align-items: center; color: var(--color-accent); margin-right: 0.5rem; }
+
+/* ─── Theme toggle (sidebar bottom) ─────────────────────────────────────────
+   Kept from the earlier polaris snapshot: polaris now themes from the account
+   menu, but Charon's sidebar still renders this button (app.js). */
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+  font-weight: 450;
+  cursor: pointer;
+  border: none;
+  background: none;
+  width: 100%;
+  transition: background 0.15s, color 0.15s;
+}
+.theme-toggle svg { width: 18px; height: 18px; flex-shrink: 0; opacity: 0.7; }
+.theme-toggle:hover {
+  background: rgba(79,195,247,0.08);
+  color: var(--color-text-primary);
+}
+[data-theme="light"] .theme-toggle:hover {
+  background: rgba(2,136,209,0.08);
+}

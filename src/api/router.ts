@@ -23,6 +23,15 @@ import endpointsRouter from "./routes/endpoints.js";
 import policiesRouter from "./routes/policies.js";
 import serverSettingsRouter from "./routes/serverSettings.js";
 import maintenanceRouter from "./routes/maintenance.js";
+import settingsNtpRouter from "./routes/settings/ntp.js";
+import settingsIdentificationRouter, { deviceIconsRouter, assetTypesRouter } from "./routes/settings/identification.js";
+import settingsWebServerRouter from "./routes/settings/webServer.js";
+import settingsMaintenanceRouter from "./routes/settings/maintenance.js";
+import settingsCustomizationRouter from "./routes/settings/customization.js";
+import settingsCredentialsRouter, { credentialsRouter } from "./routes/settings/credentials.js";
+import settingsApiTokensRouter, { apiTokensRouter } from "./routes/settings/apiTokens.js";
+import settingsHaRouter, { haRouter } from "./routes/settings/ha.js";
+import settingsFirmwareRouter from "./routes/settings/firmware.js";
 import { agentsEnrollRouter, agentsRouter } from "./routes/agents.js";
 import { requireAuth, attachApiToken } from "./middleware/auth.js";
 import { requirePermission } from "./middleware/permissions.js";
@@ -55,5 +64,19 @@ router.use("/policies", requirePermission("policies", "read"), policiesRouter);
 // Maintenance mounts BEFORE the blanket /server-settings gate so its
 // serverSettingsData guard applies instead of serverSettingsSystem.
 router.use("/server-settings/maintenance", maintenanceRouter);
+// Server Settings tabs ported from polaris (public/js/server-settings-*.js),
+// at polaris's paths. Also BEFORE the blanket gate, because the tabs ride
+// different keys (credentials, apiTokens, serverSettingsData) — each route
+// in these files declares its own requirePermission().
+for (const r of [
+  settingsNtpRouter, settingsIdentificationRouter, settingsWebServerRouter,
+  settingsMaintenanceRouter, settingsCustomizationRouter, settingsCredentialsRouter,
+  settingsApiTokensRouter, settingsHaRouter, settingsFirmwareRouter,
+]) router.use("/server-settings", r);
+router.use("/credentials", credentialsRouter);
+router.use("/api-tokens", apiTokensRouter);
+router.use("/ha", haRouter);
+router.use("/device-icons", deviceIconsRouter);
+router.use("/asset-types", assetTypesRouter);
 router.use("/server-settings", requirePermission("serverSettingsSystem", "read"), serverSettingsRouter);
 router.use("/events", requirePermission("events", "read"), eventsRouter);

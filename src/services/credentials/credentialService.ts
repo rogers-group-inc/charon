@@ -24,13 +24,13 @@
  * credential attached, not a credential that authenticates nothing.
  */
 
-import { trimTrailing } from "./trimTrailing.js";
-import { safeRegexProblem } from "./safeRegex.js";
+import { trimTrailing } from "../../utils/trimTrailing.js";
+import { safeRegexProblem } from "../../utils/safeRegex.js";
 import { prisma } from "../../db.js";
 import type { Prisma } from "../../generated/prisma/client.js";
 import { AppError } from "../../utils/errors.js";
 import { encryptSecret, decryptSecret, isEncryptedEnvelope } from "../../utils/crypto.js";
-import { SECRET_MASK, isMaskedSecret } from "./secretMask.js";
+import { SECRET_MASK, isMaskedSecret } from "../../utils/secretMask.js";
 import {
   type HttpCheckConfig,
   normalizeHttpPath,

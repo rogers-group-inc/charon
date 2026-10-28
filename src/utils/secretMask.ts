@@ -1,11 +1,11 @@
 /**
- * src/services/credentials/secretMask.ts — the mask sentinel shared with the
+ * src/utils/secretMask.ts — the mask sentinel shared with the
  * Credentials tab (public/js/server-settings-credentials.js `_credMask`).
  * Ported from polaris utils/secretMask.ts; the sentinel is Charon's own
  * SECRET_MASK (utils/crypto.ts), which is the same eight bullets.
  */
 
-import { SECRET_MASK } from "../../utils/crypto.js";
+import { SECRET_MASK } from "./crypto.js";
 
 export { SECRET_MASK };
 

@@ -7,29 +7,25 @@
  * transport code is verbatim apart from:
  *
  *   - no per-host SNMP gate / phase tracing / ICMP (monitor-only machinery);
- *   - trust-on-first-use pinning (polaris business rule 113 — SSH host keys,
- *     and the TLS certificate of any HTTPS endpoint a secret is sent to
- *     without a CA check) is kept, but pins live in Charon's Setting table
- *     under `credentials.pin.<ssh|tls>:<host>:<port>` instead of polaris's
- *     SshHostKey / TlsCertPin tables. A mismatch refuses BEFORE any secret is
- *     written and logs a warning Event; re-trusting a legitimately re-keyed
- *     host means deleting that Setting row.
+ *   - trust-on-first-use pinning (SSH host keys, and the TLS certificate of
+ *     any HTTPS endpoint a secret is sent to without a CA check) uses the
+ *     shared SshHostKey / TlsCertPin stores, as in polaris. A mismatch refuses
+ *     BEFORE any secret is written and logs a warning Event; re-trusting a
+ *     legitimately re-keyed host is done under Server Settings → Web Server →
+ *     Pinned server identities.
  */
 
-import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
-import { request as httpsRequest, Agent as HttpsAgent, type AgentOptions } from "node:https";
+import { request as httpsRequest } from "node:https";
 import { request as httpRequest } from "node:http";
-import { connect as tlsConnect, type PeerCertificate, type ConnectionOptions } from "node:tls";
-import type { Duplex } from "node:stream";
 import type { LookupFunction } from "node:net";
 import * as snmp from "net-snmp";
 import { Client as SshClient } from "ssh2";
-import { prisma } from "../../db.js";
 import { AppError } from "../../utils/errors.js";
-import { logEvent } from "../eventService.js";
-import { trimTrailing } from "./trimTrailing.js";
-import { bareHost, isIpv6Address, urlHost } from "./cidr.js";
+import { trimTrailing } from "../../utils/trimTrailing.js";
+import { bareHost, isIpv6Address, urlHost } from "../../utils/cidr.js";
+import { buildHostVerifier } from "../../utils/remoteExec.js";
+import { pinnedAgentFor } from "../../utils/pinnedTlsAgent.js";
 import { makeOidMonotonicGuard } from "./oidCompare.js";
 import {
   type HttpAuthConfig,
@@ -72,138 +68,8 @@ function toPositiveInt(v: unknown, fallback: number): number {
   return Math.floor(n);
 }
 
-// ─── Trust-on-first-use pins (Setting-backed) ────────────────────────────────
-
-type PinKind = "ssh" | "tls";
-type PinVerdict = { ok: true } | { ok: false; expected: string; actual: string };
-
-function pinKey(kind: PinKind, host: string, port: number): string {
-  return `credentials.pin.${kind}:${host}:${port}`;
-}
-
-/** no pin → store + accept; match → accept; differ → refuse + warning Event. Exported for tests. */
-export async function verifyOrPin(kind: PinKind, host: string, port: number, fingerprint: string, detail = ""): Promise<PinVerdict> {
-  const key = pinKey(kind, host, port);
-  const read = async () => {
-    const row = await prisma.setting.findUnique({ where: { key } });
-    const v = row?.value as { fingerprint?: unknown } | undefined;
-    return typeof v?.fingerprint === "string" ? v.fingerprint : null;
-  };
-  let pinned = await read();
-  if (pinned === null) {
-    try {
-      await prisma.setting.create({
-        data: { key, value: { fingerprint, detail: detail.slice(0, 200), pinnedAt: new Date().toISOString() } },
-      });
-      void logEvent({
-        action: kind === "ssh" ? "ssh.host_key.pinned" : "tls.cert.pinned",
-        resourceType: kind === "ssh" ? "ssh-host-key" : "tls-cert-pin",
-        resourceName: `${host}:${port}`,
-        actor: "system:credentials",
-        message: `Pinned ${kind === "ssh" ? "SSH host key" : "TLS certificate"} for ${host}:${port}${detail ? ` (${detail})` : ""}`,
-        details: { host, port, fingerprint },
-      });
-      return { ok: true };
-    } catch {
-      // Concurrent first contact raced on the key; whoever won must agree.
-      pinned = await read();
-      if (pinned === null) throw new AppError(500, "Could not record the server identity pin");
-    }
-  }
-  if (pinned === fingerprint) return { ok: true };
-  void logEvent({
-    action: kind === "ssh" ? "ssh.host_key.mismatch" : "tls.cert.mismatch",
-    resourceType: kind === "ssh" ? "ssh-host-key" : "tls-cert-pin",
-    resourceName: `${host}:${port}`,
-    actor: "system:credentials",
-    level: "warning",
-    message:
-      `${kind === "ssh" ? "SSH host key" : "TLS certificate"} for ${host}:${port} does not match the pinned one — refused before sending any credential. ` +
-      `If it was legitimately re-keyed, delete the setting "${key}" to trust the new one.`,
-    details: { host, port, expectedFingerprint: pinned, actualFingerprint: fingerprint },
-  });
-  return { ok: false, expected: pinned, actual: fingerprint };
-}
-
-/** OpenSSH-style fingerprint of a raw host-key blob (what `ssh-keygen -lf` prints). */
-export function fingerprintKeyBlob(key: Buffer): string {
-  return "SHA256:" + createHash("sha256").update(key).digest("base64").replace(/=+$/, "");
-}
-
-/** ssh2 hostVerifier — on unless verifyHostKey is false (rule 113). Fails CLOSED. */
-function buildHostVerifier(host: string, port: number, config: Record<string, unknown>): ((key: Buffer, cb: (valid: boolean) => void) => void) | null {
-  if (config.verifyHostKey === false) return null;
-  return (key: Buffer, cb: (valid: boolean) => void) => {
-    verifyOrPin("ssh", host, port, fingerprintKeyBlob(key))
-      .then((v) => cb(v.ok))
-      .catch(() => cb(false));
-  };
-}
-
-/** The request failed because the server's certificate was refused — no credential was sent. */
-export class CertPinRefusedError extends Error {
-  readonly code = "CERT_PIN_REFUSED";
-  constructor(message: string) {
-    super(message);
-    this.name = "CertPinRefusedError";
-  }
-}
-
-/**
- * polaris utils/pinnedTlsAgent.ts (verbatim behavior): opens the TLS socket,
- * checks the leaf against the pin AFTER the handshake and BEFORE the request
- * (and its Authorization header) is written. No session resumption, no keep-alive.
- */
-class PinnedTlsAgent extends HttpsAgent {
-  private readonly check: (cert: PeerCertificate) => Promise<{ ok: true } | { ok: false; reason: string }>;
-
-  constructor(check: (cert: PeerCertificate) => Promise<{ ok: true } | { ok: false; reason: string }>, opts: AgentOptions = {}) {
-    super({ ...opts, keepAlive: false, maxCachedSessions: 0 });
-    this.check = check;
-  }
-
-  createConnection(options: ConnectionOptions, callback?: (err: Error | null, stream: Duplex) => void): Duplex | undefined {
-    let settled = false;
-    const done = (err: Error | null, socket: Duplex): void => {
-      if (settled) return;
-      settled = true;
-      callback?.(err, socket);
-    };
-    const socket = tlsConnect({ ...options, rejectUnauthorized: false, session: undefined });
-    socket.once("secureConnect", () => {
-      const cert = socket.getPeerCertificate(false);
-      if (!cert || !cert.fingerprint256) {
-        socket.destroy();
-        done(new CertPinRefusedError("The server presented no certificate"), socket);
-        return;
-      }
-      this.check(cert).then(
-        (v) => {
-          if (v.ok) { done(null, socket); return; }
-          socket.destroy();
-          done(new CertPinRefusedError(v.reason), socket);
-        },
-        (err: unknown) => {
-          socket.destroy();
-          done(new CertPinRefusedError(`Could not check the server certificate: ${err instanceof Error ? err.message : String(err)}`), socket);
-        },
-      );
-    });
-    socket.once("error", (err) => done(err, socket));
-    return undefined;
-  }
-}
-
-function pinnedAgentFor(host: string, port: number): PinnedTlsAgent {
-  return new PinnedTlsAgent(async (cert) => {
-    const subject = typeof cert.subject?.CN === "string" ? cert.subject.CN : "";
-    const fp = String(cert.fingerprint256).replace(/:/g, "").toUpperCase();
-    const v = await verifyOrPin("tls", host, port, fp, subject);
-    return v.ok
-      ? { ok: true }
-      : { ok: false, reason: `The TLS certificate of ${host}:${port} changed since it was pinned — refused before sending any credential.` };
-  });
-}
+// Trust-on-first-use pins: the shared SshHostKey / TlsCertPin stores, via
+// utils/remoteExec.ts → buildHostVerifier() and utils/pinnedTlsAgent.ts → pinnedAgentFor().
 
 // ─── SNMP ────────────────────────────────────────────────────────────────────
 

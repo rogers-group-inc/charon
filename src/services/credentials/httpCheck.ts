@@ -46,8 +46,8 @@
  * slowing one probe. `contains` is the default for the same reason.
  */
 
-import { compileSafeRegex, safeRegexProblem } from "./safeRegex.js";
-import { urlHost } from "./cidr.js";
+import { compileSafeRegex, safeRegexProblem } from "../../utils/safeRegex.js";
+import { urlHost } from "../../utils/cidr.js";
 
 /** Hard ceiling on how much of the response body is read and matched against. */
 export const MAX_BODY_BYTES = 64 * 1024;

@@ -9,7 +9,7 @@
  * avoid a circular import; now both modules consume the same helper.
  */
 
-import { compileSafeRegex } from "./safeRegex.js";
+import { compileSafeRegex } from "../../utils/safeRegex.js";
 
 /** One `symbol FROM MODULE` pair out of a module's IMPORTS block. */
 export interface ImportBinding {

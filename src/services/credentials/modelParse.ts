@@ -28,7 +28,7 @@
  */
 
 import { MAX_REGEX_SUBJECT, countCaptureGroups } from "./regexSafety.js";
-import { safeRegexProblem, tryCompileSafeRegex } from "./safeRegex.js";
+import { safeRegexProblem, tryCompileSafeRegex } from "../../utils/safeRegex.js";
 
 export interface ModelParse {
   /** Regex applied to the raw scalar (case-insensitive); group 1 is the model token. */

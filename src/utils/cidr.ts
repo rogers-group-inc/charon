@@ -1,5 +1,5 @@
 /**
- * src/services/credentials/cidr.ts — the four address helpers the ported
+ * src/utils/cidr.ts — the four address helpers the ported
  * credential probe / HTTP-check code needs, copied verbatim from polaris
  * src/utils/cidr.ts (Charon has no subnet/IPAM module to host the rest).
  */

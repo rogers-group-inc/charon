@@ -42,7 +42,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { compileSafeRegex } from "./safeRegex.js";
+import { compileSafeRegex } from "../../utils/safeRegex.js";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

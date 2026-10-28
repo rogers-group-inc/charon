@@ -183,6 +183,86 @@ model Integration {
   @@map("integrations")
 }
 
+/// Live state of an integration's discovery run (ported from Polaris). One row
+/// per integration: the web process enqueues it, the worker runs it and heartbeats
+/// `workerHeartbeatAt`; the leader's reaper fails a run whose worker went silent.
+/// The device counters are for the Fortinet types (FortiGates reached under a
+/// FortiManager); a directory run reports its object counts in `completedCount`.
+model DiscoveryRun {
+  id                  String    @id @default(uuid())
+  integrationId       String    @unique
+  integrationName     String
+  type                String // mirrors Integration.type
+  status              String    @default("queued") // queued | running | completed | aborted | error
+  actor               String // who triggered it (username or "auto-discovery")
+  startedAt           DateTime? // set by the worker at run start
+  updatedAt           DateTime  @updatedAt
+  finishedAt          DateTime?
+  totalDevices        Int?
+  completedCount      Int       @default(0)
+  skippedOfflineCount Int       @default(0)
+  skippedErrorCount   Int       @default(0)
+  activeDevices       Json      @default("[]") // [{ name, startedAt }]
+  slowAlerted         Boolean   @default(false)
+  slowAlertedDevices  Json      @default("[]") // string[] of device names already slow-alerted
+  cancelRequested     Boolean   @default(false) // web sets this; the worker polls it and aborts
+  workerHeartbeatAt   DateTime? // last write from the worker; drives the stale-run reaper
+  scopeDeviceName     String? // set when the run is scoped to one FortiGate; NULL = full run
+  createdAt           DateTime  @default(now())
+
+  @@index([status])
+  @@map("discovery_runs")
+}
+
+/// Trust-on-first-use pin of an SSH server's host key (ported from Polaris). Every
+/// outbound SSH connection (credential probes, agent push install / upgrade /
+/// uninstall) pins the first key seen for host:port and refuses a different key
+/// BEFORE authenticating, unless its credential sets `verifyHostKey: false`.
+/// Plain table, no Endpoint FK — a target is pinned before it has enrolled, and
+/// the pin is keyed by the address actually dialed. Deleting a row re-opens
+/// first-use trust for that host (the documented re-key recovery; audited).
+model SshHostKey {
+  id          String   @id @default(uuid())
+  host        String
+  port        Int      @default(22)
+  keyType     String // "ssh-ed25519", "ecdsa-sha2-nistp256", "ssh-rsa", ...
+  fingerprint String // "SHA256:<base64, unpadded>" — same form `ssh-keygen -lf` prints
+  firstSeen   DateTime @default(now())
+  lastSeen    DateTime @default(now())
+
+  @@unique([host, port])
+  @@map("ssh_host_keys")
+}
+
+/// Trust-on-first-use pin of the TLS leaf certificate a server presented, for the
+/// HTTPS connections that carry a secret WITHOUT verifying a CA chain (an
+/// integration with verifySsl off, WinRM, credential probes). The first
+/// connection to host:port pins the leaf SHA-256; a later connection presenting a
+/// different certificate is refused BEFORE the request carrying the secret is
+/// written. A CA-verified connection is not pinned.
+model TlsCertPin {
+  id                 String    @id @default(uuid())
+  host               String
+  port               Int
+  fingerprint        String // leaf certificate SHA-256, colon-separated hex (Node's fingerprint256)
+  subject            String    @default("") // the certificate's subject CN, for display
+  firstSeen          DateTime  @default(now())
+  lastSeen           DateTime  @default(now())
+  /// The certificate presented INSTEAD of the pinned one, kept so an
+  /// administrator can trust exactly that certificate ("Trust new certificate")
+  /// rather than deleting the pin and trusting whatever answers next. Cleared
+  /// when trusted, or when the pinned certificate comes back.
+  pendingFingerprint String?   @map("pending_fingerprint")
+  pendingSubject     String?   @map("pending_subject")
+  pendingSeenAt      DateTime? @map("pending_seen_at")
+  /// Until when the NEXT changed certificate is accepted and re-pinned without a
+  /// person (`allowRepin`).
+  repinUntil         DateTime? @map("repin_until")
+
+  @@unique([host, port])
+  @@map("tls_cert_pins")
+}
+
 model Credential {
   id        String   @id @default(uuid())
   name      String   @unique

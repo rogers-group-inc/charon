@@ -440,7 +440,7 @@ only), `createCredential`, `updateCredential`, `deleteCredential`, `getCredentia
 `sealSecrets`, `openSecrets`, `stripSecrets`, `mergeConfigPreservingSecrets`,
 `credentialCanReboot`, `credentialAllowsReboot`, `CREDENTIAL_TYPES`.
 **Cross-service deps:** `src/utils/crypto.ts` (`encryptSecret` / `decryptSecret`),
-`secretMask.ts`, `httpCheck.ts`, `safeRegex.ts`, `trimTrailing.ts`.
+`src/utils/secretMask.ts`, `httpCheck.ts`, `src/utils/safeRegex.ts`, `src/utils/trimTrailing.ts`.
 **Used by:** `src/api/routes/settings/credentials.ts`, `manufacturerProfileService`.
 **Invariants:** rule 3a — secrets are AES-256-GCM envelopes at rest, masked on every response,
 preserved when the mask comes back unchanged; rows of any other type (integration-owned) are
@@ -454,13 +454,17 @@ create; the route enforces write = own rows, fullwrite = any.
 **What it owns:** one-shot probes behind Test Connection and the MIB walk (SNMP, WinRM, SSH,
 REST API, HTTP).
 **Public API:** `probeCredentialAgainstHost`, `probeHttp`, `snmpWalkRaw`,
-`snmpVarbindToPrintable`, `verifyOrPin`, `fingerprintKeyBlob`.
-**Cross-service deps:** `net-snmp`, `ssh2`; `cidr.ts`, `digestAuth.ts`, `httpCheck.ts`,
-`oidCompare.ts`, `trimTrailing.ts`.
+`snmpVarbindToPrintable`.
+**Cross-service deps:** `net-snmp`, `ssh2`; `src/utils/remoteExec.ts → buildHostVerifier()`
+(SshHostKey pins), `src/utils/pinnedTlsAgent.ts → pinnedAgentFor()` (TlsCertPin pins),
+`src/utils/cidr.ts`, `src/utils/trimTrailing.ts`, `digestAuth.ts`, `httpCheck.ts`,
+`oidCompare.ts`.
 **Used by:** `src/api/routes/settings/credentials.ts`.
-**Invariants:** SSH host keys are verified or pinned on first use and the verifier fails
-CLOSED; probe targets are operator-typed and pass `netGuard` (no loopback / link-local /
-metadata / multicast) — Charon has no asset targets.
+**Invariants:** SSH host keys and the TLS certificate of any unverified HTTPS target are
+verified or pinned on first use in the shared stores (`sshHostKeyService`,
+`tlsCertPinService`, see integrations.md) and the check fails CLOSED before a secret is sent;
+probe targets are operator-typed and pass `netGuard` (no loopback / link-local / metadata /
+multicast) — Charon has no asset targets.
 
 ### The rest of the folder
 
@@ -473,13 +477,14 @@ metadata / multicast) — Charon has no asset targets.
 - `manufacturerProfileService.ts` — `ManufacturerProfile` / `…Metric` / `…MetricOverride` /
   `ManufacturerCustomWidget` CRUD + cached resolver; `manufacturerProfilePortabilityService.ts`
   — export / import a profile as portable JSON (no ids, no secrets, MIBs not bundled).
-- `netGuard.ts` — SSRF guard (`resolveAllowedHost`, `guardedLookup`,
-  `assertOutboundHostAllowed`): blocks loopback, link-local, unspecified, multicast; RFC1918
-  stays allowed; judged on the resolved ADDRESS.
-- `safeRegex.ts` / `regexSafety.ts` — guards for operator-supplied regexes (Charon stores but
-  never runs them on a hot path; no re2js dependency); `trimTrailing.ts` — regex-free trim.
-- Pure helpers: `assetTypes.ts`, `cidr.ts`, `digestAuth.ts`, `hardwareSensors.ts`,
-  `httpCheck.ts`, `modelParse.ts`, `oidCompare.ts`, `probeTarget.ts`, `secretMask.ts`,
+- `regexSafety.ts` — guards for operator-supplied regexes alongside `src/utils/safeRegex.ts`.
+- Shared with the integrations (moved to `src/utils/`): `netGuard.ts` — SSRF guard
+  (`resolveAllowedHost`, `guardedLookup`, `assertOutboundHostAllowed`): blocks loopback,
+  link-local, unspecified, multicast; RFC1918 stays allowed; judged on the resolved ADDRESS.
+  `safeRegex.ts` — operator regexes compile on `re2js` (linear time). `secretMask.ts`,
+  `cidr.ts`, `trimTrailing.ts` (regex-free trim).
+- Pure helpers: `assetTypes.ts`, `digestAuth.ts`, `hardwareSensors.ts`,
+  `httpCheck.ts`, `modelParse.ts`, `oidCompare.ts`, `probeTarget.ts`,
   `stateProbes.ts`, `symbolTransforms.ts`.
 
 **When changing the folder:** keep it free of imports from the Fortinet pipeline; the routes

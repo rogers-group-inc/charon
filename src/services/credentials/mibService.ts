@@ -13,7 +13,7 @@
  * upload form against arbitrary text or attempts to smuggle code in.
  */
 import { IMPORTS_BLOCK_RE } from "./mibParserUtils.js";
-import { compileSafeRegex } from "./safeRegex.js";
+import { compileSafeRegex } from "../../utils/safeRegex.js";
 import { prisma } from "../../db.js";
 import { AppError } from "../../utils/errors.js";
 import { refreshRegistry, resolveSymbolsForMib, missingRootsForMib, type MissingRoot } from "./oidRegistry.js";

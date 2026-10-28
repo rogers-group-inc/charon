@@ -22,6 +22,21 @@
   (directory user keys) and the users matched by `rules` over DirectoryObject attributes
   (`src/services/customGroupService.ts → resolveGroupMembers()`). A tag source like a directory
   group.
+- **DiscoveryRun** — live state of one integration's discovery run (ported from polaris), one
+  row per integration (`integrationId` unique, no FK). `status` queued → running → completed /
+  aborted / error; the web process sets `cancelRequested`, the worker polls it and heartbeats
+  `workerHeartbeatAt`; a run whose worker went silent is failed by the stale-run reaper. The
+  device counters belong to the Fortinet types.
+- **SshHostKey** — trust-on-first-use pin of an SSH server's host key, unique on `(host, port)`
+  (the address dialed — no Endpoint FK). Every outbound `ssh2.connect` checks it before
+  authenticating (`src/utils/remoteExec.ts → buildHostVerifier()`, fails closed) unless the
+  credential sets `verifyHostKey: false`. Deleting a row re-opens first-use trust (audited).
+- **TlsCertPin** — trust-on-first-use pin of a TLS leaf certificate (SHA-256), unique on
+  `(host, port)`, for HTTPS connections that send a secret WITHOUT CA verification. A
+  different certificate is refused before the request is written and parked in
+  `pendingFingerprint` until an administrator trusts that exact fingerprint
+  (`src/services/tlsCertPinService.ts → trustPendingCert()`); `repinUntil` opens a short
+  automatic re-pin window (`allowRepin()`).
 
 ## Schema
 
@@ -112,6 +127,62 @@ model CustomGroup {
   sources TagSource[]
 
   @@map("custom_groups")
+}
+
+model DiscoveryRun {
+  id                  String    @id @default(uuid())
+  integrationId       String    @unique
+  integrationName     String
+  type                String // mirrors Integration.type
+  status              String    @default("queued") // queued | running | completed | aborted | error
+  actor               String // who triggered it (username or "auto-discovery")
+  startedAt           DateTime? // set by the worker at run start
+  updatedAt           DateTime  @updatedAt
+  finishedAt          DateTime?
+  totalDevices        Int?
+  completedCount      Int       @default(0)
+  skippedOfflineCount Int       @default(0)
+  skippedErrorCount   Int       @default(0)
+  activeDevices       Json      @default("[]") // [{ name, startedAt }]
+  slowAlerted         Boolean   @default(false)
+  slowAlertedDevices  Json      @default("[]")
+  cancelRequested     Boolean   @default(false) // web sets this; the worker polls it and aborts
+  workerHeartbeatAt   DateTime? // last write from the worker; drives the stale-run reaper
+  scopeDeviceName     String? // set when the run is scoped to one FortiGate; NULL = full run
+  createdAt           DateTime  @default(now())
+
+  @@index([status])
+  @@map("discovery_runs")
+}
+
+model SshHostKey {
+  id          String   @id @default(uuid())
+  host        String
+  port        Int      @default(22)
+  keyType     String // "ssh-ed25519", "ecdsa-sha2-nistp256", "ssh-rsa", ...
+  fingerprint String // "SHA256:<base64, unpadded>" — same form `ssh-keygen -lf` prints
+  firstSeen   DateTime @default(now())
+  lastSeen    DateTime @default(now())
+
+  @@unique([host, port])
+  @@map("ssh_host_keys")
+}
+
+model TlsCertPin {
+  id                 String    @id @default(uuid())
+  host               String
+  port               Int
+  fingerprint        String // leaf certificate SHA-256, colon-separated hex
+  subject            String    @default("") // the certificate's subject CN, for display
+  firstSeen          DateTime  @default(now())
+  lastSeen           DateTime  @default(now())
+  pendingFingerprint String?   @map("pending_fingerprint")
+  pendingSubject     String?   @map("pending_subject")
+  pendingSeenAt      DateTime? @map("pending_seen_at")
+  repinUntil         DateTime? @map("repin_until")
+
+  @@unique([host, port])
+  @@map("tls_cert_pins")
 }
 ```
 

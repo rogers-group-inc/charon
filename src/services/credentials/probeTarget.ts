@@ -27,7 +27,7 @@
  * tell `fe80::1` from `10.0.0.5:8443` — see `looksLikeIpv6`.
  */
 
-import { isValidIpAddress } from "./cidr.js";
+import { isValidIpAddress } from "../../utils/cidr.js";
 
 /** RFC 1123 hostname label: alphanumeric, inner hyphens, 1–63 chars. */
 const LABEL = /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/;

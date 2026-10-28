@@ -141,3 +141,48 @@ normalizes to before persistence as DirectoryObject rows.
 fallback) — it is the DirectoryObject uniqueness key and the TagSource `ref`.
 **When changing this:** a field added here needs the DirectoryObject column or `attributes` key
 that persists it.
+
+---
+
+## services/sshHostKeyService.ts
+
+**What it owns:** the `SshHostKey` trust-on-first-use store (ported from polaris): the first
+SSH connection to host:port pins the server's host-key fingerprint; a later different key is
+refused before authentication.
+**Public API:** `verifyOrPin`, `fingerprintKeyBlob`, `keyTypeFromBlob`, `listHostKeys`,
+`listHostKeysWithEndpoints`, `deleteHostKey`, `forgetCachedHostKey`, `_resetCaches`; types
+`SshHostKeyRecord`, `HostKeyVerdict`.
+**Cross-service deps:** Prisma `SshHostKey`, `Endpoint` (display join only);
+`eventService → logEvent()`.
+**Used by:** `src/utils/remoteExec.ts → buildHostVerifier()` (dynamic import) — every
+`ssh2.connect` in the tree: `credentials/credentialProbeService` today, agent push install
+next.
+**Invariants:** fail CLOSED — an internal error rejects the handshake, never accepts it; a
+mismatch writes a warning Event with both fingerprints; deleting a pin re-opens first-use trust
+and is audited; a pin is keyed by the address dialed, never by an Endpoint FK. TOFU detects a
+key CHANGING, not a host already impersonated when first pinned.
+**When changing this:** keep `tlsCertPinService` the same shape (they render together as
+"Pinned server identities"); `tests/unit/sshHostKey.test.ts`.
+
+---
+
+## services/tlsCertPinService.ts
+
+**What it owns:** the `TlsCertPin` trust-on-first-use store for HTTPS connections that carry a
+secret WITHOUT verifying a CA chain (integration `verifySsl` off, WinRM, credential probes),
+including the pending-certificate re-trust flow.
+**Public API:** `verifyOrPinCert`, `normalizeFingerprint`, `listCertPins`,
+`listCertPinsWithUsers`, `pinsForEndpoints`, `changedCertPins`, `trustPendingCert`,
+`allowRepin`, `deleteCertPin`, `forgetCachedCertPin`, `_resetCaches`; types
+`TlsCertPinRecord`, `CertPinVerdict`, `CertPinUser`.
+**Cross-service deps:** Prisma `TlsCertPin`, `Endpoint` + `Integration` (display join, id /
+name / address columns only — never config secrets); `eventService → logEvent()`.
+**Used by:** `src/utils/pinnedTlsAgent.ts → pinnedAgentFor()` and
+`src/utils/tlsDispatcher.ts → pinnedTlsDispatcher()` (dynamic imports) — credential probes,
+WinRM, and every integration request with TLS verification off.
+**Invariants:** the decision happens after the handshake and BEFORE the request carrying the
+secret is written; a changed certificate is remembered as `pendingFingerprint` and trusted only
+when an administrator confirms that exact fingerprint (`trustPendingCert`); one mismatch Event
+per NEW certificate; a CA-verified connection is never pinned.
+**When changing this:** `tests/integration/tlsCertPin.test.ts`,
+`tests/integration/tlsPinnedDispatcher.test.ts` (need a `*_test` DB).

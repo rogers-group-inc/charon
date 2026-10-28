@@ -25,7 +25,7 @@ import { symbolReadiness, ensureRegistryLoaded, type SymbolReadiness } from "./o
 import { logEvent } from "../eventService.js";
 import { isKnownAssetType, normalizeAssetTypeName } from "./assetTypes.js";
 import { validateModelParse } from "./modelParse.js";
-import { safeRegexProblem } from "./safeRegex.js";
+import { safeRegexProblem } from "../../utils/safeRegex.js";
 import { validateHttpCheckDefinition } from "./credentialService.js";
 import { isDeviceLoginCredential, type HttpAuthConfig } from "./httpCheck.js";
 import { logger } from "../../utils/logger.js";

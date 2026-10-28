@@ -47,6 +47,7 @@ src/
 │   ├── crypto/identity:      apiTokenService, agentTokenService, authService, verificationService, eventService
 │   ├── integrations:         httpClient, integrationConfig, integrationService, fortimanagerService, fortigateService,
 │   │                         activeDirectoryService, ldapClient, entraIdService, directoryTypes
+│   ├── outbound trust:       sshHostKeyService (SshHostKey TOFU), tlsCertPinService (TlsCertPin TOFU)
 │   ├── tags/enforcement:     customGroupService, tagService, tagReconciler, policyService, fortinetEnforcementService
 │   ├── agent/posture:        invitationCodeService, agentEnrollmentService, postureService, certPinService
 │   ├── infra:                leaderElection, certInfo, nginxRenderer, nginxApplyService, backupService, capacityService,
@@ -59,7 +60,7 @@ src/
 │   ├── settings (ha/fw):     haService, haEnrollmentService, firmwareRepositoryService
 │   └── credentials/          credentialService, credentialProbeService, mibService, oidRegistry, stdMibLibrary (+ stdMibs/*.txt),
 │                             manufacturerAliasService, manufacturerProfileService, manufacturerProfilePortabilityService,
-│                             netGuard (SSRF guard), safeRegex, regexSafety + pure helpers (see services/server-settings.md)
+│                             regexSafety + pure helpers (see services/server-settings.md)
 ├── jobs/
 │   ├── integrationHealthCheck.ts  # leader schedules every 10 min; worker consumes
 │   ├── tagReconcileJob.ts         # enqueueReconcile(); worker consumer
@@ -88,7 +89,29 @@ src/
 │   ├── haAdvisories.ts       # HA guidance arithmetic (RTT bands, WAL rate, RPO/RTO, install shape)
 │   ├── firmwareVersion.ts    # firmware version + image identity parsing (pure)
 │   ├── assetTypeMatch.ts     # device-type inference rules (pure; AssetTypeDef.matchRules)
-│   └── deviceFilterCondition.ts # asset-tag auto-assign filter vocabulary + zod schema + guards
+│   ├── deviceFilterCondition.ts # asset-tag auto-assign filter vocabulary + zod schema + guards
+│   │   ── ported from polaris: outbound trust + integration plumbing ──
+│   ├── tlsDispatcher.ts      # tlsFetch(): per-request undici dispatcher; verify off ⇒ TlsCertPin TOFU dispatcher
+│   ├── pinnedTlsAgent.ts     # node:https Agent that checks the leaf against TlsCertPin after handshake, before the request
+│   ├── remoteExec.ts         # withSshClient / sshExec / sftpPut / buildHostVerifier (SshHostKey TOFU, fails closed)
+│   ├── remoteStaging.ts      # per-run mktemp -d staging dir on a remote host
+│   ├── winrm.ts              # WinRS client (pinned TLS when unverified)
+│   ├── sshKeygen.ts          # ed25519 keypair generation with retry
+│   ├── netGuard.ts           # SSRF guard for operator-supplied outbound hosts (moved from services/credentials/)
+│   ├── guardedFetch.ts       # fetch whose DNS lookup goes through netGuard
+│   ├── secretMask.ts         # the mask sentinel + isMaskedSecret (moved from services/credentials/)
+│   ├── secretDestination.ts  # a stored secret follows its destination (restoreStoredSecrets)
+│   ├── configSecretFields.ts # which config keys are secrets, anywhere in a JSON tree
+│   ├── integrationFilter.ts  # include/exclude wildcard filtering for discovery
+│   ├── wildcard.ts           # compileWildcard / compilePattern (regex mode on RE2)
+│   ├── safeRegex.ts          # operator regexes on re2js (moved from services/credentials/)
+│   ├── fortiosRequestGate.ts # per-FortiGate request pacing + 401 pause (FortiOS API-key lockout)
+│   ├── fortiosEnvelope.ts    # FortiOS response envelope parsing (system status, HA peers)
+│   ├── entraClientCredentials.ts # the client-credentials token request shape (Graph)
+│   ├── cidr.ts               # urlHost / bareHost / isIpv6Address (moved from services/credentials/)
+│   ├── trimTrailing.ts       # regex-free trailing trim (moved from services/credentials/)
+│   ├── text.ts               # truncate()
+│   └── sleep.ts              # promise sleep
 ├── setup/
 │   ├── detectSetup.ts        # getSetupState(), markSetupComplete()
 │   ├── setupServer.ts        # first-run wizard server
@@ -104,5 +127,5 @@ public/      vanilla JS + HTML, no build step (see charon-ui-canon)
 agent/       Tauri endpoint agent: src-tauri/ (Rust core), ui/ (web GUI) (see charon-agent)
 deploy/      install-rhel.sh, setup-ha.sh, HA.md, systemd/, nginx/, scripts/ (see charon-deploy)
 scripts/     check-docs.mjs, check-versions.mjs, next-rule-number.mjs, copy-build-assets.mjs
-tests/       setup.ts (dotenv), unit/
+tests/       setup.ts (dotenv), unit/, integration/ (DB-backed; _helpers.ts skips unless DATABASE_URL names a *_test DB), helpers/ (tlsFixtures.ts: throwaway self-signed TLS certs minted in memory — no key is ever committed)
 ```

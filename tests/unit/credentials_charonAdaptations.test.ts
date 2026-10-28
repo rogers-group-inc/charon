@@ -12,7 +12,7 @@
 
 import { describe, it, expect, beforeAll } from "vitest";
 import { randomBytes } from "node:crypto";
-import { safeRegexProblem, compileSafeRegex, hasNestedQuantifier } from "../../src/services/credentials/safeRegex.js";
+import { safeRegexProblem, compileSafeRegex, hasNestedQuantifier } from "../../src/utils/safeRegex.js";
 import {
   sealSecrets,
   openSecrets,
@@ -21,7 +21,7 @@ import {
   CREDENTIAL_TYPES,
 } from "../../src/services/credentials/credentialService.js";
 import { isEncryptedEnvelope } from "../../src/utils/crypto.js";
-import { SECRET_MASK } from "../../src/services/credentials/secretMask.js";
+import { SECRET_MASK } from "../../src/utils/secretMask.js";
 import { decodeValue, formatTimeTicks, compareIndexSuffix, findSymbolForOid } from "../../src/api/routes/settings/credentials.js";
 import { listStdMibs, getStdMibStructure } from "../../src/services/credentials/stdMibLibrary.js";
 import { snmpVarbindToPrintable } from "../../src/services/credentials/credentialProbeService.js";

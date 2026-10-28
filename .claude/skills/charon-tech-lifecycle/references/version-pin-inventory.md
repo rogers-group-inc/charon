@@ -11,7 +11,7 @@ end of this file is the row set the script mirrors.
 
 ## Node.js
 
-**Floor 20, pinned 20**, across 8 checked sites.
+**Floor 20, pinned 20**, across 9 checked sites.
 
 | Site | Form | Kind |
 |---|---|---|
@@ -21,6 +21,7 @@ end of this file is the row set the script mirrors.
 | `Dockerfile` | `FROM node:20-bookworm-slim AS runtime` | pin |
 | `Dockerfile.dev` | `FROM node:20-bookworm` | pin |
 | `.github/workflows/ci.yml` | `node-version: "20"` | pin |
+| `.github/workflows/check-docs.yml` | `node-version: "20"` | pin |
 | `deploy/install-rhel.sh` | `-lt 20` minimum check | floor |
 | `deploy/install-rhel.sh` | NodeSource `setup_20.x` | pin |
 

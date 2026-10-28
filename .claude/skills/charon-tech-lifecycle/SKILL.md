@@ -5,7 +5,7 @@ description: "Version lifecycle of the Charon tech stack: the committed end-of-l
 
 # Charon tech-stack lifecycle
 
-A runtime version is declared in several files at once — the Node major lives in eight sites — and
+A runtime version is declared in several files at once — the Node major lives in nine sites — and
 a bump that misses one leaves that path (the RHEL installer, the dev image, CI) on the old
 runtime. This skill owns the site list, the guard that proves the sites agree
 (`npm run check:versions`, `scripts/check-versions.mjs`), and the committed EOL dataset

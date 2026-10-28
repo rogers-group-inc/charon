@@ -33,6 +33,7 @@ const FAMILIES = [
       { file: "Dockerfile", label: "runtime FROM", kind: "pin", re: /^FROM node:(\d+)[^\n]*AS runtime/m },
       { file: "Dockerfile.dev", label: "FROM", kind: "pin", re: /^FROM node:(\d+)/m },
       { file: ".github/workflows/ci.yml", label: "setup-node", kind: "pin", re: /node-version:\s*"?(\d+)/ },
+      { file: ".github/workflows/check-docs.yml", label: "setup-node", kind: "pin", re: /node-version:\s*"?(\d+)/ },
       { file: "deploy/install-rhel.sh", label: "minimum check", kind: "floor", re: /-lt (\d+) \]\]/ },
       { file: "deploy/install-rhel.sh", label: "NodeSource setup_N.x", kind: "pin", re: /setup_(\d+)\.x/ },
     ],

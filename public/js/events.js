@@ -1,7 +1,7 @@
 /**
  * public/js/events.js — Audit log page.
  *
- * Uses the shared TableSF pattern (see TEMPLATES.md): per-column inline
+ * Uses the shared TableSF pattern (see the charon-ui-canon skill): per-column inline
  * filtering + sorting via TableSF, and resizable / show-hide "adjustable"
  * columns via setupColumnLayout. Column prefs (widths + hidden) persist in
  * localStorage so a user's layout survives reloads.

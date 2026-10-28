@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-10-28",
+  "sourceNotes": "Every date below was read from the vendor page named in `source` on `sourceCheckedOn`. A track with no announced end of life has eol: null. Drafted by Claude; a human confirms these dates before they drive an upgrade decision.",
+  "technologies": [
+    {
+      "id": "node",
+      "label": "Node.js",
+      "charonMinimum": "20",
+      "charonTarget": "20",
+      "source": "https://raw.githubusercontent.com/nodejs/Release/main/schedule.json",
+      "sourceCheckedOn": "2026-10-28",
+      "confidence": "vendor",
+      "notes": "Even majors are LTS. Charon's floor and pin are both 20, which is past end of life.",
+      "tracks": [
+        { "track": "20", "released": "2023-04-18", "lts": true, "maintenanceStarts": "2024-10-22", "eol": "2026-04-30" },
+        { "track": "22", "released": "2024-04-24", "lts": true, "maintenanceStarts": "2025-10-21", "eol": "2027-04-30" },
+        { "track": "24", "released": "2025-05-06", "lts": true, "maintenanceStarts": "2026-10-20", "eol": "2028-04-30" },
+        { "track": "26", "released": "2026-05-05", "lts": true, "maintenanceStarts": "2027-10-20", "eol": "2029-04-30" }
+      ]
+    },
+    {
+      "id": "postgres",
+      "label": "PostgreSQL",
+      "charonMinimum": "15",
+      "charonTarget": "15",
+      "source": "https://www.postgresql.org/support/versioning/",
+      "sourceCheckedOn": "2026-10-28",
+      "confidence": "vendor",
+      "notes": "Each major is supported for five years after its first release.",
+      "tracks": [
+        { "track": "14", "released": "2021-09-30", "eol": "2026-11-12" },
+        { "track": "15", "released": "2022-10-13", "eol": "2027-11-11" },
+        { "track": "16", "released": "2023-09-14", "eol": "2028-11-09" },
+        { "track": "17", "released": "2024-09-26", "eol": "2029-11-08" },
+        { "track": "18", "released": "2025-09-25", "eol": "2030-11-14" }
+      ]
+    },
+    {
+      "id": "openssl",
+      "label": "OpenSSL",
+      "charonMinimum": "3.5",
+      "charonTarget": "3.5",
+      "source": "https://openssl-library.org/policies/releasestrat/",
+      "sourceCheckedOn": "2026-10-28",
+      "confidence": "vendor",
+      "notes": "3.5 is the LTS and the first line with ML-KEM (the X25519MLKEM768 hybrid KEX). 3.0 is no longer supported; the page gives no date for it.",
+      "tracks": [
+        { "track": "3.0", "lts": true, "eol": null, "supported": false },
+        { "track": "3.4", "eol": "2026-10-22" },
+        { "track": "3.5", "lts": true, "eol": "2030-04-08" },
+        { "track": "3.6", "eol": "2026-11-01" },
+        { "track": "4.0", "eol": "2027-05-14" }
+      ]
+    }
+  ]
+}

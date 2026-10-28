@@ -1,9 +1,11 @@
-# TEMPLATES.md — Charon canonical implementations
+# Canonical backend patterns
 
-When you add something, copy the canonical example here rather than inventing a
-new shape. Each entry: what it is, the reference file, conventions to match.
+When you add something, copy the canonical example here rather than inventing a new shape. Each
+entry: what it is, the reference file, conventions to match. Moved verbatim from TEMPLATES.md
+(its backend entries; the agent entries are in `charon-agent` → enrollment-pinning.md and the
+frontend entries in `charon-ui-canon` → canon-patterns.md).
 
-## Reused polaris patterns
+## Reused Polaris patterns
 
 ### Permission-gated route
 **Ref:** `src/api/routes/events.ts` + mount in `src/api/router.ts`.
@@ -26,27 +28,6 @@ switches, and `SECRET_FIELDS` in `integrationConfig.ts`.
 at rest (`writeConfig`), masked on read (`readConfigMasked`),
 preserved-on-unchanged when the mask is resubmitted, decrypted for use
 (`decryptConfig`). Never return a plaintext secret from a GET.
-
-### Table / modal / toast (frontend)
-**Ref:** `public/js/integrations.js` (cards + data-driven modal) and
-`public/js/endpoints.js` (table + modal). Use `window.api.{get,post,put,patch,del}`,
-`window.Charon.{init,toast,escapeHtml,can}`. Tabs: `public/js/server-settings.js`.
-Polaris design system: `.layout` shell, `.page-header > h2`, `.table-wrapper >
-table` + `.empty-state`, `.modal-overlay/.modal` (toggle `.open`), `.btn`/
-`.btn-secondary`/`.btn-icon`/`.btn-sm`, `.card`/`.card-title`, `.settings-card`,
-`.page-tabs`, polaris `.badge-*` variants — all from the copied `styles.css`.
-`charon.css` is only a small additive overlay; never redefine a polaris class.
-
-### Sortable / filterable / adjustable-column table (TableSF)
-**Ref:** `public/js/events.js` + `public/js/table-sf.js`. The canonical rich
-table. Mark each `<th>` with `data-sf-key` + `data-sf-type` (string|number|
-date|ip|array); add `data-sf-options="a|b|c"` for a multi-select filter and
-`data-col-default-hidden="true"` to start a column hidden. Then:
-`var sf = new TableSF("tbody-id", render)` gives per-column inline filter + click
-sort — `render()` calls `sf.apply(rawRows)` and rebuilds the tbody (cells in the
-SAME order as the headers). `setupColumnLayout(tableEl, {chooserButton, onChange})`
-adds resizable widths + a show/hide column chooser; persist its `getPrefs()` /
-`setPrefs()` in localStorage. Load `table-sf.js` before the page script.
 
 ### Prometheus instrumentation
 **Ref:** `src/metrics.ts`. Define the metric once, export a typed helper
@@ -80,15 +61,6 @@ apply delta, log a breadcrumb Event, publish `enforcementSync` only on change.
 dry-run records EnforcementState + Event + metrics and writes nothing; enforce
 applies idempotently. Gate the toggle route by the `enforcement` fullwrite key
 with a human-review confirm.
-
-### Agent enrollment (one-time code → bearer + pin)
-**Ref:** `src/services/agentEnrollmentService.ts` + `invitationCodeService.ts`
-(atomic `consumeCode`) + `agentTokenService.ts` (SHA-384-hashed bearer) +
-`certPinService.ts` (canonical + staged pins). Codes/bearers stored hashed only.
-
-### Cert pin rotation (dual-pin)
-**Ref:** `src/services/certPinService.ts` — `stageNewPin` (agents accept old+new)
-→ rotate cert → `promoteStagedPin`. Pin = leaf SHA-256 from `certInfo.leafPin`.
 
 ### Leader-gated scheduler / role consumer
 **Ref:** `src/app.ts startSchedulers/startConsumers` + `jobs/*.ts`. Schedulers

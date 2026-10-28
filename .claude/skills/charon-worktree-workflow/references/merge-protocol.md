@@ -1,0 +1,142 @@
+# Merge protocol
+
+Triggered by the user saying "merge" (in any chat, about any worktree), or as stage 5 of
+`/charon-deploy`. Merging on its own never pushes; inside `/charon-deploy` it continues into
+`push-protocol.md`.
+
+**Inside `/charon-deploy`, skip §§ 1–3**: no inventory and no menu. That pipeline merges the
+invoking chat's own worktree and nothing else (`git merge --no-ff worktree-<slug>`), after
+checking `origin/main..main` is empty; § 4's review already ran in the worktree, and § 5 still
+applies. The menu below is only for a bare "merge".
+
+## 1. Inventory the worktrees
+
+From the main checkout:
+
+    git worktree list --porcelain
+
+For every entry except the main checkout, collect: path, branch, whether `WORKLOCK` or
+`DEVLOCK` exists at the path (and each lock's first line + file mtime), `git -C <path> status
+--porcelain` (dirty?), `git rev-list --count main..<branch>` (commits ahead), and
+`git -C <path> log -1 --format=%s`.
+
+## 2. Present the menu
+
+Print a **numbered** list of the worktrees with **no** lock file:
+
+    Ready to merge:
+      1. worktree-fix-enroll-limiter   3 ahead   clean   "fix(agents): …"
+      2. worktree-tag-source-ou        1 ahead   dirty   "feat(tags): …"
+    Locked (skipped):
+      - worktree-posture-policy        WORKLOCK  2h old   "<ISO> posture-policy: …"
+      - worktree-agent-ws              DEVLOCK   3d old   "… dev stack charon-agent-ws pg=5433 app=3100"
+
+A lock that is days old on a worktree whose chat has ended is stale; say so. The user decides
+whether to clear it (`rm <path>/WORKLOCK`) and re-run the menu. Never delete a lock on your own.
+
+A worktree with zero commits ahead and a clean tree has nothing to merge — list it, but mark it
+"nothing to merge" so the user can choose to have it cleaned up at push time instead.
+
+**The menu goes stale.** Another session may merge, push and delete those worktrees between
+the menu and the pick; re-check that the branch still exists and is still unmerged before
+merging it.
+
+## 3. Merge the chosen ones, in the order given
+
+For each selected worktree:
+
+1. If dirty: commit the pending changes **in that worktree** (`git -C <path> add -A`, then
+   `git -C <path> commit -m "wip: pending changes at merge time"`), so nothing is lost and the
+   merge is of a real commit.
+2. **Gate on a clean main checkout**: `git status --porcelain` must be empty and
+   `.git/MERGE_HEAD` must not exist — another session can be mid-merge there, and a merge in
+   progress is invisible unless you look for it. Dirty → stop and report.
+3. From the main checkout, on `main` (a worktree-isolated session must `ExitWorktree` with
+   action keep first — its Bash guard refuses git commands aimed at the main checkout):
+   `git merge --no-ff worktree-<slug>` (a merge commit per worktree keeps each unit of work
+   identifiable in history; use the branch's own subjects in the merge message body).
+4. On conflict: **stop**. Do not resolve silently. Report the conflicting files and ask; the
+   common conflict is the same skill reference file edited by two branches, which is resolved
+   by keeping both entries.
+   **One conflict is foreseeable and is resolved before merging, not reported**: two open
+   worktrees that each added a business rule both took "the next free number". The branch
+   merging second renumbers its rule to the number `npm run rules:next` reports AFTER the first
+   merge (the script scans every branch, so it also shows which numbers other open worktrees
+   still hold), plus every `rule N` citation in its code, tests, skill entries and its
+   `narrative-N.md` filename — and the `invariants.md` reference file is never renamed. Do it
+   in the worktree (re-enter it, WORKLOCK, `git merge main`, fix, commit), then merge to main.
+   The next-free number is never written in `SKILL.md` for exactly this reason — a stated
+   number is stale the moment another branch merges.
+5. Continue with the next selection only after the previous merge is clean.
+
+## 4. Review what landed against the skills
+
+A merge is the last moment a unit of work is visible as one diff. `/charon-docs-sync` already
+refreshed the entries each individual commit touched; this pass asks the wider question a
+per-commit review cannot: **does what just landed change what a future session has to be told,
+and is there an entry that tells it?**
+
+For each worktree merged, read the whole branch as one diff — capture
+`git merge-base main worktree-<slug>` *before* the merge, then after it
+`git diff <base>..HEAD --stat` plus `git log <base>..HEAD --format=%s` — and walk this list:
+
+- **A new invariant, or an incident the code now guards against** → a numbered business rule
+  (`charon-business-rules`: next free number + its narrative file), cited from the code.
+- **A new subsystem, integration type, external system or workflow** → does it fit an existing
+  skill, or does it warrant a new one (criteria below)?
+- **Routing drift** — does each owning skill's `description:` still name the phrases someone
+  would actually type to reach this material? A change that moves a topic between skills moves
+  its trigger phrases too.
+- **Stale prose the routing table never pointed at**: an entry that *describes* behaviour this
+  diff contradicts, in a file no commit in the branch touched. These are the ones check-docs
+  cannot see.
+- **Reference files that grew** past ~1500 lines / ~100 KB → split by heading.
+- **Traps found while doing the work** — anything that cost this chat time and would cost the
+  next one the same (a tool that mangles a file, a test that flakes, a hook that fires
+  unexpectedly) → the owning skill's notes, or a memory file if it is about this machine.
+- **The always-loaded floor**: did the change alter one of the conventions in `CLAUDE.md`?
+
+### Extend a skill, or create a new one
+
+Create a **new** skill only when: the material is a coherent body worth ≥ ~2 reference files,
+**and** no existing skill's `description:` would ever pull it into context, **or** the natural
+owner's `SKILL.md` is already at its ~200-line ceiling / its description is being stretched to
+cover two unrelated jobs. Otherwise **extend**: a new reference file under the owning skill plus
+a row in its `SKILL.md` routing table (an orphaned reference file fails check-docs). A new skill
+also needs its row in the `CLAUDE.md` skills table and its name in `SKILLS` in
+`scripts/check-docs.mjs`.
+
+### What to do with the result
+
+Report it as part of the merge summary — either "skills current" or a concrete list of entries
+to add or change. Do **not** edit skills on `main`: skill edits are a change like any other, so
+they go in their own worktree, follow the authoring constraints in `charon-docs-sync`
+(SKILL.md ≤ ~200 lines, `name:` = directory, `path/file.ts → symbol()` refs, prose moved
+verbatim), pass `npm run check:docs`, and merge separately.
+
+## 5. Verify main
+
+After the last merge and the skill review: `npx prisma generate` (a merged schema change leaves
+main's generated client stale and its typecheck red until regenerated), then
+`npm run check:docs`, `npm run typecheck`, and the unit suite
+(`npx vitest run tests/unit --no-file-parallelism`) on `main`. Report the results. Do not push
+unless this merge is stage 5 of `/charon-deploy`, which continues into `push-protocol.md`;
+otherwise the user says "push" separately.
+
+**A clean merge is not a working browser.** `public/` has no build step and no typecheck, and the
+browser scripts share one global scope, so a positional array both sides appended to, or a
+helper one side removed while the other still calls it, merges with no conflict marker and a
+green unit suite. When the merged range touched `public/js`, open the affected page and read its
+console errors before calling the merge verified.
+
+## The DEVLOCK variant (the chat's own worktree)
+
+When the user has been working in a dev environment in THIS chat and says they are satisfied
+and want to merge:
+
+1. `podman compose -f compose.dev.yml -p charon-<slug> down -v`
+2. `rm DEVLOCK` (and `WORKLOCK` if still present)
+3. commit anything pending in the worktree
+4. merge it to main as in step 3 above, review as in step 4, verify as in step 5.
+
+Then offer the numbered menu for any OTHER unlocked worktrees before finishing.

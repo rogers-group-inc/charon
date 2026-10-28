@@ -27,7 +27,10 @@ import { errorHandler } from "./api/middleware/errorHandler.js";
 import { csrfMiddleware } from "./api/middleware/csrf.js";
 import { loginLimiter, enrollLimiter } from "./api/middleware/rateLimits.js";
 import { logger } from "./utils/logger.js";
+import { AppError } from "./utils/errors.js";
 import { UPLOADS_DIR } from "./utils/paths.js";
+import { getSessionSettings, peekSessionSettings } from "./services/sessionSettingsService.js";
+import { logEvent } from "./services/eventService.js";
 import { roleConfig, type RoleConfig } from "./utils/role.js";
 import {
   renderMetrics,
@@ -125,6 +128,33 @@ app.use(
 
 app.use(csrfMiddleware);
 
+// ─── Idle timeout (Users → Authentication → Settings → Session) ─────────────
+// A signed-in session idle for longer than autoLogoutMinutes is ended here,
+// server-side; the client mirrors it with a countdown. 0 = off. Activity is
+// any request on the session — the stamp is written at most once a minute so
+// a busy page does not re-save its session on every call.
+app.use(async (req, res, next) => {
+  try {
+    if (!req.session?.userId) return next();
+    const now = Date.now();
+    const { autoLogoutMinutes } = peekSessionSettings() ?? (await getSessionSettings());
+    const last = req.session.lastActivity ?? now;
+    if (autoLogoutMinutes > 0 && now - last > autoLogoutMinutes * 60_000) {
+      const username = req.session.username;
+      return req.session.regenerate(() => {
+        void logEvent({ action: "auth.logout.idle", actor: username, message: `${username} signed out after ${autoLogoutMinutes} idle minutes` });
+        if (req.path.startsWith("/api/")) return next(new AppError(401, "Signed out after inactivity — please sign in again"));
+        if (req.method === "GET" && req.accepts("html")) return res.redirect("/login.html?reason=inactivity");
+        next();
+      });
+    }
+    if (now - last > 60_000) req.session.lastActivity = now;
+  } catch {
+    /* settings unreadable: never sign people out over it */
+  }
+  next();
+});
+
 // ─── HTTP request metrics ──────────────────────────────────────────────────────
 app.use((req, res, next) => {
   if (req.path === "/metrics" || req.path === "/health") return next();
@@ -146,7 +176,9 @@ app.use((req, res, next) => {
 });
 
 // ─── Rate limiting on unauthenticated surfaces ──────────────────────────────────
-app.use("/api/v1/auth/login", loginLimiter);
+// Prefix match: covers the password, TOTP and passkey-second-factor steps. The
+// forced password-change step carries its own passwordChangeLimiter.
+app.use("/api/v1/auth/login", (req, res, next) => (req.path === "/password-change" ? next() : loginLimiter(req, res, next)));
 app.use("/api/v1/agents/enroll", enrollLimiter);
 
 // Protect dashboard pages — redirect unauthenticated users to login.

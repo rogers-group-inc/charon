@@ -53,7 +53,9 @@ model Event {
 |---|---|---|---|
 | `agent.cert_pins` | `{ canonical, staged[] }` — leaf-cert SHA-256 pins handed to agents | `src/services/certPinService.ts` | enrollment, `GET /agents/config` |
 | `cert.leaf` | `{ pem, certPath, keyPath }` — the served leaf certificate (the key stays on disk, 0600) | `src/services/webServerService.ts → rotateCertAndKey()` | `webServerService.ts` (HTTPS facts, rotate) |
-| `auth.mode` | the active AuthMode (operators and the agent login GUI) | `serverSettings.ts` (`PUT /auth-mode`) | `src/services/authService.ts → getActiveAuthMode()` |
+| `auth.mode` | `{ mode }` — the endpoint agent's sign-in mode (local / saml / oidc) | `src/services/authService.ts → setAgentAuthMode()` (`PUT /auth/agent-mode`) | `authService.ts → getActiveAuthMode()` (`GET /agent/auth-config`, `/agents/login`) |
+| `passwordPolicyConfig` | `{ minLength (8–128), requireLowercase/Uppercase/Number/Special, forceChangeOnLogin }` | `src/services/passwordPolicyService.ts` | every password write, the login re-check |
+| `sessionConfig` | `{ autoLogoutMinutes (0–1440, 0 = off), skipLoginPage }` | `src/services/sessionSettingsService.ts` | `src/app.ts` idle timeout, `/auth/me`, the login-page redirect |
 | `identification.name` | the server's display name | TODO: populate when a writer exists | `serverSettings.ts` (`GET /identification`) |
 | `posture.policy` | the operator-configured posture policy | `src/services/postureService.ts → setPosturePolicy()` | `postureService.ts → evaluatePosture()` |
 | `retention.eventDays` | LEGACY audit-log window; only seeds `sampleRetention.events` when that row is absent | none | `src/services/sampleRetentionService.ts` |
@@ -67,7 +69,7 @@ model Event {
 | `rebootConfig` | reboot-reason requirement (persist-only; no consumer yet) | `src/services/rebootSettingsService.ts` | Customization tab |
 | `proxyConfig` | nginx controls (TLS 1.3 only, HSTS, HTTP/3, metrics allow-list, managed mode) | `src/services/proxyConfigService.ts` | `src/services/nginxRenderer.ts`, `src/services/webServerService.ts` |
 | `trustedCertificates` | operator-uploaded trusted CA records (CA certs only, private keys refused) | `src/services/trustedCaService.ts` | `src/services/httpClient.ts` (outbound TLS verify) |
-| `loginAccessConfig` | `{ enabled, ipScope, allowedCidrs }` for local password login | `src/services/webAccessSettingsService.ts` | `src/api/routes/auth.ts` |
+| `loginAccessConfig` | `{ enabled, ipScope, allowedCidrs }` for the local credential paths (password, TOTP, forced change) | `src/services/webAccessSettingsService.ts` | `src/api/routes/auth.ts` |
 | `ipv6Config` | IPv6 switch (persist-only) | `src/services/webAccessSettingsService.ts` | Web Server tab |
 | `apiDocsConfig` | API-docs page source-IP scope (loopback / rfc1918 / custom; never public) | `src/services/apiDocsAccessService.ts` | API Tokens tab (no docs page is served yet) |
 | `ha.config` | HA nodes, load-balancer figures, replication password (envelope; never in a response) | `src/services/haService.ts` | `haService.ts`, `src/services/haEnrollmentService.ts` |

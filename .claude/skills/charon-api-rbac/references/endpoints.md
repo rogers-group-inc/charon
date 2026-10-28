@@ -5,10 +5,45 @@ public / authenticated split and catalogue moved from ARCHITECTURE.md § 4, expa
 file.
 
 ### Public — operator auth (`src/api/routes/auth.ts`)
-- `POST   /auth/login`          — local login (argon2id); `loginLimiter`
-- `POST   /auth/login/totp`     — second factor
+Mounted before `requireAuth`; each route gates itself. The login steps run the Local Login
+Access gate and are CSRF-exempt (`/api/v1/auth/login` prefix).
+- `POST   /auth/login`          — local password step; `loginLimiter`. Answers `{ ok }` (session
+  issued), `{ mfaRequired, methods }` or `{ passwordChangeRequired, policy }` (pending state in
+  the session, `src/utils/pendingAuth.ts`)
+- `POST   /auth/login/totp`     — TOTP / backup-code step (`isBackupCode`); `loginLimiter`
+- `POST   /auth/login/password-change` — forced change, only after every factor; `passwordChangeLimiter`
 - `POST   /auth/logout`
-- `GET    /auth/me`             — current user + permissions snapshot (drives `Charon.init()`)
+- `GET    /auth/me`             — 401 when signed out; else user, authProvider, role + colour,
+  permissions, totpEnabled, autoLogoutMinutes (drives `Charon.init()`)
+- `GET    /auth/password-policy` — PUBLIC: policy, rule labels, limits (wizard + forced change need it)
+- Self-service, `requireSessionUser` (a session, never an API token):
+  `PUT /auth/password` (`passwordChangeLimiter`; revokes other sessions, rotates this one),
+  `GET /auth/totp/status`, `POST /auth/totp/enroll`, `POST /auth/totp/confirm` and
+  `DELETE /auth/totp` (`totpCodeLimiter`)
+- Settings, `requireAuth` + `authentication` read (GET) / write (PUT):
+  `PUT /auth/password-policy`, `GET|PUT /auth/session-settings`, `GET|PUT /auth/agent-mode`
+  (the endpoint agent's sign-in mode; was `/server-settings/auth-mode`)
+
+### Users — `users read` (`src/api/routes/users.ts`)
+- `GET    /users` — accounts + isOnline / totpEnabled / passkeyCount / needsRoleReview
+- `POST   /users` (write) — local account; role may not exceed the caller (`assertGrantWithinCaller`)
+- `PUT    /users/:id/password`, `PUT /users/:id/role`, `DELETE /users/:id/totp`,
+  `DELETE /users/:id/passkeys`, `DELETE /users/:id` (write) — refused on an admin-equivalent
+  account unless the caller is admin-equivalent; last admin-equivalent account protected (409);
+  the target's sessions are revoked
+- `DELETE /users/:id/role-review` (write) — dismiss the new-SSO-account flag
+- `GET    /users/:id/passkeys`
+
+### Roles — per route (`src/api/routes/roles.ts`)
+- `GET    /roles/functions`, `GET /roles`, `GET /roles/:id` — `roles` read
+- `POST   /roles`, `PUT /roles/:id`, `DELETE /roles/:id` — `roles` write; a role may only grant
+  what the caller holds (an edit counts raised keys only); taking admin-equivalence away needs
+  an admin-equivalent caller and never leaves zero admin-equivalent users
+
+### Group mappings — `users fullwrite` (`src/api/routes/groupMappings.ts`)
+- `GET /group-mappings[?provider=]`, `GET /group-mappings/:id`, `POST`, `PUT /:id`, `DELETE /:id`
+  — the mapped role may not exceed the caller; withdrawing an admin-equivalent mapping needs an
+  admin-equivalent caller
 
 ### Public — agent (`src/api/routes/agent.ts`, `src/api/routes/agents.ts`, `src/api/routes/agentsWs.ts`)
 - `GET    /agent/auth-config`   — server-dictated agent login mode
@@ -68,7 +103,6 @@ exactly this path. The caller holds a single-use token, never a session (busines
 
 ### Server settings — `serverSettingsSystem read` (`src/api/routes/serverSettings.ts`)
 - `GET    /server-settings/ha` — leader state + replication (older summary; the HA tab uses `/ha/*`)
-- `GET    /server-settings/auth-mode`, `PUT /server-settings/auth-mode` (fullwrite)
 - `GET    /server-settings/identification`
 
 The old `/server-settings/certificates{,/stage,/promote}` routes are gone; the leaf cert changes

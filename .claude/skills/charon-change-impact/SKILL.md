@@ -42,7 +42,7 @@ canonical's shape rather than inventing a parallel one.
 | [tags-enforcement](references/services/tags-enforcement.md) | tagService, tagReconciler, customGroupService, policyService, postureService, fortinetEnforcementService |
 | [integrations](references/services/integrations.md) | integrationService, integrationConfig, httpClient, fortimanagerService, fortigateService, activeDirectoryService, ldapClient, entraIdService, directoryTypes |
 | [agent-trust](references/services/agent-trust.md) | agentEnrollmentService, agentTokenService, invitationCodeService, certPinService, certInfo, agentDistService |
-| [identity-audit](references/services/identity-audit.md) | authService, apiTokenService, verificationService, eventService |
+| [identity-audit](references/services/identity-audit.md) | authService, userService, roleService, groupMappingService, sessionRevocationService, passwordPolicyService, sessionSettingsService, totpService, totpStepService, settingsStore, apiTokenService, verificationService, eventService |
 | [platform-ops](references/services/platform-ops.md) | leaderElection, nginxRenderer, nginxApplyService, backupService, updateService, capacityService |
 | [server-settings](references/services/server-settings.md) | the Server Settings tab backends: webServerService, proxyConfigService, trustedCaService, webAccessSettingsService, ntpService, brandingService, rebootSettingsService, assetTagService, assetTypeService, deviceIconService, dnsService, ouiService, backupScheduleService, capacityAdvisorService, pgTuningService, dbSizeService, platformLifecycleService, sampleRetentionService, agentEventLogService, apiDocsAccessService, haService, haEnrollmentService, firmwareRepositoryService, and the `services/credentials/` folder |
 

@@ -8,10 +8,21 @@
   Read-Only) are seeded by `src/cli/seed.ts → seedDatabase()`.
 - **User** — an operator. `passwordHash` is null for SSO-only operators. `ssoGroups` caches the
   last-seen IdP group keys for re-resolution. TOTP enrollment is "in progress" when
-  `totpSecret` set but `totpEnabledAt` null. `authProvider` is `local | saml | oidc | ldap`.
-- **GroupMapping** — maps a normalized IdP/directory group key → a Charon Role for
-  SSO-provisioned operators. Highest-privilege match wins
-  (`permissions.ts → pickHighestPrivilegeRoleId()`). Unique on `(groupKey, roleId)`.
+  `totpSecret` set but `totpEnabledAt` null; `totpSecret` is a `crypto.ts` envelope (rule 3);
+  `totpLastStep` is the last accepted TOTP time-step (replay guard,
+  `totpStepService → claimTotpStep()`). `authProvider` is
+  `local | saml | oidc | ldap | entra-proxy`; `azureOid` holds the Entra object id (SAML
+  objectidentifier claim, else NameID) and is shared by SAML and App Proxy. The account action
+  invariants (last admin-equivalent, escalation, session revocation) are in
+  `src/services/userService.ts`.
+- **UserPasskey** — a WebAuthn credential registered by a local operator (passwordless sign-in
+  and/or a second factor, per the `passkeyConfig` Setting). `credentialId` is unique across the
+  install; `counter` is the authenticator's signature counter; cascades with its user.
+- **GroupMapping** — maps one IdP group, scoped by `provider` (`saml` / `oidc` / `ldap` /
+  `entra-proxy`), → a Charon Role for SSO-provisioned operators. `groupKey` is normalized
+  (`groupMappingService → normalizeGroupKey()`), `groupLabel` keeps the operator's spelling.
+  Only `enabled` rows match. Highest-privilege match wins
+  (`permissions.ts → pickHighestPrivilegeRoleId()`). Unique on `(provider, groupKey)`.
 - **ApiToken** — a long-lived bearer for external callers. `tokenHash` is SHA-384 of the raw
   token (plaintext shown once at mint); lookup is prefix-indexed then constant-time compared
   (`src/services/apiTokenService.ts`). `roleId` binds the token to a Role whose matrix it acts
@@ -49,8 +60,8 @@ model User {
   roleId       String  @map("role_id")
   role         Role    @relation(fields: [roleId], references: [id], onDelete: Restrict)
 
-  authProvider String  @default("local") @map("auth_provider") // "local" | "saml" | "oidc" | "ldap"
-  azureOid     String? @unique @map("azure_oid")
+  authProvider String  @default("local") @map("auth_provider") // "local" | "saml" | "oidc" | "ldap" | "entra-proxy"
+  azureOid     String? @unique @map("azure_oid") // Entra object id (SAML objectidentifier claim, else NameID; App Proxy shares it)
   oidcSubject  String? @unique @map("oidc_subject")
   ldapUid      String? @unique @map("ldap_uid")
   ssoGroups    String[] @default([]) @map("sso_groups")
@@ -58,12 +69,19 @@ model User {
   email        String?
   lastLogin    DateTime? @map("last_login")
 
-  // TOTP second factor — local accounts only.
+  // TOTP second factor — local accounts only. The secret is a crypto.ts
+  // envelope (rule 3), never plaintext base32.
   totpSecret      String?   @map("totp_secret")
   totpEnabledAt   DateTime? @map("totp_enabled_at")
   totpBackupCodes String[]  @default([]) @map("totp_backup_codes")
+  // Last accepted TOTP time-step: a code is refused unless its step is newer
+  // (replay protection, totpStepService).
+  totpLastStep    Int?      @map("totp_last_step")
 
+  // Set on a first SSO provisioning; cleared when an operator assigns a role.
   needsRoleReview Boolean @default(false) @map("needs_role_review")
+
+  passkeys UserPasskey[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -72,18 +90,46 @@ model User {
   @@map("users")
 }
 
-/// Maps a normalized IdP/directory group key → a Charon Role for SSO-provisioned
-/// operators. Highest-privilege match wins (see permissions.ts).
-model GroupMapping {
-  id        String   @id @default(uuid())
-  groupKey  String   @map("group_key") // normalized directory group identifier
-  roleId    String   @map("role_id")
-  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+/// A WebAuthn passkey registered by an operator (passwordless sign-in and/or a
+/// second factor, per the passkeyConfig Setting). Local accounts only.
+model UserPasskey {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId String    @unique @map("credential_id")
+  publicKey    Bytes     @map("public_key")
+  counter      BigInt    @default(0)
+  transports   String[]  @default([])
+  name         String // operator-set label; defaults to a User-Agent guess
+  aaguid       String? // authenticator model id; all-zero when undisclosed
+  deviceType   String?   @map("device_type") // "singleDevice" | "multiDevice"
+  backedUp     Boolean   @default(false) @map("backed_up")
+  lastUsedAt   DateTime? @map("last_used_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
 
-  @@unique([groupKey, roleId])
-  @@index([groupKey])
+  @@index([userId])
+  @@map("user_passkeys")
+}
+
+/// Maps one IdP group (scoped by provider) → a Charon Role for SSO-provisioned
+/// operators. At SAML / OIDC / LDAP / App Proxy login the user's group claims
+/// are matched against the enabled mappings; highest-privilege match wins
+/// (permissions.ts → pickHighestPrivilegeRoleId).
+model GroupMapping {
+  id          String   @id @default(uuid())
+  provider    String // "saml" | "oidc" | "ldap" | "entra-proxy"
+  groupKey    String   @map("group_key") // normalized match key (groupMappingService.normalizeGroupKey)
+  groupLabel  String?  @map("group_label") // as entered, for display
+  roleId      String   @map("role_id")
+  role        Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  enabled     Boolean  @default(true)
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([provider, groupKey])
+  @@index([provider, enabled])
+  @@index([roleId])
   @@map("group_mappings")
 }
 
@@ -127,4 +173,5 @@ holding `users` AND `roles` at fullwrite ranks as admin-equivalent
 
 #### User
 
-`needsRoleReview` — TODO: populate when the SSO provisioning path that sets it exists in code.
+`needsRoleReview` — set when SSO provisioning creates the account (or on its first login);
+cleared by `userService → changeRole()` / `dismissRoleReview()`. The Users page badges it.

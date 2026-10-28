@@ -32,6 +32,7 @@ import { markSetupComplete } from "./detectSetup.js";
 import { ENV_FILE, STATE_DIR } from "../utils/paths.js";
 import { makeRateLimiter } from "../api/middleware/rateLimits.js";
 import { logger } from "../utils/logger.js";
+import { defaultPasswordPolicy, passwordPolicyError } from "../utils/passwordPolicy.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, "..", "..");
@@ -61,13 +62,16 @@ const DbConfigSchema = z.object({
 
 type DbConfig = z.infer<typeof DbConfigSchema>;
 
+// The wizard runs before there is a database to hold an operator policy, so
+// the first admin meets the DEFAULT policy — through the same evaluator the
+// live policy uses (utils/passwordPolicy.ts), so the two cannot drift.
 const passwordSchema = z
   .string()
-  .min(8, "Password must be at least 8 characters")
-  .regex(/[a-z]/, "Password must contain a lowercase letter")
-  .regex(/[A-Z]/, "Password must contain an uppercase letter")
-  .regex(/[0-9]/, "Password must contain a number")
-  .regex(/[^a-zA-Z0-9]/, "Password must contain a special character");
+  .max(1024, "Password must be at most 1024 characters")
+  .superRefine((p, ctx) => {
+    const message = passwordPolicyError(p, defaultPasswordPolicy());
+    if (message) ctx.addIssue({ code: "custom", message });
+  });
 
 const FinalizeSchema = z.object({
   db: DbConfigSchema,

@@ -19,8 +19,9 @@ Thanks for your interest in contributing.
 1. Branch from the default branch; do not push directly to it.
 2. Keep changes focused; write tests (Vitest) for new behavior.
 3. Run lint and tests locally before opening a PR.
-4. Update the living docs when behavior changes: `CLAUDE.md`, `ARCHITECTURE.md`,
-   `TEMPLATES.md`, `TOUCHES.md`.
+4. Update the project docs when behavior changes: `CLAUDE.md` and the project skills under
+   `.claude/skills/` (`/charon-docs-sync` names the entries each kind of change must refresh).
+   `npm run check:docs` enforces the structural half.
 5. Open a PR; ensure CI, CodeQL, and Dependabot checks pass.
 
 ## Commit / PR conventions

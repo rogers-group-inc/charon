@@ -40,8 +40,7 @@ dataset is read at check time only; nothing fetches EOL data at runtime.
 
 ## Current state (re-derive with `npm run check:versions`)
 
-Node.js floor 22 / pin 24 (Debian trixie images), PostgreSQL pin 17 (existing installs may still
-run 15), OpenSSL 3.5.9 + nginx 1.30.6 in the PQC build, Rust MSRV 1.77. Held back on purpose:
+Node.js floor 22 / pin 24 (Debian trixie images), PostgreSQL pin 17, OpenSSL 3.5.9 + nginx 1.30.6 in the PQC build, Rust MSRV 1.77. Held back on purpose:
 TypeScript 7 (the native-port rewrite) and Prisma 8 (release candidate only) — each is its own
 reviewed upgrade, not a refresh.
 

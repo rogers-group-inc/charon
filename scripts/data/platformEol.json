@@ -22,12 +22,12 @@
     {
       "id": "postgres",
       "label": "PostgreSQL",
-      "charonMinimum": "15",
+      "charonMinimum": "17",
       "charonTarget": "17",
       "source": "https://www.postgresql.org/support/versioning/",
       "sourceCheckedOn": "2026-10-28",
       "confidence": "vendor",
-      "notes": "Each major is supported for five years after its first release. Fresh installs get 17; a host installed on 15 keeps running it and moves by pg_dump/restore or pg_upgrade.",
+      "notes": "Each major is supported for five years after its first release. Charon's floor and pin are both 17.",
       "tracks": [
         { "track": "14", "released": "2021-09-30", "eol": "2026-11-12" },
         { "track": "15", "released": "2022-10-13", "eol": "2027-11-11" },

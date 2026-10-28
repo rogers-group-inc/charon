@@ -32,8 +32,8 @@ tracks the floor so code cannot type-check against an API the floor lacks.
 
 ## PostgreSQL
 
-**Pinned 17**, across 7 checked sites. No floor is checked; the dataset's `charonMinimum` (15)
-says what an existing install may still run.
+**Pinned 17**, across 7 checked sites. No floor is checked; the dataset's `charonMinimum` and
+`charonTarget` are both 17.
 
 | Site | Form | Kind |
 |---|---|---|
@@ -52,8 +52,8 @@ Debian trixie carries 17; a major trixie lacks would need the PGDG apt repo in b
 Not checked, but moves with it: `/var/lib/pgsql/17/data`, `/usr/pgsql-17/bin/postgresql-17-setup`
 and the log line in the installer; the CLAUDE.md tech-stack row. **Not** pins: `deploy/setup-ha.sh`
 and the teardown script `haEnrollmentService` generates resolve the host's major at run time
-(`ls -d /usr/pgsql-*`), because the installer never upgrades PostgreSQL in place and a host
-installed on 15 stays on 15. A major upgrade of an existing install is a dump/restore or
+(`ls -d /usr/pgsql-*`), because the installer never upgrades PostgreSQL in place, so a host
+keeps the major it was installed with. A major upgrade of an existing install is a dump/restore or
 `pg_upgrade` — see upgrade-playbooks.md.
 
 ## OpenSSL (PQC transport)

@@ -14,11 +14,13 @@ use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, Server
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{DigitallySignedStruct, SignatureScheme};
 use sha2::{Digest, Sha256};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug)]
 struct PinnedVerifier {
     pins: Vec<String>,
+    /// The leaf fingerprint the last accepted handshake presented (lowercase hex).
+    observed: Arc<Mutex<Option<String>>>,
 }
 
 impl PinnedVerifier {
@@ -26,7 +28,13 @@ impl PinnedVerifier {
         let mut hasher = Sha256::new();
         hasher.update(end_entity.as_ref());
         let fp = hex::encode(hasher.finalize());
-        self.pins.iter().any(|p| p.eq_ignore_ascii_case(&fp))
+        let ok = self.pins.iter().any(|p| p.eq_ignore_ascii_case(&fp));
+        if ok {
+            if let Ok(mut o) = self.observed.lock() {
+                *o = Some(fp);
+            }
+        }
+        ok
     }
 }
 
@@ -71,10 +79,19 @@ pub fn pinned_client(pins: &[String]) -> Result<Client, reqwest::Error> {
     if pins.is_empty() {
         return Client::builder().use_rustls_tls().build();
     }
-    let verifier = Arc::new(PinnedVerifier { pins: pins.to_vec() });
+    Ok(pinned_client_observed(pins)?.0)
+}
+
+/// A strictly pinned client (never the system roots, even for an empty pin
+/// set — the caller must not pass one) plus the slot that records the leaf
+/// fingerprint the last accepted handshake presented. The preseed enrollment
+/// reports it to the server, which refuses one that is not an agent pin.
+pub fn pinned_client_observed(pins: &[String]) -> Result<(Client, Arc<Mutex<Option<String>>>), reqwest::Error> {
+    let observed = Arc::new(Mutex::new(None));
+    let verifier = Arc::new(PinnedVerifier { pins: pins.to_vec(), observed: observed.clone() });
     let tls = rustls::ClientConfig::builder()
         .dangerous()
         .with_custom_certificate_verifier(verifier)
         .with_no_client_auth();
-    Client::builder().use_preconfigured_tls(tls).build()
+    Ok((Client::builder().use_preconfigured_tls(tls).build()?, observed))
 }

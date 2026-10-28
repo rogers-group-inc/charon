@@ -42,6 +42,19 @@ in `X-CSRF-Token` on state-changing requests (`public/js/api.js` threads it). Ag
 from the route file. `makeRateLimiter()` builds others — the first-run wizard's `setupActionLimiter` (15 min / 30) in
 `src/setup/setupRoutes.ts` guards its test-connection and finalize routes.
 
+Two more are attached per route, in the route file:
+
+- `agentLoginLimiter` (15 min / 10) on `POST /agents/login`, **keyed by endpoint id**, not IP — a
+  fleet behind one NAT address must not share a bucket (one mistyped password would lock out
+  every endpoint behind it).
+- `adminActionLimiter` (15 min / 20) on backup restore, `update/start`, `restart` and
+  certificate upload, **keyed by operator username** so admins on a shared jump host don't
+  throttle each other.
+
+Both fall back to `ipKeyGenerator(req.ip)` when the key is missing. CodeQL's
+`js/missing-rate-limiting` flags any handler that does file-system, process or credential work
+without a limiter in front of it — give a new expensive or credential-checking route one.
+
 ## permissions (RBAC) — touches entry
 
 Moved verbatim from TOUCHES.md.

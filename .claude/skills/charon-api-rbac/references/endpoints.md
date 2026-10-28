@@ -16,7 +16,7 @@ file.
 - `POST   /agents/heartbeat`    — agent bearer
 - `POST   /agents/posture`      — agent bearer; enqueues a reconcile when the state changed
 - `GET    /agents/config`       — agent bearer; current pins (rotation) + active auth mode
-- `POST   /agents/login`        — agent bearer; binds {user↔device↔IP}, enqueues reconcile
+- `POST   /agents/login`        — agent bearer; `agentLoginLimiter` (per endpoint); binds {user↔device↔IP}, enqueues reconcile
 - `POST   /agents/logout`       — agent bearer; clears the binding, enqueues reconcile
 - WS `GET /agents/ws`           — telemetry (bearer in `Sec-WebSocket-Protocol`)
 
@@ -56,7 +56,7 @@ file.
 
 ### Server settings — `serverSettingsSystem read` (`src/api/routes/serverSettings.ts`)
 - `GET    /server-settings/certificates`
-- `POST   /server-settings/certificates` — `serverSettingsSystem fullwrite`; sets the canonical agent pin
+- `POST   /server-settings/certificates` — `serverSettingsSystem fullwrite`; `adminActionLimiter`; sets the canonical agent pin
 - `POST   /server-settings/certificates/stage` — fullwrite; stage the next pin (dual-pin)
 - `POST   /server-settings/certificates/promote` — fullwrite; promote the staged pin
 - `GET    /server-settings/ha` — leader state + replication
@@ -65,9 +65,9 @@ file.
 
 ### Maintenance — `serverSettingsData read` (`src/api/routes/maintenance.ts`)
 - `GET    /server-settings/maintenance/capacity`
-- `GET    /server-settings/maintenance/backups`; `POST …/backups` (write); `GET …/backups/download/:file` (write); `POST …/backups/restore` (fullwrite)
-- `GET    …/update/check`, `GET …/update/status`; `POST …/update/start` (fullwrite)
-- `POST   …/restart` (fullwrite)
+- `GET    /server-settings/maintenance/backups`; `POST …/backups` (write); `GET …/backups/download/:file` (write); `POST …/backups/restore` (fullwrite, `adminActionLimiter`)
+- `GET    …/update/check`, `GET …/update/status`; `POST …/update/start` (fullwrite, `adminActionLimiter`)
+- `POST   …/restart` (fullwrite, `adminActionLimiter`)
 - `GET    …/agents`, `GET …/agents/download/:file` — prebuilt installers (manifest allowlist)
 
 ### Events — `events read` (`src/api/routes/events.ts`)

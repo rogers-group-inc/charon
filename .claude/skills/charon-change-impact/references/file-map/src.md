@@ -17,7 +17,7 @@ src/
 │   │   ├── auth.ts           # session + API bearer + agent bearer (requireAuth, attachApiToken)
 │   │   ├── csrf.ts           # synchronizer token; agent paths exempt
 │   │   ├── permissions.ts    # dynamic-role matrix: FUNCTION_KEYS, requirePermission, session snapshot
-│   │   ├── rateLimits.ts     # login + enroll limiters + makeRateLimiter
+│   │   ├── rateLimits.ts     # login, enroll, agent-login, admin-action limiters + makeRateLimiter
 │   │   └── errorHandler.ts   # AppError → JSON
 │   └── routes/
 │       ├── auth.ts           # login, login/totp, logout, me

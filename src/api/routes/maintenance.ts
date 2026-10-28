@@ -16,6 +16,7 @@ import { checkForUpdate, startUpdate, readStatus } from "../../services/updateSe
 import { listInstallers, resolveInstaller } from "../../services/agentDistService.js";
 import { BACKUP_DIR } from "../../utils/paths.js";
 import { requirePermission } from "../middleware/permissions.js";
+import { adminActionLimiter } from "../middleware/rateLimits.js";
 import { logEvent } from "../../services/eventService.js";
 import { logger } from "../../utils/logger.js";
 
@@ -49,7 +50,7 @@ router.get("/backups/download/:file", requirePermission("serverSettingsData", "w
   } catch (err) { next(err); }
 });
 
-router.post("/backups/restore", requirePermission("serverSettingsData", "fullwrite"), async (req, res, next) => {
+router.post("/backups/restore", adminActionLimiter, requirePermission("serverSettingsData", "fullwrite"), async (req, res, next) => {
   try {
     const { filename, password } = z.object({ filename: z.string().min(1), password: z.string().optional() }).parse(req.body);
     if (filename.includes("/") || filename.includes("..")) throw new Error("Invalid filename");
@@ -66,7 +67,7 @@ router.get("/update/check", async (_req, res, next) => {
 
 router.get("/update/status", (_req, res) => res.json(readStatus()));
 
-router.post("/update/start", requirePermission("serverSettingsData", "fullwrite"), async (req, res, next) => {
+router.post("/update/start", adminActionLimiter, requirePermission("serverSettingsData", "fullwrite"), async (req, res, next) => {
   try {
     const { backupFirst, confirmNode } = z.object({ backupFirst: z.boolean().default(true), confirmNode: z.boolean() }).parse(req.body);
     // HA guard: require explicit acknowledgement that this node is safe to
@@ -79,7 +80,7 @@ router.post("/update/start", requirePermission("serverSettingsData", "fullwrite"
 });
 
 // ─── Role-aware restart ─────────────────────────────────────────────────────────
-router.post("/restart", requirePermission("serverSettingsData", "fullwrite"), async (req, res, next) => {
+router.post("/restart", adminActionLimiter, requirePermission("serverSettingsData", "fullwrite"), async (req, res, next) => {
   try {
     await logEvent({ level: "warning", action: "service.restart", actor: req.session.username, message: "Operator requested charon.target restart" });
     // Restart the whole target (web + endpoint@* + enforcer@* + worker@*), detached.

@@ -62,6 +62,7 @@ enum DirectoryObjectKind {
   user
   group
   ou
+  device // a computer object (AD) or Entra / Intune device — deployment targets + device facts
 }
 
 /// Per-integration enforcement mode. dry_run (default) logs intended Fortinet
@@ -159,7 +160,7 @@ model Setting {
 
 model Integration {
   id              String    @id @default(uuid())
-  type            String // "fortimanager" | "fortigate" | "activedirectory" | "entraid" | "intune"
+  type            String // "fortimanager" | "fortigate" | "activedirectory" | "entraid" (Intune = entraid config.enableIntune)
   name            String
   config          Json      @default("{}") // connection settings; secret fields are AES-256-GCM envelopes
   enabled         Boolean   @default(true)

@@ -48,7 +48,7 @@ EndpointStatus:      pending | enrolled | online | offline | revoked
 PostureState:        unknown | compliant | noncompliant
 AuthMode:            local | saml | oidc            // operator auth AND the agent login GUI
 TagSourceKind:       directory_group | directory_ou | custom_group | posture
-DirectoryObjectKind: user | group | ou
+DirectoryObjectKind: user | group | ou | device
 EnforcementMode:     dry_run | enforce              // per Integration; default dry_run
 SyncStatus:          pending | in_sync | drift | error | dry_run
 ```

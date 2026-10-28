@@ -45,8 +45,11 @@ src/
 │           └── firmware.ts       # /server-settings/firmware/* (Repository)
 ├── services/                 # see references/services/*.md — one entry per file
 │   ├── crypto/identity:      apiTokenService, agentTokenService, authService, verificationService, eventService
-│   ├── integrations:         httpClient, integrationConfig, integrationService, fortimanagerService, fortigateService,
-│   │                         activeDirectoryService, ldapClient, entraIdService, directoryTypes
+│   ├── integrations:         httpClient, integrationConfig, integrationService, integrationHealthService,
+│   │                         fortimanagerService, fmgWorker, fmgActivityService, fortigateService,
+│   │                         activeDirectoryService, ldapClient, entraIdService, directoryTypes,
+│   │                         discoveryRunState (DiscoveryRun live state)
+│   ├── discovery/            directoryDiscovery (trigger / runDiscovery / mirror write / guarded sweep)
 │   ├── outbound trust:       sshHostKeyService (SshHostKey TOFU), tlsCertPinService (TlsCertPin TOFU)
 │   ├── tags/enforcement:     customGroupService, tagService, tagReconciler, policyService, fortinetEnforcementService
 │   ├── agent/posture:        invitationCodeService, agentEnrollmentService, postureService, certPinService
@@ -63,6 +66,7 @@ src/
 │                             regexSafety + pure helpers (see services/server-settings.md)
 ├── jobs/
 │   ├── integrationHealthCheck.ts  # leader schedules every 10 min; worker consumes
+│   ├── directoryDiscoveryJob.ts   # leader: 15-min due-check scheduler + 60-s stale-run reaper; worker: charon.directory-sync consumer
 │   ├── tagReconcileJob.ts         # enqueueReconcile(); worker consumer
 │   ├── enforcementSyncJob.ts      # enforcer consumer for tag-change deltas
 │   ├── retentionPrune.ts          # leader-scheduled (6 h) audit-log + VerificationSession pruning to Setting sampleRetention
@@ -108,6 +112,8 @@ src/
 │   ├── fortiosRequestGate.ts # per-FortiGate request pacing + 401 pause (FortiOS API-key lockout)
 │   ├── fortiosEnvelope.ts    # FortiOS response envelope parsing (system status, HA peers)
 │   ├── entraClientCredentials.ts # the client-credentials token request shape (Graph)
+│   ├── graphThrottle.ts      # throttleDelayMs(): Retry-After / quota-reset → backoff ms (polaris azureArcService)
+│   ├── mac.ts                # MAC normalization (polaris)
 │   ├── cidr.ts               # urlHost / bareHost / isIpv6Address (moved from services/credentials/)
 │   ├── trimTrailing.ts       # regex-free trailing trim (moved from services/credentials/)
 │   ├── text.ts               # truncate()

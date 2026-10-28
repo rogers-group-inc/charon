@@ -249,6 +249,11 @@ function startSchedulers(cfg: RoleConfig): void {
   logger.info({ role: cfg.role }, "Leader — schedulers enabled");
   // Health-check sweep: enqueue every 10 min for the worker role to drain.
   void import("./jobs/integrationHealthCheck.js").then((m) => m.scheduleHealthChecks());
+  // Directory discovery: enqueue due auto-discoveries (15 min) + reap stale runs (60 s).
+  void import("./jobs/directoryDiscoveryJob.js").then((m) => {
+    m.scheduleDirectoryDiscovery();
+    m.scheduleDiscoveryReaper();
+  });
   // Retention pruning: trim the audit log + stale verification sessions.
   void import("./jobs/retentionPrune.js").then((m) => m.scheduleRetentionPrune());
   // Weekly IEEE OUI (MAC vendor) database refresh (Server Settings → Identification).
@@ -265,6 +270,7 @@ function startSchedulers(cfg: RoleConfig): void {
 function stopSchedulers(): void {
   logger.info("Schedulers paused (lost leadership)");
   void import("./jobs/integrationHealthCheck.js").then((m) => m.stopHealthChecks());
+  void import("./jobs/directoryDiscoveryJob.js").then((m) => m.stopDirectoryDiscoverySchedulers());
   void import("./jobs/retentionPrune.js").then((m) => m.stopRetentionPrune());
   void import("./jobs/ouiRefresh.js").then((m) => m.stopOuiRefresh());
   void import("./jobs/scheduledBackup.js").then((m) => m.stopScheduledBackups());
@@ -281,7 +287,11 @@ async function startConsumers(cfg: RoleConfig): Promise<void> {
     await tr.registerTagReconcileConsumer().catch((err) =>
       logger.warn({ err: err?.message }, "tag-reconcile consumer registration failed"),
     );
-    // TODO(milestone 5): boss.work(QUEUES.postureEval / directorySync).
+    const dd = await import("./jobs/directoryDiscoveryJob.js");
+    await dd.registerDirectoryDiscoveryConsumer().catch((err) =>
+      logger.warn({ err: err?.message }, "directory-discovery consumer registration failed"),
+    );
+    // TODO(milestone 5): boss.work(QUEUES.postureEval).
   }
   if (cfg.runsEnforcement) {
     logger.info("Enforcer role — enforcement-sync consumer");
@@ -289,6 +299,12 @@ async function startConsumers(cfg: RoleConfig): Promise<void> {
     await e.registerEnforcementConsumer().catch((err) =>
       logger.warn({ err: err?.message }, "enforcement-sync consumer registration failed"),
     );
+  }
+  if (cfg.runsWorkers || cfg.runsEnforcement) {
+    // The processes that make FortiManager calls snapshot their FMG worker lanes
+    // into a Setting so the web role can show live FMG activity.
+    const fa = await import("./services/fmgActivityService.js");
+    fa.startFmgActivityHeartbeat();
   }
 }
 

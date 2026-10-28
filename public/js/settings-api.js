@@ -1107,8 +1107,6 @@ const api = {
     delete: (id)     => request("DELETE", `/integrations/${id}`),
     test:   (id, name) => trackedRequest("Testing " + (name || "integration"), "POST", `/integrations/${id}/test`),
     testFortigateSample:    (id)   => trackedRequest("Testing random FortiGate", "POST", `/integrations/${id}/test/fortigate-sample`),
-    testFortigateSampleNew: (body) => trackedRequest("Testing random FortiGate", "POST", "/integrations/test/fortigate-sample", body),
-    register:(id, b) => request("POST", `/integrations/${id}/register`, b),
     discover:(id, name) => trackedRequest("Discovering " + (name || "DHCP"), "POST", `/integrations/${id}/discover`),
     testNew:(body)   => trackedRequest("Testing connection", "POST", "/integrations/test", body),
     query:         (id, body) => request("POST", `/integrations/${id}/query`, body),
@@ -1116,18 +1114,6 @@ const api = {
     healthSummary: ()    => request("GET", "/integrations/health-summary"),
     fmgActivity:   (id)  => request("GET", `/integrations/${id}/fmg-activity`),
     abortDiscover: (id)  => request("DELETE", `/integrations/${id}/discover`),
-    interfaceAggregate:        (id, klass) => request("GET", `/integrations/${id}/interface-aggregate?class=${encodeURIComponent(klass)}`),
-    interfaceAggregatePreview: (id, body)  => request("POST", `/integrations/${id}/interface-aggregate/preview`, body),
-    interfaceAggregateApply:   (id, klass) => trackedRequest("Applying auto-monitor interfaces", "POST", `/integrations/${id}/interface-aggregate/apply`, { class: klass }),
-    storageAggregate:          (id, klass) => request("GET", `/integrations/${id}/storage-aggregate?class=${encodeURIComponent(klass)}`),
-    storageAggregatePreview:   (id, body)  => request("POST", `/integrations/${id}/storage-aggregate/preview`, body),
-    storageAggregateApply:     (id, klass) => trackedRequest("Applying auto-monitor storage", "POST", `/integrations/${id}/storage-aggregate/apply`, { class: klass }),
-    autoMonitorAssetsPreflight: (id, proposed) => request("POST", `/integrations/${id}/auto-monitor-assets/preflight`, { proposed: proposed }),
-    llmRegenerateToken: (id) => request("POST", `/integrations/${id}/llm/regenerate-token`),
-    llmProbeTools:      (body) => trackedRequest("Checking tool calling", "POST", "/integrations/llm/probe-tools", body),
-    // Generic API Preview tab: the first page, mapped (nothing is written).
-    genericApiPreview:  (body) => trackedRequest("Reading the first page", "POST", "/integrations/generic-api/preview", body),
-    llmCheckTools:      (id)   => trackedRequest("Checking tool calling", "POST", `/integrations/${id}/llm/check-tools`),
   },
   // The floating AI assistant (public/js/assistant.js, business rule 95). The
   // streamed ask (POST /conversations/:id/messages) is NOT here: request()

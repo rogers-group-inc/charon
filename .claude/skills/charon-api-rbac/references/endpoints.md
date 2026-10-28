@@ -31,9 +31,15 @@ file.
 ### Integrations — `integrations read` (`src/api/routes/integrations.ts`)
 - `GET    /integrations/types`
 - `GET    /integrations`, `GET /integrations/:id` — secrets masked
-- `POST   /integrations`, `PUT /integrations/:id`, `DELETE /integrations/:id` — `integrations write`
+- `GET    /integrations/health-summary` — enabled integrations whose last test failed (sidebar poll)
+- `GET    /integrations/discoveries` — queued / running discovery runs
+- `GET    /integrations/:id/fmg-activity` — FortiManager worker-lane snapshot (fortimanager only)
+- `POST   /integrations`, `PUT /integrations/:id`, `DELETE /integrations/:id` — `integrations write`; the config is parsed with its type's schema on create AND update (`CONFIG_SCHEMAS`; SSRF host guard)
 - `POST   /integrations/:id/test`, `POST /integrations/test` (unsaved config) — `integrations write`
-- `POST   /integrations/:id/discover` — `integrations write`
+- `POST   /integrations/:id/test/fortigate-sample` — FMG direct mode, one random managed gate — `integrations write`
+- `POST   /integrations/:id/discover` — 202, queues a run (directory sources only) — `integrations write`
+- `DELETE /integrations/:id/discover` — cancel a run — **`integrations fullwrite`**
+- `POST   /integrations/:id/query` — READ-ONLY API console with the stored credentials (FMG `get`, FortiGate / Graph GET, LDAP search), audited — **`integrations fullwrite`**
 - `PATCH  /integrations/:id/enforcement` — **`enforcement fullwrite`** (dry_run ⇄ enforce)
 - `GET    /integrations/:id/enforcement-state` — `enforcement read`
 

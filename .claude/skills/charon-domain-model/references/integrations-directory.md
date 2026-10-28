@@ -4,7 +4,9 @@
 
 - **Integration** — one configured external system. `type` is one of
   `src/services/integrationService.ts → INTEGRATION_TYPES` (FortiManager / FortiGate are
-  enforcement targets; Active Directory / Entra ID / Intune are directory sources).
+  enforcement targets; Active Directory and Entra ID are directory sources — Intune is
+  Entra's `config.enableIntune`, not a type). `config` keys per type are fixed by
+  `src/api/routes/integrations.ts → CONFIG_SCHEMAS` (create AND update).
   `config` is JSON; secret fields are AES-256-GCM envelopes (see
   `integrationConfig.SECRET_FIELDS`). `enforcementMode` defaults `dry_run`; flipping to
   `enforce` needs the `enforcement` fullwrite permission and human review (business rule 2).
@@ -15,8 +17,11 @@
   those — a row of any other type is invisible to it (404 by id). `createdBy` is the ownership
   column for the `credentials` key: write = your own rows, fullwrite = any row; null = unowned
   (fullwrite-only), never backfilled. Business rule 3a.
-- **DirectoryObject** — a read-only mirror of a directory user / group / OU, unique on
-  `(integrationId, kind, externalId)`. `attributes` feeds custom-group rules. Charon never
+- **DirectoryObject** — a read-only mirror of a directory user / group / OU / device, unique
+  on `(integrationId, kind, externalId)`. `attributes` feeds custom-group rules; a user's
+  `attributes.memberOf` holds group DNs (AD) or group object ids (Entra) — what a
+  `directory_group` tag source's `ref` must equal. Rows a whole read no longer returns are
+  removed by the guarded sweep (`discovery/directoryDiscovery.ts → planSweep()`). Charon never
   writes back to the directory.
 - **CustomGroup** — an operator-defined group: membership is the UNION of explicit `members`
   (directory user keys) and the users matched by `rules` over DirectoryObject attributes
@@ -43,7 +48,7 @@
 ```prisma
 model Integration {
   id              String    @id @default(uuid())
-  type            String // "fortimanager" | "fortigate" | "activedirectory" | "entraid" | "intune"
+  type            String // "fortimanager" | "fortigate" | "activedirectory" | "entraid" (Intune = entraid config.enableIntune)
   name            String
   config          Json      @default("{}") // connection settings; secret fields are AES-256-GCM envelopes
   enabled         Boolean   @default(true)
@@ -85,7 +90,7 @@ model Credential {
   @@map("credentials")
 }
 
-/// A user / group / OU discovered from AD / Entra / Intune. Persisted as a tag
+/// A user / group / OU / device discovered from AD / Entra (+ Intune). Persisted as a tag
 /// source. Read-only mirror of directory state, refreshed by the worker sync.
 model DirectoryObject {
   id            String              @id @default(uuid())

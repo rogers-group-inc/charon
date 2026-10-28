@@ -140,22 +140,56 @@ export function pinnedTlsDispatcher(): Dispatcher {
   return pinnedAgent;
 }
 
+// Charon: a VERIFYING connection also trusts the operator-uploaded CAs (Server
+// Settings → Web Server → Trusted CAs), on top of the system roots — carried
+// over from Charon's httpClient so moving the integrations onto tlsFetch does
+// not drop them. Re-read every 60 s so an upload made in the web process
+// reaches worker / enforcer processes without a restart. A read failure keeps
+// the previous (or default) trust store — it never disables verification.
+// undefined = no extra CAs → undici's default dispatcher (system roots).
+const TRUSTED_CA_TTL_MS = 60_000;
+let trustedCache: { at: number; key: string; dispatcher: Agent | undefined } | null = null;
+
+/** The verifying dispatcher for the current trusted-CA set (same undici as tlsFetch). */
+export async function verifyingTlsDispatcher(): Promise<Dispatcher | undefined> {
+  if (trustedCache && Date.now() - trustedCache.at < TRUSTED_CA_TTL_MS) return trustedCache.dispatcher;
+  let pems: string[];
+  try {
+    const { getTrustedCaPems } = await import("../services/trustedCaService.js");
+    pems = await getTrustedCaPems();
+  } catch {
+    return trustedCache?.dispatcher;
+  }
+  const key = pems.join("\n");
+  if (trustedCache && trustedCache.key === key) {
+    trustedCache.at = Date.now();
+    return trustedCache.dispatcher;
+  }
+  const { rootCertificates } = await import("node:tls");
+  const old = trustedCache?.dispatcher;
+  const dispatcher = pems.length ? new Agent({ connect: { ca: [...rootCertificates, ...pems] } }) : undefined;
+  trustedCache = { at: Date.now(), key, dispatcher };
+  if (old) void old.close().catch(() => undefined);
+  return dispatcher;
+}
+
 /**
  * `fetch` for device transports that may need TLS verification relaxed.
  *
  * Always undici's own `fetch`, so the dispatcher below is guaranteed to come
  * from the same undici that will dispatch it. `verifySsl === false` replaces
  * CA verification with the certificate PIN for this connection (rule 113(e));
- * anything else (true or undefined) verifies the CA chain normally on undici's
- * default global dispatcher.
+ * anything else (true or undefined) verifies the CA chain — the system roots
+ * plus Charon's operator-uploaded trusted CAs (`verifyingTlsDispatcher`).
  */
-export function tlsFetch(
+export async function tlsFetch(
   url: string,
   init: RequestInit,
   verifySsl: boolean | undefined,
 ): Promise<Response> {
+  const dispatcher = verifySsl === false ? pinnedTlsDispatcher() : await verifyingTlsDispatcher();
   return undiciFetch(url, {
     ...init,
-    ...(verifySsl === false ? { dispatcher: pinnedTlsDispatcher() } : {}),
+    ...(dispatcher ? { dispatcher } : {}),
   });
 }

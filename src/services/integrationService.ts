@@ -1,28 +1,30 @@
 /**
- * src/services/integrationService.ts — Integration framework + dispatcher.
+ * src/services/integrationService.ts — Integration framework.
  *
- * One stereotype for every integration type:
+ * Four types, ported from polaris: FortiManager and FortiGate (enforcement
+ * targets) and Active Directory and Entra ID (+ Intune via config.enableIntune)
+ * (directory sources). One stereotype for every type:
  *   testConnection(config) → { ok, message, version? }
  * Config secrets are AES-256-GCM at rest, masked on read, preserved-on-unchanged
- * on write (see integrationConfig). Directory sources (AD/Entra) also implement
- * discover() → DiscoveredDirectoryObject[], persisted as the read-only
- * DirectoryObject mirror that feeds the tag pipeline (milestone 4).
+ * on write while their destination is unchanged (see integrationConfig).
+ * Directory sources also run discovery (services/discovery/directoryDiscovery)
+ * into the read-only DirectoryObject mirror that feeds the tag pipeline.
  *
- * Adding a type = add it to INTEGRATION_TYPES + the testConnection/discover
- * switches here. The route layer never special-cases a type.
+ * Adding a type = INTEGRATION_TYPES + SECRET_FIELDS (integrationConfig) + the
+ * runPreflightTest dispatch (+ readDirectory for a directory source) + the
+ * route's Zod schema + the integrations.js form. The route layer never
+ * special-cases a type beyond its config schema.
  */
 
 import { prisma } from "../db.js";
 import { AppError } from "../utils/errors.js";
+import { logger } from "../utils/logger.js";
 import { logEvent } from "./eventService.js";
-import { recordIntegrationTest, recordDiscovery } from "../metrics.js";
+import { recordIntegrationTest } from "../metrics.js";
 import { writeConfig, readConfigMasked, decryptConfig, type IntegrationType } from "./integrationConfig.js";
-import type { DiscoveredDirectoryObject } from "./directoryTypes.js";
+import { runPreflightTest, isDiscoveryRunning, isDirectorySource } from "./discovery/directoryDiscovery.js";
 
-import * as fmg from "./fortimanagerService.js";
-import * as fgt from "./fortigateService.js";
-import * as ad from "./activeDirectoryService.js";
-import * as entra from "./entraIdService.js";
+export { isDirectorySource };
 
 export interface TestResult {
   ok: boolean;
@@ -35,39 +37,13 @@ export const INTEGRATION_TYPES: readonly IntegrationType[] = [
   "fortigate",
   "activedirectory",
   "entraid",
-  "intune",
 ];
-
-/** True for types that mirror a directory into DirectoryObject (tag sources). */
-export function isDirectorySource(type: string): boolean {
-  return type === "activedirectory" || type === "entraid";
-}
 
 function assertType(type: string): IntegrationType {
   if (!(INTEGRATION_TYPES as readonly string[]).includes(type)) {
     throw new AppError(400, `Unknown integration type "${type}"`);
   }
   return type as IntegrationType;
-}
-
-// ─── Dispatch: testConnection ───────────────────────────────────────────────
-async function dispatchTest(type: IntegrationType, cfg: any, signal?: AbortSignal): Promise<TestResult> {
-  switch (type) {
-    case "fortimanager": return fmg.testConnection(cfg, signal);
-    case "fortigate": return fgt.testConnection(cfg, signal);
-    case "activedirectory": return ad.testConnection(cfg, signal);
-    case "entraid": return entra.testConnectionEntra(cfg, signal);
-    case "intune": return entra.testConnectionIntune(cfg, signal);
-  }
-}
-
-// ─── Dispatch: discover (directory sources only) ────────────────────────────
-async function dispatchDiscover(type: IntegrationType, cfg: any, signal?: AbortSignal): Promise<DiscoveredDirectoryObject[]> {
-  switch (type) {
-    case "activedirectory": return ad.discover(cfg, signal);
-    case "entraid": return entra.discoverEntra(cfg, signal);
-    default: throw new AppError(400, `Integration type "${type}" is not a directory source`);
-  }
 }
 
 // ─── CRUD ────────────────────────────────────────────────────────────────────
@@ -82,19 +58,33 @@ export async function getIntegration(id: string) {
   return { ...row, config: readConfigMasked(row.type, row.config as any) };
 }
 
-export async function createIntegration(input: { type: string; name: string; config: Record<string, unknown>; enabled?: boolean }, actor?: string) {
+export async function createIntegration(
+  input: { type: string; name: string; config: Record<string, unknown>; enabled?: boolean; autoDiscover?: boolean; pollInterval?: number },
+  actor?: string,
+) {
   const type = assertType(input.type);
   const name = input.name.trim();
   if (!name) throw new AppError(400, "Integration name is required");
   const stored = writeConfig(type, null, input.config ?? {});
   const row = await prisma.integration.create({
-    data: { type, name, config: stored as any, enabled: input.enabled ?? true },
+    data: {
+      type,
+      name,
+      config: stored as any,
+      enabled: input.enabled ?? true,
+      ...(input.autoDiscover !== undefined ? { autoDiscover: input.autoDiscover } : {}),
+      ...(input.pollInterval !== undefined ? { pollInterval: input.pollInterval } : {}),
+    },
   });
   await logEvent({ action: "integration.created", resourceType: "integration", resourceId: row.id, resourceName: name, actor, message: `Created ${type} integration "${name}"` });
   return { ...row, config: readConfigMasked(type, row.config as any) };
 }
 
-export async function updateIntegration(id: string, input: { name?: string; config?: Record<string, unknown>; enabled?: boolean; autoDiscover?: boolean; pollInterval?: number }, actor?: string) {
+export async function updateIntegration(
+  id: string,
+  input: { name?: string; config?: Record<string, unknown>; enabled?: boolean; autoDiscover?: boolean; pollInterval?: number },
+  actor?: string,
+) {
   const existing = await prisma.integration.findUnique({ where: { id } });
   if (!existing) throw new AppError(404, "Integration not found");
   const data: Record<string, unknown> = {};
@@ -111,81 +101,98 @@ export async function updateIntegration(id: string, input: { name?: string; conf
 export async function deleteIntegration(id: string, actor?: string) {
   const existing = await prisma.integration.findUnique({ where: { id } });
   if (!existing) throw new AppError(404, "Integration not found");
-  await prisma.integration.delete({ where: { id } });
+  await prisma.$transaction([
+    prisma.discoveryRun.deleteMany({ where: { integrationId: id } }),
+    prisma.integration.delete({ where: { id } }),
+  ]);
   await logEvent({ action: "integration.deleted", resourceType: "integration", resourceId: id, resourceName: existing.name, actor, message: `Deleted integration "${existing.name}"` });
 }
 
-// ─── testConnection (persisted) ────────────────────────────────────────────
-export async function testIntegration(id: string, signal?: AbortSignal): Promise<TestResult> {
+/** The DECRYPTED config of a stored integration — for server-side calls only, never returned. */
+export async function getDecryptedIntegration(id: string): Promise<{ id: string; type: IntegrationType; name: string; config: Record<string, unknown> }> {
   const row = await prisma.integration.findUnique({ where: { id } });
   if (!row) throw new AppError(404, "Integration not found");
   const type = assertType(row.type);
-  const cfg = decryptConfig(type, row.config as any);
-  const result = await dispatchTest(type, cfg, signal);
+  return { id: row.id, type, name: row.name, config: decryptConfig(type, row.config as any) };
+}
+
+// ─── testConnection (persisted) ────────────────────────────────────────────
+export async function testIntegration(id: string): Promise<TestResult> {
+  const integ = await getDecryptedIntegration(id);
+  const result = await runPreflightTest(integ);
   await prisma.integration.update({ where: { id }, data: { lastTestAt: new Date(), lastTestOk: result.ok } });
-  recordIntegrationTest(type, result.ok ? "success" : "failure");
+  recordIntegrationTest(integ.type, result.ok ? "success" : "failure");
   return result;
 }
 
-/** Preflight test of an unsaved config (the configure modal's Test button). */
-export async function preflightTest(type: string, config: Record<string, unknown>, existingId?: string, signal?: AbortSignal): Promise<TestResult> {
+/**
+ * Preflight test of an unsaved config (the configure modal's Test button). When
+ * editing an existing integration, masked / blank secrets are filled from the
+ * stored row — only while the destination is unchanged (writeConfig).
+ */
+export async function preflightTest(type: string, config: Record<string, unknown>, existingId?: string): Promise<TestResult> {
   const t = assertType(type);
-  // If the modal resubmitted masked secrets, merge against the stored config.
-  let cfg = config;
+  let stored: Record<string, unknown>;
   if (existingId) {
     const existing = await prisma.integration.findUnique({ where: { id: existingId } });
-    if (existing) cfg = writeConfig(t, existing.config as any, config);
+    if (!existing) throw new AppError(404, "Integration not found");
+    if (existing.type !== t) throw new AppError(400, "Integration type cannot change");
+    stored = writeConfig(t, existing.config as any, config);
   } else {
-    cfg = writeConfig(t, null, config);
+    stored = writeConfig(t, null, config);
   }
-  return dispatchTest(t, decryptConfig(t, cfg), signal);
-}
-
-// ─── Directory discovery (read-only) ─────────────────────────────────────────
-export async function discoverDirectory(id: string, signal?: AbortSignal): Promise<{ counts: Record<string, number> }> {
-  const row = await prisma.integration.findUnique({ where: { id } });
-  if (!row) throw new AppError(404, "Integration not found");
-  const type = assertType(row.type);
-  if (!isDirectorySource(type)) throw new AppError(400, `"${type}" is not a directory source`);
-
-  const started = Date.now();
-  await prisma.integration.update({ where: { id }, data: { lastDiscoveryAt: new Date() } });
-  const objects = await dispatchDiscover(type, decryptConfig(type, row.config as any), signal);
-
-  const counts: Record<string, number> = { user: 0, group: 0, ou: 0 };
-  for (const o of objects) {
-    counts[o.kind] = (counts[o.kind] ?? 0) + 1;
-    await prisma.directoryObject.upsert({
-      where: { integrationId_kind_externalId: { integrationId: id, kind: o.kind, externalId: o.externalId } },
-      create: {
-        integrationId: id,
-        kind: o.kind,
-        externalId: o.externalId,
-        name: o.name,
-        identifier: o.identifier ?? null,
-        parentOu: o.parentOu ?? null,
-        attributes: (o.attributes ?? {}) as any,
-      },
-      update: { name: o.name, identifier: o.identifier ?? null, parentOu: o.parentOu ?? null, attributes: (o.attributes ?? {}) as any, syncedAt: new Date() },
-    });
-  }
-  recordDiscovery(type, (Date.now() - started) / 1000);
-  await logEvent({ action: "integration.discovered", resourceType: "integration", resourceId: id, resourceName: row.name, message: `Discovered ${counts.user} users, ${counts.group} groups, ${counts.ou} OUs from "${row.name}"` });
-  // Directory changed → recompute effective tags fleet-wide (dynamic import
-  // breaks the service import cycle; non-blocking, dry-run until enforce is ON).
-  void import("./tagReconciler.js").then((m) => m.reconcileAll()).catch(() => {});
-  return { counts };
+  return runPreflightTest({ id: existingId, type: t, config: decryptConfig(t, stored) });
 }
 
 // ─── Health-check sweep (job) ───────────────────────────────────────────────
+/**
+ * Test every enabled integration (polaris integrationConnectionTester):
+ * sequential — a FortiManager drops parallel sessions past 1-2 — and skipping
+ * any integration in an active discovery run (a fresh session mid-run collides
+ * with the worker's and stamps a false failure). An ok-state CHANGE writes an
+ * `integration.test.recovered` / `integration.test.failed` Event.
+ */
 export async function runHealthChecks(signal?: AbortSignal): Promise<void> {
-  const integrations = await prisma.integration.findMany({ where: { enabled: true } });
-  for (const row of integrations) {
+  const integrations = await prisma.integration.findMany({
+    where: { enabled: true },
+    select: { id: true, name: true, type: true, config: true, lastTestOk: true },
+  });
+  for (const intg of integrations) {
     if (signal?.aborted) return;
+    if (await isDiscoveryRunning(intg.id).catch(() => false)) {
+      recordIntegrationTest(intg.type, "skipped");
+      continue;
+    }
+    let result: { ok: boolean; message: string };
     try {
-      await testIntegration(row.id, signal);
-    } catch {
-      recordIntegrationTest(row.type, "failure");
+      result = await runPreflightTest({ id: intg.id, type: intg.type, config: decryptConfig(intg.type, intg.config as any) });
+    } catch (err: any) {
+      result = { ok: false, message: err?.message ?? "Test threw unexpectedly" };
+    }
+    await prisma.integration.update({ where: { id: intg.id }, data: { lastTestAt: new Date(), lastTestOk: result.ok } })
+      .catch((err) => logger.error({ err, integrationId: intg.id }, "integration health check: failed to persist result"));
+    recordIntegrationTest(intg.type, result.ok ? "success" : "failure");
+
+    const previouslyOk = intg.lastTestOk === true;
+    if (result.ok && !previouslyOk) {
+      await logEvent({
+        action: "integration.test.recovered",
+        resourceType: "integration",
+        resourceId: intg.id,
+        resourceName: intg.name,
+        actor: "system:integration-tester",
+        message: `Connection test for "${intg.name}" recovered`,
+      });
+    } else if (!result.ok && previouslyOk) {
+      await logEvent({
+        action: "integration.test.failed",
+        level: "warning",
+        resourceType: "integration",
+        resourceId: intg.id,
+        resourceName: intg.name,
+        actor: "system:integration-tester",
+        message: `Connection test for "${intg.name}" failed: ${result.message}`,
+      });
     }
   }
 }

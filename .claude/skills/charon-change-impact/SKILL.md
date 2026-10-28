@@ -40,7 +40,7 @@ canonical's shape rather than inventing a parallel one.
 | Group file | Services |
 |---|---|
 | [tags-enforcement](references/services/tags-enforcement.md) | tagService, tagReconciler, customGroupService, policyService, postureService, fortinetEnforcementService |
-| [integrations](references/services/integrations.md) | integrationService, integrationConfig, httpClient, fortimanagerService, fortigateService, activeDirectoryService, ldapClient, entraIdService, directoryTypes |
+| [integrations](references/services/integrations.md) | integrationService, integrationConfig, discovery/directoryDiscovery, discoveryRunState, integrationHealthService, httpClient, fortimanagerService, fmgWorker, fmgActivityService, fortigateService, activeDirectoryService, ldapClient, entraIdService, directoryTypes, sshHostKeyService, tlsCertPinService |
 | [agent-trust](references/services/agent-trust.md) | agentEnrollmentService, agentTokenService, invitationCodeService, certPinService, certInfo, agentDistService |
 | [identity-audit](references/services/identity-audit.md) | authService, apiTokenService, verificationService, eventService |
 | [platform-ops](references/services/platform-ops.md) | leaderElection, nginxRenderer, nginxApplyService, backupService, updateService, capacityService |

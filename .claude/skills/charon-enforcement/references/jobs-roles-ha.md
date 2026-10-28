@@ -32,11 +32,16 @@ Graceful shutdown stops leader election + pg-boss on SIGTERM/SIGINT.
 | `charon.health-check` | leader (10 min) | worker | `{at}` |
 | `charon.tag-reconcile` | login/posture/etc. | worker | `{endpointId}` |
 | `charon.enforcement-sync` | reconciler | enforcer | `{endpointId, added, removed}` |
-| `charon.directory-sync` | (reserved) | worker | — |
+| `charon.directory-sync` | leader scheduler (15 min, due by `pollInterval`) + the Discover button (`directoryDiscovery → triggerDiscovery()`) | worker (`src/jobs/directoryDiscoveryJob.ts → registerDirectoryDiscoveryConsumer()`) | `{integrationId, actor}` |
 | `charon.posture-eval` | (reserved) | worker | — |
 
-Leader-only interval producers also run in-process: health-check scheduler,
-retention prune.
+Leader-only interval producers also run in-process: health-check scheduler, the
+directory-discovery scheduler + its stale-run reaper (60 s; fails a `DiscoveryRun` whose worker
+heartbeat is > 3 min old), retention prune.
+
+Worker and enforcer processes also start `fmgActivityService → startFmgActivityHeartbeat()`
+(2 s): they hold the FortiManager worker lanes, so they snapshot lane state into the
+`fmgActivitySnapshot` Setting for the web role's `/integrations/:id/fmg-activity`.
 
 In-process leader-only jobs (no pg-boss queue; started in `app.ts → startSchedulers()`, stopped
 in `stopSchedulers()`):

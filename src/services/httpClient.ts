@@ -16,10 +16,17 @@
  * level via an undici dispatcher rather than mutating the process-global
  * NODE_TLS_REJECT_UNAUTHORIZED, so disabling verification for one self-signed
  * appliance never weakens TLS for every other outbound call in the process.
+ *
+ * The fetch is userland undici's own (`fetch as undiciFetch`), never Node's
+ * global: a dispatcher is only valid to the undici copy that created it, and
+ * Node bundles a different major (see utils/tlsDispatcher.ts). The integrations
+ * moved to utils/tlsDispatcher.ts → tlsFetch (TLS pinning when unverified);
+ * this module remains for plain public downloads (the IEEE OUI list).
  */
 
-import { Agent } from "undici";
+import { Agent, fetch as undiciFetch, type Response as UndiciResponse } from "undici";
 import { AppError } from "../utils/errors.js";
+import { verifyingTlsDispatcher } from "../utils/tlsDispatcher.js";
 
 const DEFAULT_TIMEOUT_MS = 12_000;
 const MAX_ATTEMPTS = 3; // 1 initial + 2 retries
@@ -34,34 +41,6 @@ function getInsecureDispatcher(): Agent {
   return insecureDispatcher;
 }
 
-// Verifying dispatcher that ALSO trusts the operator-uploaded CAs (Server
-// Settings → Web Server → Trusted CAs). undefined = no extra CAs → Node's
-// default (system roots). Re-read every 60s so an upload made in the web
-// process reaches worker/enforcer processes without a restart. A read failure
-// keeps the default trust store — it never disables verification.
-const TRUSTED_CA_TTL_MS = 60_000;
-let trustedCache: { at: number; key: string; dispatcher: Agent | undefined } | null = null;
-async function getTrustedDispatcher(): Promise<Agent | undefined> {
-  if (trustedCache && Date.now() - trustedCache.at < TRUSTED_CA_TTL_MS) return trustedCache.dispatcher;
-  let pems: string[];
-  try {
-    const { getTrustedCaPems } = await import("./trustedCaService.js");
-    pems = await getTrustedCaPems();
-  } catch {
-    return trustedCache?.dispatcher;
-  }
-  const key = pems.join("\n");
-  if (trustedCache && trustedCache.key === key) {
-    trustedCache.at = Date.now();
-    return trustedCache.dispatcher;
-  }
-  const { rootCertificates } = await import("node:tls");
-  const old = trustedCache?.dispatcher;
-  const dispatcher = pems.length ? new Agent({ connect: { ca: [...rootCertificates, ...pems] } }) : undefined;
-  trustedCache = { at: Date.now(), key, dispatcher };
-  if (old) void old.close().catch(() => undefined);
-  return dispatcher;
-}
 
 export interface HttpOptions {
   method?: string;
@@ -89,7 +68,7 @@ function markRetryable<E extends object>(err: E): E {
   return err;
 }
 
-async function attempt(url: string, opts: HttpOptions): Promise<Response> {
+async function attempt(url: string, opts: HttpOptions): Promise<UndiciResponse> {
   const label = opts.label ?? "Upstream";
   const controller = new AbortController();
   let timedOut = false;
@@ -98,15 +77,15 @@ async function attempt(url: string, opts: HttpOptions): Promise<Response> {
   opts.signal?.addEventListener("abort", onExternalAbort, { once: true });
 
   try {
-    let res: Response;
+    let res: UndiciResponse;
     try {
-      res = await fetch(url, {
+      const dispatcher = opts.verifyTls === false ? getInsecureDispatcher() : await verifyingTlsDispatcher();
+      res = await undiciFetch(url, {
         method: opts.method ?? "GET",
         headers: opts.headers,
         body: opts.body,
         signal: controller.signal,
-        // @ts-expect-error — undici dispatcher is accepted by Node's fetch at runtime
-        dispatcher: opts.verifyTls === false ? getInsecureDispatcher() : await getTrustedDispatcher(),
+        ...(dispatcher ? { dispatcher } : {}),
       });
     } catch (err: any) {
       if (opts.signal?.aborted && !timedOut) throw err; // intentional external abort — never retry
@@ -130,7 +109,7 @@ async function attempt(url: string, opts: HttpOptions): Promise<Response> {
 }
 
 /** Fetch with timeout + transient-retry + per-call TLS-verify toggle. */
-export async function httpRequest(url: string, opts: HttpOptions = {}): Promise<Response> {
+export async function httpRequest(url: string, opts: HttpOptions = {}): Promise<UndiciResponse> {
   let lastErr: unknown;
   for (let i = 0; i < MAX_ATTEMPTS; i++) {
     if (opts.signal?.aborted) break;

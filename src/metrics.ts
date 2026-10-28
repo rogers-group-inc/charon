@@ -142,6 +142,41 @@ export function recordDiscovery(integrationType: string, durationSeconds: number
   }
 }
 
+// ─── FortiManager worker lanes (ported from polaris) ─────────────────────────
+
+const fmgWorkerQueueDepth = new Gauge({
+  name: "charon_fmg_worker_queue_depth",
+  help: "Queued FMG tasks awaiting dispatch on the per-integration worker's proxy lane. FMG drops parallel /sys/proxy/json calls past 1-2 concurrent, so every proxied call funnels through one worker per integration id.",
+  labelNames: ["integrationId"] as const,
+  registers: [registry],
+});
+
+const fmgWorkerInflight = new Gauge({
+  name: "charon_fmg_worker_inflight",
+  help: "1 when the FMG worker's PROXY lane (strict concurrency=1) is executing a task; 0 when idle.",
+  labelNames: ["integrationId"] as const,
+  registers: [registry],
+});
+
+const fmgWorkerNativeInflight = new Gauge({
+  name: "charon_fmg_worker_native_inflight",
+  help: "Native FMG calls (CMDB, dvmdb, auth — anything that ISN'T /sys/proxy/json) in flight for this integration. Unbounded by design.",
+  labelNames: ["integrationId"] as const,
+  registers: [registry],
+});
+
+export function setFmgWorkerQueueDepth(integrationId: string, depth: number): void {
+  fmgWorkerQueueDepth.set({ integrationId }, depth);
+}
+
+export function setFmgWorkerInflight(integrationId: string, value: 0 | 1): void {
+  fmgWorkerInflight.set({ integrationId }, value);
+}
+
+export function setFmgWorkerNativeInflight(integrationId: string, count: number): void {
+  fmgWorkerNativeInflight.set({ integrationId }, count);
+}
+
 // ─── HA / leader election ──────────────────────────────────────────────────────
 
 const isLeader = new Gauge({

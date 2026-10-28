@@ -30,7 +30,7 @@ const BUILTIN_ROLES = [
     permissions: matrix((k) => {
       if (k === "roles") return "none";
       if (k === "enforcement") return "read";
-      if (k === "users" || k === "apiTokens" || k === "serverSettingsData") return "read";
+      if (k === "users" || k === "authentication" || k === "apiTokens" || k === "serverSettingsData") return "read";
       return "write";
     }),
   },

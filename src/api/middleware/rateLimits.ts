@@ -27,6 +27,59 @@ export const loginLimiter = rateLimit({
   message: { error: "Too many login attempts. Please try again in 15 minutes." },
 });
 
+// Auth-code guessing surfaces (TOTP confirm / disable): mirror the login limiter.
+export const totpCodeLimiter = makeRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: "Too many code attempts. Please try again in 15 minutes.",
+});
+
+// Password change (self-service and the forced step at login). The body
+// carries a current password, so a hijacked session could grind it here
+// without touching the login limiter — it gets the login ceiling.
+export const passwordChangeLimiter = makeRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: "Too many password change attempts. Please try again in 15 minutes.",
+});
+
+// Passkey ceremonies (option fetch + assertion / registration). An assertion
+// is not guessable; this bounds flood volume.
+export const passkeyCeremonyLimiter = makeRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  message: "Too many passkey attempts. Please try again in 15 minutes.",
+});
+
+// Unauthenticated SSO entry redirects (GET /saml/login, /oidc/login). Nothing
+// is guessed — this bounds flood volume — and it is NOT the login limiter, so
+// SSO keeps working when the password surface is exhausted. Sized against the
+// callback limiter: one sign-in is one entry + one callback from the same
+// address, and an office behind one NAT arrives together at shift start.
+export const ssoEntryLimiter = makeRateLimiter({
+  windowMs: 5 * 60 * 1000,
+  max: 120,
+  message: "Too many sign-in attempts — please try again shortly.",
+});
+
+// IdP-driven SSO callbacks and the public login-page probes. They carry a
+// signature-validated assertion, not a guessable credential; per-IP and far
+// above the entry limiter for the same NAT reason.
+export const ssoCallbackLimiter = makeRateLimiter({
+  windowMs: 5 * 60 * 1000,
+  max: 300,
+  message: "Too many sign-in attempts — please try again shortly.",
+});
+
+// Entra App Proxy header login: every App Proxy user arrives from the shared
+// connector IP(s), so the per-IP login limiter would lock out the whole
+// external population. No guessable credential here — bounds a runaway loop.
+export const entraProxyLoginLimiter = makeRateLimiter({
+  windowMs: 5 * 60 * 1000,
+  max: 60,
+  message: "Too many login attempts — retry shortly.",
+});
+
 // Agent enrollment: a one-time invitation code is presented here. Rate-limit by
 // IP so a leaked-but-revoked code can't be brute-forced for residual uses.
 export const enrollLimiter = rateLimit({

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="/js/theme-init.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Charon — Signed out</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/styles.css">
+  <link rel="stylesheet" href="/css/charon.css">
+  <style>
+    .login-wrapper { min-height: 100vh; min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 1rem 0; }
+    .login-card {
+      background: var(--color-bg-primary); border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg); padding: 2rem 2.5rem; width: 100%; max-width: 380px; box-shadow: var(--shadow-md); text-align: center;
+    }
+    .login-card h2 { margin: 0 0 0.75rem; font-size: 1.15rem; font-weight: 700; color: var(--color-text-primary); }
+    .login-card p { color: var(--color-text-secondary); font-size: 0.88rem; margin-bottom: 1.25rem; }
+    .login-card .btn-primary { width: 100%; justify-content: center; }
+  </style>
+</head>
+<body>
+  <!-- Where every logout lands: a page with NO form. Its button opens the bare
+       /login.html, so the server decides what comes next (SSO under "Skip login
+       page", else the form). Landing a logout on /login.html directly would let
+       a silent SSO sign the operator straight back in. -->
+  <div class="login-wrapper">
+    <div class="login-card">
+      <h2 id="signedOutTitle">You have signed out</h2>
+      <p id="signedOutText">Close this tab, or sign in again.</p>
+      <a class="btn btn-primary" href="/login.html">Sign in</a>
+    </div>
+  </div>
+  <script src="/js/signed-out.js"></script>
+</body>
+</html>

@@ -42,9 +42,10 @@ export const FUNCTION_KEYS: readonly FunctionKeyDef[] = [
   { key: "credentials", label: "Credentials", description: "Stored connection credentials (LDAP, REST API) used by integrations." },
   { key: "events", label: "Events / Audit Log", description: "Audit log of tag/policy changes, enrollments, logins + retention settings." },
   { key: "apiTokens", label: "API Tokens", description: "Long-lived bearer tokens for external callers." },
-  { key: "users", label: "Users", description: "Operator CRUD + role assignment + TOTP reset + group mapping." },
+  { key: "users", label: "Users", description: "Operator CRUD + role assignment + TOTP / passkey reset. Full Read-Write also edits SSO group mappings." },
   { key: "roles", label: "Roles", description: "Manage this permission matrix itself. Full Read-Write effectively grants admin-equivalent control." },
-  { key: "serverSettingsSystem", label: "Server Settings — System", description: "Identification, authentication, certificates (agent pin), High Availability." },
+  { key: "authentication", label: "Authentication", description: "Sign-in configuration: SAML / OIDC / LDAP / App Proxy providers, passkeys, password policy, session timeout, Local Login Access, the agent sign-in mode." },
+  { key: "serverSettingsSystem", label: "Server Settings — System", description: "Identification, certificates (agent pin), web server, High Availability." },
   { key: "serverSettingsData", label: "Server Settings — Data", description: "Backup / restore, in-app updates, retention, security tokens." },
 ] as const;
 
@@ -73,6 +74,85 @@ export function normalizePermissions(input: unknown): Record<string, AccessLevel
 
 export function isAdminEquivalentPermissions(perms: Record<string, AccessLevel>): boolean {
   return perms.users === "fullwrite" && perms.roles === "fullwrite";
+}
+
+/**
+ * True when the CALLER's own role is admin-equivalent. Reads the snapshot the
+ * request already resolved (bearer token or session), so it is only meaningful
+ * after requirePermission has run.
+ */
+export function callerIsAdminEquivalent(req: Request): boolean {
+  const snap = req.roleSnapshot ?? req.session?.roleSnapshot;
+  if (!snap) return false;
+  return isAdminEquivalentPermissions(normalizePermissions(snap.permissions));
+}
+
+/**
+ * Nobody may hand out admin-equivalence they do not hold. `users:write` could
+ * otherwise create an account on (or move one onto) an admin-equivalent role,
+ * and `roles:write` could add the two fullwrite grants to a role. Also guards
+ * the mirror: acting on an account that is already admin-equivalent (reset its
+ * password, its second factors, its role) is a way to BECOME it.
+ */
+export function assertNoPrivilegeEscalation(req: Request, targetPermissions: unknown, subject: string): void {
+  if (!isAdminEquivalentPermissions(normalizePermissions(targetPermissions))) return;
+  if (callerIsAdminEquivalent(req)) return;
+  throw new AppError(
+    403,
+    `Forbidden — ${subject} carries admin-equivalent control (Full RW on both users and roles), `
+    + "which your own role does not hold. Ask an administrator to make this change.",
+  );
+}
+
+/**
+ * The grants in `target` the caller does not hold. With `existing` (an edit),
+ * a key the row ALREADY held at that level is not a new grant and is not
+ * counted — editing a role is never refused for authority someone else gave
+ * it. Pure.
+ */
+export function grantsBeyond(
+  callerPermissions: unknown,
+  targetPermissions: unknown,
+  existingPermissions?: unknown,
+): Array<{ key: string; level: AccessLevel }> {
+  const caller = normalizePermissions(callerPermissions);
+  const target = normalizePermissions(targetPermissions);
+  const existing = existingPermissions === undefined ? null : normalizePermissions(existingPermissions);
+  const out: Array<{ key: string; level: AccessLevel }> = [];
+  for (const def of FUNCTION_KEYS) {
+    const want = target[def.key] ?? "none";
+    if (want === "none") continue;
+    if (rankMeets(caller[def.key] ?? "none", want)) continue;
+    if (existing && rankMeets(existing[def.key] ?? "none", want)) continue;
+    out.push({ key: def.key, level: want });
+  }
+  return out;
+}
+
+/**
+ * Business rule 10 — a grant may not exceed the granter. Applied wherever
+ * authority is handed out: creating or editing a role, creating an account on
+ * a role or moving one onto it, a group mapping that hands a role to IdP group
+ * members. Same principle as API-token minting
+ * (apiTokenService.grantExceedsCaller, rule 8). Pass `existingPermissions` for
+ * an edit so only raised keys count.
+ */
+export function assertGrantWithinCaller(
+  req: Request,
+  targetPermissions: unknown,
+  subject: string,
+  existingPermissions?: unknown,
+): void {
+  assertNoPrivilegeEscalation(req, targetPermissions, subject);
+  if (callerIsAdminEquivalent(req)) return;
+  const snap = req.roleSnapshot ?? req.session?.roleSnapshot;
+  const beyond = grantsBeyond(snap?.permissions ?? {}, targetPermissions, existingPermissions);
+  if (beyond.length === 0) return;
+  const list = beyond.slice(0, 6).map((b) => `${b.key}=${b.level}`).join(", ") + (beyond.length > 6 ? `, and ${beyond.length - 6} more` : "");
+  throw new AppError(
+    403,
+    `Forbidden — ${subject} grants access your own role does not hold (${list}). You can only grant up to your own level; ask an administrator to make this change.`,
+  );
 }
 
 export function rankRole(permissions: unknown): number {
@@ -217,6 +297,7 @@ export function requirePermission(functionKey: string, required: AccessLevel) {
         return next(new AppError(403, `Forbidden — your role lacks ${required} access on ${functionKey}`));
       }
       req.permissionLevel = actual;
+      req.roleSnapshot = snap;
       next();
     } catch (err) {
       next(err);
@@ -225,7 +306,7 @@ export function requirePermission(functionKey: string, required: AccessLevel) {
 }
 
 export function hasPermission(req: Request, functionKey: string, required: AccessLevel): boolean {
-  const snap = req.session?.roleSnapshot;
+  const snap = req.roleSnapshot ?? req.session?.roleSnapshot;
   if (!snap) return false;
   const actual = snap.permissions[functionKey] ?? "none";
   return rankMeets(actual, required);
@@ -256,6 +337,7 @@ export function requireSessionOrTokenPermission(
         const actual = snap.permissions[functionKey] ?? "none";
         if (rankMeets(actual, level)) {
           req.permissionLevel = actual;
+          req.roleSnapshot = snap;
           return next();
         }
         return next(new AppError(403, `Forbidden — your role lacks ${level} access on ${functionKey}`));

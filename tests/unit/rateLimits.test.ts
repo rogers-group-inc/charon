@@ -1,9 +1,21 @@
 import { describe, it, expect } from "vitest";
 import express from "express";
 import request from "supertest";
-import { agentLoginLimiter, adminActionLimiter } from "../../src/api/middleware/rateLimits.js";
+import {
+  agentLoginLimiter,
+  adminActionLimiter,
+  passwordChangeLimiter,
+  totpCodeLimiter,
+  passkeyCeremonyLimiter,
+  ssoEntryLimiter,
+  ssoCallbackLimiter,
+  entraProxyLoginLimiter,
+} from "../../src/api/middleware/rateLimits.js";
 import maintenanceRouter, { installerLimiter } from "../../src/api/routes/maintenance.js";
 import webServerRouter from "../../src/api/routes/settings/webServer.js";
+import authRouter from "../../src/api/routes/auth.js";
+import authSsoRouter from "../../src/api/routes/authSso.js";
+import authPasskeysRouter from "../../src/api/routes/authPasskeys.js";
 
 /** The handler chain Express registered for METHOD PATH on a router. */
 function handlersOf(router: express.Router, method: string, path: string): unknown[] {
@@ -55,7 +67,27 @@ describe("limiter attachment", () => {
   });
 
   it("rate-limits the local-login source scope ahead of its permission check", () => {
-    const chain = handlersOf(webServerRouter, "put", "/login-access");
+    const chain = handlersOf(authRouter, "put", "/login-access");
     expect(chain[0]).toBe(adminActionLimiter);
+    // The Web Server tab keeps only the read-only GET.
+    expect(() => handlersOf(webServerRouter, "put", "/login-access")).toThrow();
+  });
+
+  it("rate-limits the credential-checking auth routes", () => {
+    expect(handlersOf(authRouter, "put", "/password")).toContain(passwordChangeLimiter);
+    expect(handlersOf(authRouter, "post", "/login/password-change")).toContain(passwordChangeLimiter);
+    expect(handlersOf(authRouter, "post", "/totp/confirm")).toContain(totpCodeLimiter);
+    expect(handlersOf(authRouter, "delete", "/totp")).toContain(totpCodeLimiter);
+    for (const [m, p] of [["post", "/passkeys/login/options"], ["post", "/passkeys/login"], ["post", "/login/passkey"], ["post", "/passkeys/register/options"]] as const) {
+      expect(handlersOf(authPasskeysRouter, m, p)).toContain(passkeyCeremonyLimiter);
+    }
+  });
+
+  it("rate-limits the SSO entry and callback routes", () => {
+    expect(handlersOf(authSsoRouter, "get", "/saml/login")).toContain(ssoEntryLimiter);
+    expect(handlersOf(authSsoRouter, "get", "/oidc/login")).toContain(ssoEntryLimiter);
+    expect(handlersOf(authSsoRouter, "post", "/saml/callback")).toContain(ssoCallbackLimiter);
+    expect(handlersOf(authSsoRouter, "get", "/oidc/callback")).toContain(ssoCallbackLimiter);
+    expect(handlersOf(authSsoRouter, "get", "/entra-proxy/login")).toContain(entraProxyLoginLimiter);
   });
 });

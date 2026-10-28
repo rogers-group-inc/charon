@@ -19,31 +19,13 @@
 import { networkInterfaces } from "node:os";
 import { createSocket } from "node:dgram";
 import { isIP } from "node:net";
-import { prisma } from "../db.js";
 import { AppError } from "../utils/errors.js";
 import { ipInScope, isIpScope, normalizeAllowlist, normalizeAllowlistCidr, type IpScope } from "../utils/ipScope.js";
 import { logger } from "../utils/logger.js";
+import { createSettingStore } from "./settingsStore.js";
 
-// ─── tiny TTL'd Setting store (polaris settingsStore pattern) ────────────────
-
-function settingStore<T>(key: string, ttlMs: number, parse: (raw: unknown) => T) {
-  let cache: { value: T; at: number } | null = null;
-  return {
-    async get(): Promise<T> {
-      if (cache && Date.now() - cache.at < ttlMs) return cache.value;
-      const row = await prisma.setting.findUnique({ where: { key } });
-      const value = parse(row?.value);
-      cache = { value, at: Date.now() };
-      return value;
-    },
-    async save(value: T): Promise<T> {
-      await prisma.setting.upsert({ where: { key }, create: { key, value: value as any }, update: { value: value as any } });
-      cache = { value, at: Date.now() };
-      return value;
-    },
-    invalidate(): void { cache = null; },
-  };
-}
+const settingStore = <T>(key: string, ttlMs: number, parse: (raw: unknown) => T) =>
+  createSettingStore({ key, ttlMs, parse });
 
 // ─── shared { enabled, ipScope, allowedCidrs } shape ─────────────────────────
 

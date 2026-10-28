@@ -21,6 +21,16 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction) {
   next(new AppError(401, "Unauthorized — please log in"));
 }
 
+/**
+ * Self-service routes (own password, own TOTP, own passkeys) act on "the
+ * signed-in operator" — an API token has no such person, so only a session
+ * passes.
+ */
+export function requireSessionUser(req: Request, _res: Response, next: NextFunction) {
+  if (req.session?.userId) return next();
+  next(new AppError(401, "Unauthorized — sign in to manage your own account"));
+}
+
 function extractBearerToken(req: Request): string | null {
   const auth = req.headers.authorization;
   if (!auth || typeof auth !== "string") return null;

@@ -109,8 +109,8 @@ model User {
   roleId       String  @map("role_id")
   role         Role    @relation(fields: [roleId], references: [id], onDelete: Restrict)
 
-  authProvider String  @default("local") @map("auth_provider") // "local" | "saml" | "oidc" | "ldap"
-  azureOid     String? @unique @map("azure_oid")
+  authProvider String  @default("local") @map("auth_provider") // "local" | "saml" | "oidc" | "ldap" | "entra-proxy"
+  azureOid     String? @unique @map("azure_oid") // Entra object id (SAML objectidentifier claim, else NameID; App Proxy shares it)
   oidcSubject  String? @unique @map("oidc_subject")
   ldapUid      String? @unique @map("ldap_uid")
   ssoGroups    String[] @default([]) @map("sso_groups")
@@ -118,12 +118,19 @@ model User {
   email        String?
   lastLogin    DateTime? @map("last_login")
 
-  // TOTP second factor — local accounts only.
+  // TOTP second factor — local accounts only. The secret is a crypto.ts
+  // envelope (rule 3), never plaintext base32.
   totpSecret      String?   @map("totp_secret")
   totpEnabledAt   DateTime? @map("totp_enabled_at")
   totpBackupCodes String[]  @default([]) @map("totp_backup_codes")
+  // Last accepted TOTP time-step: a code is refused unless its step is newer
+  // (replay protection, totpStepService).
+  totpLastStep    Int?      @map("totp_last_step")
 
+  // Set on a first SSO provisioning; cleared when an operator assigns a role.
   needsRoleReview Boolean @default(false) @map("needs_role_review")
+
+  passkeys UserPasskey[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -132,18 +139,46 @@ model User {
   @@map("users")
 }
 
-/// Maps a normalized IdP/directory group key → a Charon Role for SSO-provisioned
-/// operators. Highest-privilege match wins (see permissions.ts).
-model GroupMapping {
-  id        String   @id @default(uuid())
-  groupKey  String   @map("group_key") // normalized directory group identifier
-  roleId    String   @map("role_id")
-  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+/// A WebAuthn passkey registered by an operator (passwordless sign-in and/or a
+/// second factor, per the passkeyConfig Setting). Local accounts only.
+model UserPasskey {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId String    @unique @map("credential_id")
+  publicKey    Bytes     @map("public_key")
+  counter      BigInt    @default(0)
+  transports   String[]  @default([])
+  name         String // operator-set label; defaults to a User-Agent guess
+  aaguid       String? // authenticator model id; all-zero when undisclosed
+  deviceType   String?   @map("device_type") // "singleDevice" | "multiDevice"
+  backedUp     Boolean   @default(false) @map("backed_up")
+  lastUsedAt   DateTime? @map("last_used_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
 
-  @@unique([groupKey, roleId])
-  @@index([groupKey])
+  @@index([userId])
+  @@map("user_passkeys")
+}
+
+/// Maps one IdP group (scoped by provider) → a Charon Role for SSO-provisioned
+/// operators. At SAML / OIDC / LDAP / App Proxy login the user's group claims
+/// are matched against the enabled mappings; highest-privilege match wins
+/// (permissions.ts → pickHighestPrivilegeRoleId).
+model GroupMapping {
+  id          String   @id @default(uuid())
+  provider    String // "saml" | "oidc" | "ldap" | "entra-proxy"
+  groupKey    String   @map("group_key") // normalized match key (groupMappingService.normalizeGroupKey)
+  groupLabel  String?  @map("group_label") // as entered, for display
+  roleId      String   @map("role_id")
+  role        Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  enabled     Boolean  @default(true)
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([provider, groupKey])
+  @@index([provider, enabled])
+  @@index([roleId])
   @@map("group_mappings")
 }
 

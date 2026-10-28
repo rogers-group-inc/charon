@@ -21,7 +21,8 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 // Paths that bypass the token check. All other mutating requests are protected.
 const EXEMPT_PATH_PREFIXES = [
-  "/api/v1/auth/login", // pre-session; the rate limiter is the defense
+  "/api/v1/auth/login", // pre-session (password, TOTP, passkey second factor, forced change); the rate limiter is the defense
+  "/api/v1/auth/passkeys/login", // pre-session passwordless; the single-use challenge + signed assertion are the defense
   "/api/v1/auth/saml/", // SAML flow is cross-origin by design; signed assertion + RelayState are the CSRF guarantee
   "/api/v1/auth/oidc/", // OIDC redirect/callback; state + PKCE are the guarantee
   "/api/setup/", // first-run wizard runs on a separate server without sessions

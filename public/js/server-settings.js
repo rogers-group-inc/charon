@@ -18,7 +18,6 @@ var SETTINGS_TAB_PERMS = {
   customization: "serverSettingsSystem",
   ntp: "serverSettingsSystem",
   certificates: "serverSettingsSystem",
-  auth: "serverSettingsSystem",
   maintenance: "serverSettingsData",
   retention: "serverSettingsData",
   "api-tokens": "apiTokens",
@@ -45,7 +44,6 @@ function _activateSettingsTab(target) {
   if (target === "credentials" && !_credsLoaded) loadCredentialsTab();
   if (target === "retention" && !_retentionLoaded) loadRetentionTab();
   if (target === "api-tokens" && !_apiTokensLoaded) loadApiTokensTab();
-  if (target === "auth" && window.CharonAuthTab) window.CharonAuthTab.load();
   // High Availability lives in its own module (server-settings-ha.js):
   // the tab is a build procedure with its own state machine, and it
   // polls while visible because a node registering arrives from

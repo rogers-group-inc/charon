@@ -14,13 +14,20 @@ src/
 ├── api/
 │   ├── router.ts             # aggregate /api/v1; public mounts before requireAuth; per-mount requirePermission
 │   ├── middleware/
-│   │   ├── auth.ts           # session + API bearer + agent bearer (requireAuth, attachApiToken → 403 untrusted host)
+│   │   ├── auth.ts           # session + API bearer + agent bearer (requireAuth, requireSessionUser, attachApiToken → 403 untrusted host)
 │   │   ├── csrf.ts           # synchronizer token; agent paths, exactly /ha/enroll, session-less bearers exempt
-│   │   ├── permissions.ts    # dynamic-role matrix: FUNCTION_KEYS, requirePermission, session / API-token role snapshot
-│   │   ├── rateLimits.ts     # login, enroll, agent-login, admin-action limiters + makeRateLimiter
+│   │   ├── permissions.ts    # dynamic-role matrix: FUNCTION_KEYS, requirePermission, session / API-token role snapshot, escalation guards
+│   │   ├── sessionRevalidate.ts # once a minute per session: user row still exists / role still the same
+│   │   ├── entraProxyHeaders.ts # strip App Proxy identity headers from untrusted sources
+│   │   ├── rateLimits.ts     # login, enroll, agent-login, admin-action, TOTP-code, password-change, passkey, SSO limiters + makeRateLimiter
 │   │   └── errorHandler.ts   # AppError → JSON
 │   └── routes/
-│       ├── auth.ts           # login, login/totp (Local Login Access IP gate), logout, me
+│       ├── auth.ts           # login steps (password / totp / password-change), logout, me, own password + TOTP, password policy, session settings, agent mode
+│       ├── authSso.ts        # SAML / OIDC / App Proxy flows + SAML / OIDC / LDAP / App Proxy settings (mounted at /auth)
+│       ├── authPasskeys.ts   # passkey sign-in, second factor, self-service, passkey policy (mounted at /auth)
+│       ├── users.ts          # operator accounts (Users page)
+│       ├── roles.ts          # role CRUD + /roles/functions catalogue
+│       ├── groupMappings.ts  # IdP group → role mappings (users:fullwrite)
 │       ├── agent.ts          # GET /agent/auth-config (public)
 │       ├── agents.ts         # agentsEnrollRouter (POST /agents/enroll) + agentsRouter (heartbeat, posture, config [records delivered pins], login, logout)
 │       ├── agentsWs.ts       # telemetry WebSocket (/agents/ws)
@@ -30,7 +37,7 @@ src/
 │       ├── groups.ts         # custom groups + members
 │       ├── tags.ts           # tags + sources + reconcile
 │       ├── policies.ts       # Charon-managed policies
-│       ├── serverSettings.ts # ha (summary), auth-mode, identification
+│       ├── serverSettings.ts # ha (summary), identification
 │       ├── maintenance.ts    # agent installers only (/server-settings/maintenance/agents)
 │       ├── events.ts         # audit log
 │       └── settings/         # Server Settings tabs ported from polaris; each route declares its own requirePermission
@@ -44,6 +51,10 @@ src/
 │           └── ha.ts             # haRouter (/ha); haEnrollRouter (/ha/enroll, PUBLIC)
 ├── services/                 # see references/services/*.md — one entry per file
 │   ├── crypto/identity:      apiTokenService, agentTokenService, authService, verificationService, eventService
+│   ├── operators/auth:       userService, roleService, groupMappingService, sessionRevocationService, passwordPolicyService,
+│   │                         sessionSettingsService, totpService, totpStepService, settingsStore (shared Setting-row cache)
+│   ├── operator SSO:         samlAuthService, oidcAuthService, ldapAuthService, entraProxyAuthService, passkeyService,
+│   │                         ssoProvisioning (find-or-provision), ssoProbe (SSRF-guarded IdP reachability)
 │   ├── integrations:         httpClient, integrationConfig, integrationService, fortimanagerService, fortigateService,
 │   │                         activeDirectoryService, ldapClient, entraIdService, directoryTypes
 │   ├── tags/enforcement:     customGroupService, tagService, tagReconciler, policyService, fortinetEnforcementService
@@ -71,7 +82,16 @@ src/
 │   ├── logger.ts             # Pino logger
 │   ├── errors.ts             # AppError (httpStatus)
 │   ├── crypto.ts             # AES-256-GCM envelopes, SHA-384/512, tokens, constant-time compare, mask sentinel
-│   ├── password.ts           # argon2id hash/verify
+│   ├── password.ts           # argon2id hash/verify + passwordInputSchema (shape only)
+│   ├── passwordPolicy.ts     # password complexity rules, pure (evaluate, describe, parse, clamp)
+│   ├── loginLockout.ts       # per-username failure counter / 15-min lockout (process-local)
+│   ├── pendingAuth.ts        # half-finished login (second factor / forced change) held in the session
+│   ├── settingSecret.ts      # sealed + masked secret inside a Setting row; never follows a changed destination
+│   ├── loginRedirect.ts      # post-login landing: charon_next cookie + SAML RelayState
+│   ├── safeRedirect.ts       # reduce an untrusted ?next= to a same-origin path
+│   ├── samlReplayCache.ts    # each SAML assertion accepted once (process-local)
+│   ├── webauthnChallenge.ts  # in-flight passkey ceremonies (single-use, 5 min, process-local)
+│   ├── webauthnRp.ts         # WebAuthn relying party from the request (secure context, hostname, override)
 │   ├── version.ts            # major.minor + git commit count (CHARON_BUILD_COMMIT_COUNT)
 │   ├── paths.ts              # STATE_DIR, ENV_FILE, SETUP_COMPLETE_MARKER, BACKUP_DIR, UPLOADS_DIR, AGENT_DIST_DIR
 │   ├── metricsServer.ts      # metrics-only listener for enforcer/worker

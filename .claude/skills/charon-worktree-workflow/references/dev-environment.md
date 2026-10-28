@@ -31,9 +31,14 @@ From the worktree root (the stack bind-mounts the worktree, so hot reload edits 
 The app container migrates on start. Seed the built-in roles and a first admin (the seed only
 creates the admin when both variables are set — use throwaway values):
 
-    podman compose -f compose.dev.yml -p charon-<slug> exec \
-      -e CHARON_SEED_ADMIN_USER=admin -e CHARON_SEED_ADMIN_PASSWORD=<dev-only> app \
-      node --import tsx/esm prisma/seed.ts
+    podman exec -e CHARON_SEED_ADMIN_USER=admin -e 'CHARON_SEED_ADMIN_PASSWORD=<dev-only>' \
+      charon-<slug>_app_1 node dist/cli/seed.js
+
+Use the compiled seed: on 2026-10-28 the stack's app container ran the production entrypoint
+with no `tsx` in its `node_modules`, so `node --import tsx/esm prisma/seed.ts` failed with
+`ERR_MODULE_NOT_FOUND`. (`podman compose … exec` also exits 1 there; `podman exec` on the
+container name — underscores, `charon-<slug>_app_1` — works.) The admin password must meet the
+default password policy (8+ chars, upper, lower, number, special).
 
 Then open `http://127.0.0.1:<appport>`.
 

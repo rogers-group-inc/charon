@@ -25,7 +25,7 @@ Order inside `router.ts` matters:
 | 9 | `/tags` | `src/api/routes/tags.ts` | `tags` read |
 | 10 | `/policies` | `src/api/routes/policies.ts` | `policies` read |
 | 11 | `/server-settings/maintenance` | `src/api/routes/maintenance.ts` | `serverSettingsData` read (inside the router) — mounted BEFORE `/server-settings` so its guard applies instead of serverSettingsSystem |
-| 11a | `/server-settings` | `src/api/routes/settings/{ntp,identification,webServer,maintenance,customization,credentials,apiTokens,ha,firmware}.ts` (default exports) | none at the mount — each route declares its own `requirePermission` (`serverSettingsSystem` / `serverSettingsData` / `credentials` / `apiTokens`). Mounted BEFORE the blanket `/server-settings` gate; a `router.use()` gate inside one of them would fire for every `/server-settings` path passing through it |
+| 11a | `/server-settings` | `src/api/routes/settings/{ntp,identification,webServer,maintenance,customization,credentials,apiTokens,ha}.ts` (default exports) | none at the mount — each route declares its own `requirePermission` (`serverSettingsSystem` / `serverSettingsData` / `credentials` / `apiTokens`). Mounted BEFORE the blanket `/server-settings` gate; a `router.use()` gate inside one of them would fire for every `/server-settings` path passing through it |
 | 11b | `/credentials` | `src/api/routes/settings/credentials.ts` (`credentialsRouter`) | per route (`credentials`) |
 | 11c | `/api-tokens` | `src/api/routes/settings/apiTokens.ts` (`apiTokensRouter`) | per route (`apiTokens`) |
 | 11d | `/ha` | `src/api/routes/settings/ha.ts` (`haRouter`) | per route (`serverSettingsSystem` read / fullwrite) |

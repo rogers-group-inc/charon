@@ -112,7 +112,7 @@ router.get("/database", requirePermission("serverSettingsSystem", "read"), maint
 
 // ─── Backup / restore ───────────────────────────────────────────────────────
 // Backups are DATABASE ONLY (pg_dump), exactly as in polaris: files under the
-// state dir — firmware images (data/firmware) and branding uploads
+// state dir — agent installers (data/agents) and branding uploads
 // (public/uploads) — are not included and must be backed up with the host.
 
 router.post("/database/backup", requirePermission("serverSettingsData", "write"), maintenanceLimiter, async (req, res, next) => {

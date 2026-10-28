@@ -647,60 +647,6 @@ model HaEnrollment {
   @@map("ha_enrollments")
 }
 
-// ─── Server Settings: Repository (firmware) ───
-// Ported from polaris (business rule 87). Bytes live on disk under
-// FIRMWARE_DIR (data/firmware); rows carry identity and placement. The CHECKs
-// and PARTIAL unique indexes Prisma cannot express live in migration
-// 20261028000007_settings_firmware. No upgrade-run / schedule / group models:
-// Charon has no Asset inventory and never flashes a device.
-
-/// One uploaded `.out`, filed under a manufacturer › device type › model node.
-/// Each PLATFORM under a node holds at most one `primary` and one `backup`.
-model FirmwareImage {
-  id           String   @id @default(uuid())
-  manufacturer String
-  assetType    String   @map("asset_type") // "switch" | "access_point" | "firewall" — CHECK in the migration
-  model        String // tree placement only
-  platform     String? // header token, e.g. S108FF / FP231K; null = filename-only parse, never offered
-  versionMajor Int?     @map("version_major")
-  versionMinor Int?     @map("version_minor")
-  versionPatch Int?     @map("version_patch")
-  build        Int?
-  versionLabel String   @map("version_label") // "7.6.8 build1164", or "7 build1164" from a filename-only parse
-  parsedFrom   String   @map("parsed_from") // "header" | "filename"
-  role         String   @default("primary") // "primary" | "backup" ("swapping" only inside the make-primary transaction)
-  filename     String // original upload name
-  sizeBytes    Int      @map("size_bytes") // ≤ 300 MiB (FortiGate); ≤ 100 MiB switch / AP
-  sha256       String   @unique
-  storagePath  String   @map("storage_path") // relative to FIRMWARE_DIR: "<id>.out"
-  notes        String?  @db.Text
-  uploadedBy   String?  @map("uploaded_by")
-  uploadedAt   DateTime @default(now()) @map("uploaded_at")
-
-  @@index([manufacturer, assetType, platform])
-  @@index([manufacturer, assetType, model])
-  @@map("firmware_images")
-}
-
-/// Which device-admin login applies at a manufacturer (assetType null), device
-/// type (model null) or model scope; the most specific live one wins.
-/// credentialId names a Credential LOOSELY (no relation / FK — Charon
-/// adaptation): a deleted credential leaves a dangling id that reads as stale.
-model FirmwareCredentialBinding {
-  id           String   @id @default(uuid())
-  manufacturer String
-  assetType    String?  @map("asset_type") // null = manufacturer-wide
-  model        String? // non-null only with assetType
-  source       String   @default("credential") // "credential" | "integration-token" (firewall scopes only)
-  credentialId String?  @map("credential_id")
-  createdBy    String?  @map("created_by")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
-
-  @@index([manufacturer, assetType, model])
-  @@map("firmware_credential_bindings")
-}
-
 // ─── Server Settings: Credentials (MIB database + manufacturer profiles) ───
 // Ported from polaris (Server Settings → Credentials). Charon has no Asset
 // inventory, so the polaris per-asset columns/tables are left out: no

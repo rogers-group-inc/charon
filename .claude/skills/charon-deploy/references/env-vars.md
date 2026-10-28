@@ -32,7 +32,7 @@ a disagreement. Values shown are placeholders or defaults — never real secrets
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `CHARON_STATE_DIR` | unset → the project root | redirects all state (`.env`, `.setup-complete`, `data/backups/`, `data/agents/`, `data/firmware/`, `public/uploads/`) under one directory; the Docker image pins `/app/state` (`src/utils/paths.ts → STATE_DIR`). Also read as a container signal by `src/services/haService.ts → isContainer()` |
+| `CHARON_STATE_DIR` | unset → the project root | redirects all state (`.env`, `.setup-complete`, `data/backups/`, `data/agents/`, `public/uploads/`) under one directory; the Docker image pins `/app/state` (`src/utils/paths.ts → STATE_DIR`). Also read as a container signal by `src/services/haService.ts → isContainer()` |
 | `CHARON_IN_DOCKER` | unset (the Dockerfile sets `1`) | container signal for `src/utils/deploymentContext.ts → runtimeIsContainer()` (with `/.dockerenv`) — picks container help text and the image updater path |
 | `KUBERNETES_SERVICE_HOST` | set by Kubernetes | same container signal, never set by hand |
 

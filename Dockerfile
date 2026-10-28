@@ -60,7 +60,7 @@ COPY scripts/data ./scripts/data
 COPY docker-entrypoint.sh ./
 
 # State dirs (bind-mounted in compose); pre-create so first run doesn't race.
-RUN mkdir -p /app/state/data/backups /app/state/data/agents /app/state/data/firmware /app/state/public/uploads /app/state/certs \
+RUN mkdir -p /app/state/data/backups /app/state/data/agents /app/state/public/uploads /app/state/certs \
     && chmod +x docker-entrypoint.sh
 
 EXPOSE 3000 3001

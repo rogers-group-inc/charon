@@ -48,8 +48,7 @@ src/
 │           ├── customization.ts  # branding (+logo), reboot
 │           ├── credentials.ts    # credentialsRouter (/credentials); mibs, manufacturer-aliases, manufacturer-profiles
 │           ├── apiTokens.ts      # api-docs; apiTokensRouter (/api-tokens)
-│           ├── ha.ts             # haRouter (/ha); haEnrollRouter (/ha/enroll, PUBLIC)
-│           └── firmware.ts       # /server-settings/firmware/* (Repository)
+│           └── ha.ts             # haRouter (/ha); haEnrollRouter (/ha/enroll, PUBLIC)
 ├── services/                 # see references/services/*.md — one entry per file
 │   ├── crypto/identity:      apiTokenService, agentTokenService, authService, verificationService, eventService
 │   ├── operators/auth:       userService, roleService, groupMappingService, sessionRevocationService, passwordPolicyService,
@@ -67,7 +66,7 @@ src/
 │   ├── settings (ident):     assetTagService, assetTypeService, deviceIconService, dnsService, ouiService
 │   ├── settings (maint):     backupScheduleService, capacityAdvisorService, pgTuningService, dbSizeService,
 │   │                         platformLifecycleService, sampleRetentionService, agentEventLogService
-│   ├── settings (ha/fw):     haService, haEnrollmentService, firmwareRepositoryService
+│   ├── settings (ha):        haService, haEnrollmentService
 │   └── credentials/          credentialService, credentialProbeService, mibService, oidRegistry, stdMibLibrary (+ stdMibs/*.txt),
 │                             manufacturerAliasService, manufacturerProfileService, manufacturerProfilePortabilityService,
 │                             netGuard (SSRF guard), safeRegex, regexSafety + pure helpers (see services/server-settings.md)
@@ -94,7 +93,7 @@ src/
 │   ├── webauthnChallenge.ts  # in-flight passkey ceremonies (single-use, 5 min, process-local)
 │   ├── webauthnRp.ts         # WebAuthn relying party from the request (secure context, hostname, override)
 │   ├── version.ts            # major.minor + git commit count (CHARON_BUILD_COMMIT_COUNT)
-│   ├── paths.ts              # STATE_DIR, ENV_FILE, SETUP_COMPLETE_MARKER, BACKUP_DIR, UPLOADS_DIR, AGENT_DIST_DIR, FIRMWARE_DIR(+_INCOMING_DIR)
+│   ├── paths.ts              # STATE_DIR, ENV_FILE, SETUP_COMPLETE_MARKER, BACKUP_DIR, UPLOADS_DIR, AGENT_DIST_DIR
 │   ├── metricsServer.ts      # metrics-only listener for enforcer/worker
 │   ├── envFile.ts            # set/replace one key in the runtime .env (token generate, advisor stage)
 │   ├── deploymentContext.ts  # runtimeIsContainer(), hasSystemd(), DB connection mode — cached heuristics
@@ -106,7 +105,6 @@ src/
 │   ├── ipAllowlist.ts        # IP / CIDR validation + matching (API token trusted hosts, API-docs scope)
 │   ├── ipScope.ts            # source-IP scope matching (Local Login Access)
 │   ├── haAdvisories.ts       # HA guidance arithmetic (RTT bands, WAL rate, RPO/RTO, install shape)
-│   ├── firmwareVersion.ts    # firmware version + image identity parsing (pure)
 │   ├── assetTypeMatch.ts     # device-type inference rules (pure; AssetTypeDef.matchRules)
 │   └── deviceFilterCondition.ts # asset-tag auto-assign filter vocabulary + zod schema + guards
 ├── setup/

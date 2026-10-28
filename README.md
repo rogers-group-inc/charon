@@ -10,7 +10,9 @@ Fortinet estate (FortiManager + FortiGate) using dynamic, tag-driven firewall po
 ## How it works
 
 1. An **endpoint agent** enrolls with the server using a one-time invitation code and opens a
-   persistent, mutually-authenticated telemetry connection.
+   persistent, mutually-authenticated telemetry connection. Agents can be installed by hand or
+   push-deployed from the console over SSH / WinRM (optionally onboarding hosts through an
+   Intune Remediation).
 2. The agent presents a **login GUI** whose authentication mode (local / SAML / OIDC) is
    dictated by the server. The user authenticates for verification.
 3. The server resolves the user + device to **ZTNA tags** derived from directory group/OU
@@ -25,6 +27,9 @@ Fortinet estate (FortiManager + FortiGate) using dynamic, tag-driven firewall po
 - **Server:** Node.js + TypeScript, Express, Prisma, PostgreSQL. Multi-process by function
   (web UI/API, endpoint communications, Fortinet enforcement, background workers), coordinated
   through PostgreSQL + a job queue, fronted by nginx for TLS termination.
+- **Operator console:** role-based access with a per-function permission matrix; operators sign
+  in with local accounts (TOTP / passkeys), LDAP, SAML, OIDC or Entra App Proxy, all optional
+  and configured under Users → Authentication.
 - **Endpoint agent:** Tauri (Rust core + web GUI), small per-endpoint footprint, cross-platform.
 - **High availability:** primary/standby across datacenters via PostgreSQL streaming replication
   with application leader election; designed to sit behind an external GSLB.

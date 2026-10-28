@@ -5,10 +5,69 @@ public / authenticated split and catalogue moved from ARCHITECTURE.md § 4, expa
 file.
 
 ### Public — operator auth (`src/api/routes/auth.ts`)
-- `POST   /auth/login`          — local login (argon2id); `loginLimiter`
-- `POST   /auth/login/totp`     — second factor
+Mounted before `requireAuth`; each route gates itself. The login steps run the Local Login
+Access gate and are CSRF-exempt (`/api/v1/auth/login` prefix).
+- `POST   /auth/login`          — local password step; `loginLimiter`. Answers `{ ok }` (session
+  issued), `{ mfaRequired, methods }` or `{ passwordChangeRequired, policy }` (pending state in
+  the session, `src/utils/pendingAuth.ts`)
+- `POST   /auth/login/totp`     — TOTP / backup-code step (`isBackupCode`); `loginLimiter`
+- `POST   /auth/login/password-change` — forced change, only after every factor; `passwordChangeLimiter`
 - `POST   /auth/logout`
-- `GET    /auth/me`             — current user + permissions snapshot (drives `Charon.init()`)
+- `GET    /auth/me`             — 401 when signed out; else user, authProvider, role + colour,
+  permissions, totpEnabled, autoLogoutMinutes (drives `Charon.init()`)
+- `GET    /auth/password-policy` — PUBLIC: policy, rule labels, limits (wizard + forced change need it)
+- Self-service, `requireSessionUser` (a session, never an API token):
+  `PUT /auth/password` (`passwordChangeLimiter`; revokes other sessions, rotates this one),
+  `GET /auth/totp/status`, `POST /auth/totp/enroll`, `POST /auth/totp/confirm` and
+  `DELETE /auth/totp` (`totpCodeLimiter`)
+- Settings, `requireAuth` + `authentication` read (GET) / write (PUT):
+  `PUT /auth/password-policy`, `GET|PUT /auth/session-settings` (turning `skipLoginPage` ON
+  needs a caller signed in via SAML / OIDC and a ready provider), `GET|PUT /auth/agent-mode`
+  (the endpoint agent's sign-in mode; was `/server-settings/auth-mode`),
+  `GET|PUT /auth/login-access` (PUT: `adminActionLimiter`; refuses a scope excluding the
+  caller's own IP; was `PUT /server-settings/login-access`)
+
+### Public — operator SSO (`src/api/routes/authSso.ts`, mounted at `/auth`)
+- `GET  /auth/saml/config`, `/auth/oidc/config`, `/auth/entra-proxy/config` — login-page probes
+  (booleans + a SAML brand hint); `ssoCallbackLimiter`
+- `GET  /auth/saml/login`, `/auth/oidc/login` — redirect to the IdP; `ssoEntryLimiter`
+- `POST /auth/saml/callback` — ACS (cross-site form POST, CSRF-exempt); `ssoCallbackLimiter`
+- `GET  /auth/oidc/callback`; `ssoCallbackLimiter`
+- `POST /auth/saml/logout` (`requireAuth`) — returns the IdP single-logout URL when the session came from SAML
+- `GET  /auth/entra-proxy/login` — App Proxy header login (trusted connector IPs only); `entraProxyLoginLimiter`
+- Every failure redirects to `/login.html?error=…`
+- Settings: `GET /auth/{saml,oidc,ldap,entra-proxy}/settings` (`authentication` read; secrets
+  masked), `PUT …/settings` and `POST …/test` (`authentication` write)
+
+### Passkeys (`src/api/routes/authPasskeys.ts`, mounted at `/auth`)
+- Public: `GET /auth/passkeys/config` (`ssoCallbackLimiter`), `POST /auth/passkeys/login/options`,
+  `POST /auth/passkeys/login` (passwordless; CSRF-exempt), `POST /auth/login/passkey/options`,
+  `POST /auth/login/passkey` (second factor, needs the pending password step) — all
+  `passkeyCeremonyLimiter` + Local Login Access
+- Self (`requireSessionUser`): `GET /auth/passkeys`, `POST /auth/passkeys/register/options`
+  (current password required), `POST /auth/passkeys/register`, `PATCH|DELETE /auth/passkeys/:id`
+- `GET|PUT /auth/passkey-settings` — `authentication` read / write
+
+### Users — `users read` (`src/api/routes/users.ts`)
+- `GET    /users` — accounts + isOnline / totpEnabled / passkeyCount / needsRoleReview
+- `POST   /users` (write) — local account; role may not exceed the caller (`assertGrantWithinCaller`)
+- `PUT    /users/:id/password`, `PUT /users/:id/role`, `DELETE /users/:id/totp`,
+  `DELETE /users/:id/passkeys`, `DELETE /users/:id` (write) — refused on an admin-equivalent
+  account unless the caller is admin-equivalent; last admin-equivalent account protected (409);
+  the target's sessions are revoked
+- `DELETE /users/:id/role-review` (write) — dismiss the new-SSO-account flag
+- `GET    /users/:id/passkeys`
+
+### Roles — per route (`src/api/routes/roles.ts`)
+- `GET    /roles/functions`, `GET /roles`, `GET /roles/:id` — `roles` read
+- `POST   /roles`, `PUT /roles/:id`, `DELETE /roles/:id` — `roles` write; a role may only grant
+  what the caller holds (an edit counts raised keys only); taking admin-equivalence away needs
+  an admin-equivalent caller and never leaves zero admin-equivalent users
+
+### Group mappings — `users fullwrite` (`src/api/routes/groupMappings.ts`)
+- `GET /group-mappings[?provider=]`, `GET /group-mappings/:id`, `POST`, `PUT /:id`, `DELETE /:id`
+  — the mapped role may not exceed the caller; withdrawing an admin-equivalent mapping needs an
+  admin-equivalent caller
 
 ### Public — agent (`src/api/routes/agent.ts`, `src/api/routes/agents.ts`, `src/api/routes/agentsWs.ts`)
 - `GET    /agent/auth-config`   — server-dictated agent login mode
@@ -85,7 +144,6 @@ exactly this path. The caller holds a single-use token, never a session (busines
 
 ### Server settings — `serverSettingsSystem read` (`src/api/routes/serverSettings.ts`)
 - `GET    /server-settings/ha` — leader state + replication (older summary; the HA tab uses `/ha/*`)
-- `GET    /server-settings/auth-mode`, `PUT /server-settings/auth-mode` (fullwrite)
 - `GET    /server-settings/identification`
 
 The old `/server-settings/certificates{,/stage,/promote}` routes are gone; the leaf cert changes
@@ -134,7 +192,7 @@ declares its own `requirePermission`. "sys" = `serverSettingsSystem`, "data" =
 - `GET /server-settings/agents/installed`, `/installed-summary` (`endpoints read`)
 - `POST /server-settings/agents/upgrade-all` (sys write **+ `endpoints fullwrite`**, `adminActionLimiter`)
 - `GET|PUT /server-settings/ipv6` (read / write),
-  `GET|PUT /login-access` (read / fullwrite)
+  `GET /login-access` (read; the read-only Web Server card — editing is `PUT /auth/login-access`)
 
 **Maintenance + Retention** (`maintenance.ts`, mounted at `/server-settings`)
 - `GET /server-settings/database`, `/capacity-advisor`, `/platform-lifecycle`, `/pg-tuning`,
@@ -181,13 +239,6 @@ declares its own `requirePermission`. "sys" = `serverSettingsSystem`, "data" =
 - `POST /ha/enable`, `POST /ha/disable`, `POST /ha/tokens`, `POST /ha/enrollments/:id/approve`,
   `POST /ha/enrollments/:id/reject`, `GET /ha/teardown-script` (sys **fullwrite**; enable, disable, tokens and approve also
   `adminActionLimiter`)
-
-**Repository** (`firmware.ts`) — sys read to look, sys fullwrite to change
-- `GET /server-settings/firmware/tree`, `/assets` (always empty), `/images`, `/images/:id`,
-  `/bindings`, `/runs` (always empty), `/runs/:id` (always 404)
-- `POST /firmware/images` (multipart ≤ 300 MiB; nginx location raises the body limit),
-  `POST /images/:id/make-primary`, `DELETE /images/:id`, `POST /models/purge`,
-  `PUT /bindings`, `DELETE /bindings/:id` (fullwrite)
 
 ### Maintenance — agent installers — `serverSettingsData read` (`src/api/routes/maintenance.ts`)
 - `GET    /server-settings/maintenance/agents`, `GET …/agents/download/:file` — prebuilt installers (manifest allowlist)

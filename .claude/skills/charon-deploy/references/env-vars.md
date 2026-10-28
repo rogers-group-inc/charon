@@ -33,7 +33,7 @@ a disagreement. Values shown are placeholders or defaults — never real secrets
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `CHARON_STATE_DIR` | unset → the project root | redirects all state (`.env`, `.setup-complete`, `data/backups/`, `data/agents/`, `data/firmware/`, `public/uploads/`) under one directory; the Docker image pins `/app/state` (`src/utils/paths.ts → STATE_DIR`). Also read as a container signal by `src/services/haService.ts → isContainer()` |
+| `CHARON_STATE_DIR` | unset → the project root | redirects all state (`.env`, `.setup-complete`, `data/backups/`, `data/agents/`, `public/uploads/`) under one directory; the Docker image pins `/app/state` (`src/utils/paths.ts → STATE_DIR`). Also read as a container signal by `src/services/haService.ts → isContainer()` |
 | `CHARON_IN_DOCKER` | unset (the Dockerfile sets `1`) | container signal for `src/utils/deploymentContext.ts → runtimeIsContainer()` (with `/.dockerenv`) — picks container help text and the image updater path |
 | `KUBERNETES_SERVICE_HOST` | set by Kubernetes | same container signal, never set by hand |
 
@@ -50,7 +50,7 @@ a disagreement. Values shown are placeholders or defaults — never real secrets
 |---|---|---|
 | `CHARON_LEADER_LOCK_KEY` | built-in constant | advisory-lock key both nodes contend on; override only for test isolation |
 | `CHARON_LEADER_RETRY_MS` | `10000` | standby retry interval |
-| `CHARON_PUBLIC_URL` | unset | surfaced to the GSLB via `/health` |
+| `CHARON_PUBLIC_URL` | unset | surfaced to the GSLB via `/health`; the SAML SP base when the SAML "Application URL" is blank; the OIDC redirect-URI base (else the request origin) |
 
 ## In-app updater
 

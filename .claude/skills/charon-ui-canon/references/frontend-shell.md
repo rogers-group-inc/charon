@@ -6,13 +6,16 @@ Vanilla, no build. `api.js` (CSRF-threaded fetch, 401→login), `app.js`
 (`Charon.init()` → fetch `/auth/me` → render permission-gated sidebar → page
 load; toast; theme), `table-sf.js` + `styles.css` (verbatim from polaris) +
 `charon.css` (overlay), `theme-init.js` (polaris theme system, below). Pages: login, index (dashboard), endpoints, tags,
-groups, integrations, server-settings (tabbed), events, setup.
+groups, integrations, server-settings (tabbed), events, users, account, signed-out, setup.
 
 ## Nav and permission gating
 
 `public/js/app.js → NAV_ITEMS` is `[href, label, icon, permKey]`; `renderNav()` keeps an item
-when `can(permKey, "read")`, and shows Server Settings when either `serverSettingsSystem` or
-`serverSettingsData` is readable. `can(key, level)` ranks the current user's
+when `can(permKey, "read")` — `permKey` may be an array, any one of which suffices (Users:
+`["users", "authentication"]`) — and shows Server Settings when either `serverSettingsSystem` or
+`serverSettingsData` is readable. The user badge links to `/account.html`. `Charon.logout()`
+signs out (SAML sessions via `/auth/saml/logout`, following the IdP's single-logout URL) and
+lands on `/signed-out.html`; a client idle timer mirrors `autoLogoutMinutes` from `/auth/me`. `can(key, level)` ranks the current user's
 `permissions[key]` (from `/auth/me`) against the level, defaulting to `read`. A new page needs a
 `NAV_ITEMS` row with the key its mount checks (`charon-api-rbac` → routes-overview.md).
 
@@ -68,7 +71,7 @@ must never link `page-transitions.css` (logging in would crossfade).
 
 ## `window.Charon`
 
-`init`, `toast`, `escapeHtml`, `csrfHeaders`, `can`, `user`, `setBranding`, `isLightTheme`,
+`init`, `toast`, `escapeHtml`, `csrfHeaders`, `can`, `user`, `logout`, `setBranding`, `isLightTheme`,
 `advanceTheme` — exported by `public/js/app.js`.
 Page scripts call `Charon.init()` first and build after it resolves; an unauthenticated
 `/auth/me` redirects to `/login.html`.

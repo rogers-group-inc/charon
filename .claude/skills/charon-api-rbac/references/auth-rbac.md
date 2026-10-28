@@ -26,7 +26,9 @@
 - `FUNCTION_KEYS` — one row per functional area, in the order the UI matrix renders:
   endpoints, invitationCodes, tags, policies, groups, integrations, **enforcement** (separate,
   high blast radius — Full Read-Write only), directory, credentials, events, apiTokens, users,
-  roles, serverSettingsSystem, serverSettingsData.
+  roles, **authentication** (sign-in configuration: providers, passkeys, password policy,
+  session timeout, Local Login Access, the agent sign-in mode), serverSettingsSystem,
+  serverSettingsData. Sixteen keys.
 - Levels `none < read < write < fullwrite` (`ACCESS_LEVELS`). `normalizePermissions()` drops
   unknown keys and bad values and defaults every key to `none`.
 - **Session snapshot**: the session carries a denormalized `SessionRoleSnapshot` (id, name,
@@ -37,13 +39,45 @@
   `pickHighestPrivilegeRoleId()` picks by `rankRole()` — admin-equivalent
   (`users` + `roles` fullwrite) outranks everything, otherwise the sum of levels, ties broken by
   id.
+- **Escalation guards** — nobody hands out authority they do not hold. `requirePermission`
+  stashes the resolved snapshot on `req.roleSnapshot` (token or session), and:
+  - `assertNoPrivilegeEscalation(req, target, subject)` — a target matrix that is
+    admin-equivalent needs an admin-equivalent caller. Used for acting ON an admin account
+    (reset / re-role / delete / reset 2FA) and withdrawing an admin group mapping.
+  - `assertGrantWithinCaller(req, target, subject, existing?)` — the above, plus every key in
+    the target must be within the caller's own level (`grantsBeyond()`); with `existing` (an
+    edit) only RAISED keys count. Used for role create / edit, account create / re-role, group
+    mapping create / retarget / re-enable. API-token minting applies the same principle via
+    `apiTokenService.grantExceedsCaller()` (rule 8).
+  - The mirror guards live in services: last admin-equivalent account
+    (`userService`), demoting an admin role (`roleService.assertRoleDemotionAllowed()`).
+
+## Session lifecycle
+
+- **Login rotates the session id** (`routes/auth.ts → regenerateSession()`, fixation defence),
+  carrying the CSRF token across; `stampLoginSession()` is the one place the identity fields
+  (`userId`, `username`, `roleId`, `roleSnapshot`, `role`, `authProvider`, `lastActivity`) are
+  set.
+- **Half-finished logins** (second factor or forced password change owed) live in
+  `req.session.pendingAuth` (`src/utils/pendingAuth.ts`, 5-minute TTL, purpose-scoped) — in the
+  Postgres session store, so the next step can land on either HA node. A session holding only
+  `pendingAuth` is NOT authenticated.
+- **Revocation**: account changes call `sessionRevocationService.revokeUserSessions()`, which
+  deletes the account's signed-in AND pending sessions; `sessionRevalidate.ts` is the backstop.
+- **Idle timeout**: `sessionConfig.autoLogoutMinutes`, enforced in `src/app.ts`.
+- **Lockout**: `src/utils/loginLockout.ts` — 5 failures / 15 min per username across password,
+  LDAP and TOTP steps; process-local (each HA node counts separately).
 
 ## CSRF (`src/api/middleware/csrf.ts`)
 
 Synchronizer token per session, mirrored into a readable cookie so same-origin page JS echoes it
 in `X-CSRF-Token` on state-changing requests (`public/js/api.js` threads it). Agent paths
 (`/api/v1/agents/`) are exempt (`EXEMPT_PATH_PREFIXES`). Defense-in-depth on top of
-`SameSite=Lax` + strict JSON content types.
+`SameSite=Lax` + strict JSON content types. The pre-session sign-in paths are exempt by prefix
+too: `/api/v1/auth/login` (password, TOTP, passkey second factor, forced change — rate-limited),
+`/api/v1/auth/passkeys/login` (single-use challenge + signed assertion), `/api/v1/auth/saml/`
+(the ACS is a cross-site POST — the signed assertion is the guarantee) and `/api/v1/auth/oidc/`
+(state + PKCE).
 
 Two more exemptions:
 - **`/api/v1/ha/enroll`** (and `/api/v1/ha/enroll/<x>`) — matched EXACTLY, never as a prefix
@@ -57,7 +91,8 @@ Two more exemptions:
 ## Other request-path gates
 
 - **Local Login Access** (`src/api/routes/auth.ts → assertLoginSourceAllowed()`): when the
-  `loginAccessConfig` Setting is enabled, `POST /auth/login` and `/auth/login/totp` answer 403
+  `loginAccessConfig` Setting is enabled, `POST /auth/login`, `/auth/login/totp` and
+  `/auth/login/password-change` answer 403
   from outside its IP scope (`src/services/webAccessSettingsService.ts →
   isLoginSourceAllowed()`). SAML/OIDC are never restricted; the gate fails OPEN on a settings
   read error so a DB blip is never a lockout.
@@ -71,7 +106,7 @@ Two more exemptions:
 
 ## Rate limits (`src/api/middleware/rateLimits.ts`)
 
-`loginLimiter` (15 min / 10) on `/api/v1/auth/login`; `enrollLimiter` (10 min / 30) on
+`loginLimiter` (15 min / 10) on the `/api/v1/auth/login` prefix (except `/password-change`); `enrollLimiter` (10 min / 30) on
 `/api/v1/agents/enroll` — both mounted with `app.use` in `src/app.ts`, so they are invisible
 from the route file. `makeRateLimiter()` builds others — the first-run wizard's `setupActionLimiter` (15 min / 30) in
 `src/setup/setupRoutes.ts` guards its test-connection and finalize routes.
@@ -84,13 +119,19 @@ Two more are attached per route, in the route file:
 - `adminActionLimiter` (15 min / 20) on the destructive Server Settings actions —
   `POST /server-settings/database/restore`, `/updates/apply`, `/restart`, `/certificates`
   (trusted-CA upload), `/proxy/apply`, `/proxy/cert/rotate`, `/agents/cert-pins/bulk-add|remove`,
-  `PUT /login-access` (the local-login source scope), and
+  `PUT /auth/login-access` (the local-login source scope), and
   `POST /ha/enable|disable|tokens|enrollments/:id/approve` — placed before
   `requirePermission`, **keyed by operator username** so admins on a shared jump host don't
   throttle each other. API-token callers have no session username, so they share their IP's
   bucket.
 
-Both fall back to `ipKeyGenerator(req.ip)` when the key is missing. CodeQL's
+Both fall back to `ipKeyGenerator(req.ip)` when the key is missing.
+
+Per-IP auth limiters, attached in `src/api/routes/auth.ts`: `totpCodeLimiter` (15 min / 10,
+TOTP confirm / disable), `passwordChangeLimiter` (15 min / 10, self and forced change),
+`passkeyCeremonyLimiter` (15 min / 60), `ssoEntryLimiter` (5 min / 120, SSO kick-offs),
+`ssoCallbackLimiter` (5 min / 300, IdP callbacks and login-page probes — an office behind one
+NAT signs in together), `entraProxyLoginLimiter` (5 min / 60, App Proxy connectors share IPs). CodeQL's
 `js/missing-rate-limiting` flags any handler that does file-system, process or credential work
 without a limiter in front of it — give a new expensive or credential-checking route one.
 `tests/unit/rateLimits.test.ts` → "limiter attachment" asserts the attachments a port or route

@@ -1,4 +1,4 @@
-# Domain model — Server Settings registries (identification, HA enrollment, firmware, credentials catalogue)
+# Domain model — Server Settings registries (identification, HA enrollment, credentials catalogue)
 
 The models ported from polaris with the Server Settings page. Charon has **no asset inventory**:
 nothing references these rows from an Endpoint yet, so every device count, usage panel and
@@ -28,17 +28,6 @@ model — see tags-enforcement.md.
   issued → pending (token spent) → approved (operator) → delivered (bundle downloaded once,
   terminal), or → rejected / expired; `expireStaleEnrollments()` expires rows past their window
   before every lookup. Business rule 9.
-- **FirmwareImage** — one uploaded firmware `.out` filed under manufacturer › device type
-  (`switch` / `access_point` / `firewall`) › model. Bytes live on disk under
-  `src/utils/paths.ts → FIRMWARE_DIR` (`storagePath` is relative to it) — never in the DB, so a
-  database backup does not carry them. `sha256` is unique. Each platform holds at most one
-  `primary` and one `backup` (partial unique indexes + CHECKs in migration
-  `20261028000007_settings_firmware`; `role = "swapping"` only inside the make-primary
-  transaction).
-- **FirmwareCredentialBinding** — which device-admin login applies at a manufacturer
-  (`assetType` null), device-type (`model` null) or model scope; the most specific live binding
-  wins. `credentialId` names a Credential LOOSELY (no FK): a deleted credential leaves a dangling
-  id that reads as stale.
 - **ManufacturerAlias** — lowercased + trimmed `alias` → `canonical` manufacturer spelling,
   cached by `src/services/credentials/manufacturerNormalize.ts`.
 - **MibFile** — an SNMP MIB module uploaded on Credentials → MIB Database; text inline
@@ -159,60 +148,6 @@ model HaEnrollment {
   @@index([tokenPrefix])
   @@index([status])
   @@map("ha_enrollments")
-}
-
-// ─── Server Settings: Repository (firmware) ───
-// Ported from polaris (business rule 87). Bytes live on disk under
-// FIRMWARE_DIR (data/firmware); rows carry identity and placement. The CHECKs
-// and PARTIAL unique indexes Prisma cannot express live in migration
-// 20261028000007_settings_firmware. No upgrade-run / schedule / group models:
-// Charon has no Asset inventory and never flashes a device.
-
-/// One uploaded `.out`, filed under a manufacturer › device type › model node.
-/// Each PLATFORM under a node holds at most one `primary` and one `backup`.
-model FirmwareImage {
-  id           String   @id @default(uuid())
-  manufacturer String
-  assetType    String   @map("asset_type") // "switch" | "access_point" | "firewall" — CHECK in the migration
-  model        String // tree placement only
-  platform     String? // header token, e.g. S108FF / FP231K; null = filename-only parse, never offered
-  versionMajor Int?     @map("version_major")
-  versionMinor Int?     @map("version_minor")
-  versionPatch Int?     @map("version_patch")
-  build        Int?
-  versionLabel String   @map("version_label") // "7.6.8 build1164", or "7 build1164" from a filename-only parse
-  parsedFrom   String   @map("parsed_from") // "header" | "filename"
-  role         String   @default("primary") // "primary" | "backup" ("swapping" only inside the make-primary transaction)
-  filename     String // original upload name
-  sizeBytes    Int      @map("size_bytes") // ≤ 300 MiB (FortiGate); ≤ 100 MiB switch / AP
-  sha256       String   @unique
-  storagePath  String   @map("storage_path") // relative to FIRMWARE_DIR: "<id>.out"
-  notes        String?  @db.Text
-  uploadedBy   String?  @map("uploaded_by")
-  uploadedAt   DateTime @default(now()) @map("uploaded_at")
-
-  @@index([manufacturer, assetType, platform])
-  @@index([manufacturer, assetType, model])
-  @@map("firmware_images")
-}
-
-/// Which device-admin login applies at a manufacturer (assetType null), device
-/// type (model null) or model scope; the most specific live one wins.
-/// credentialId names a Credential LOOSELY (no relation / FK — Charon
-/// adaptation): a deleted credential leaves a dangling id that reads as stale.
-model FirmwareCredentialBinding {
-  id           String   @id @default(uuid())
-  manufacturer String
-  assetType    String?  @map("asset_type") // null = manufacturer-wide
-  model        String? // non-null only with assetType
-  source       String   @default("credential") // "credential" | "integration-token" (firewall scopes only)
-  credentialId String?  @map("credential_id")
-  createdBy    String?  @map("created_by")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
-
-  @@index([manufacturer, assetType, model])
-  @@map("firmware_credential_bindings")
 }
 
 // ─── Server Settings: Credentials (MIB database + manufacturer profiles) ───
@@ -371,7 +306,9 @@ keys in use.
 
 #### Migrations
 
-`20261028000004_settings_apitokens_ha` … `20261028000007_settings_firmware` add these models plus
-`ApiToken.roleId` / `trustedHosts` and `Credential.createdBy`. The CHECK constraints and partial
+`20261028000004_settings_apitokens_ha` … `20261028000006_settings_credentials` add these models plus
+`ApiToken.roleId` / `trustedHosts` and `Credential.createdBy`. `20261028000007_settings_firmware`
+added a firmware repository (`firmware_images`, `firmware_credential_bindings`) that
+`20261028000008_drop_firmware` removed again — Charon has no Repository tab. The CHECK constraints and partial
 unique indexes Prisma cannot express are hand-written SQL in those migrations — change the
 migration SQL, not only the schema.

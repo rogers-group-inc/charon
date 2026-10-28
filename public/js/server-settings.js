@@ -3,9 +3,7 @@
  * switching, ?tab= persistence, lazy loads). Ported from polaris; each tab's
  * body lives in its own server-settings-<tab>.js module.
  * Note: the "Web Server" tab keeps the internal key `certificates` (data-tab,
- * loadCertificates) from before it was renamed — only its label changed. The
- * "Repository" tab (firmware) has the same split: key `firmware`, label
- * "Repository", body in its own module (server-settings-firmware.js).
+ * loadCertificates) from before it was renamed — only its label changed.
  */
 
 /**
@@ -17,11 +15,9 @@
 var SETTINGS_TAB_PERMS = {
   identification: "serverSettingsSystem",
   credentials: "credentials",
-  firmware: "serverSettingsSystem",
   customization: "serverSettingsSystem",
   ntp: "serverSettingsSystem",
   certificates: "serverSettingsSystem",
-  auth: "serverSettingsSystem",
   maintenance: "serverSettingsData",
   retention: "serverSettingsData",
   "api-tokens": "apiTokens",
@@ -48,10 +44,6 @@ function _activateSettingsTab(target) {
   if (target === "credentials" && !_credsLoaded) loadCredentialsTab();
   if (target === "retention" && !_retentionLoaded) loadRetentionTab();
   if (target === "api-tokens" && !_apiTokensLoaded) loadApiTokensTab();
-  if (target === "auth" && window.CharonAuthTab) window.CharonAuthTab.load();
-  // The firmware Repository lives in its own module
-  // (server-settings-firmware.js); it guards its own once-per-page load.
-  if (target === "firmware" && window.PolarisFirmwareTab) window.PolarisFirmwareTab.load();
   // High Availability lives in its own module (server-settings-ha.js):
   // the tab is a build procedure with its own state machine, and it
   // polls while visible because a node registering arrives from

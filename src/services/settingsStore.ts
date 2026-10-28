@@ -2,26 +2,17 @@
  * src/services/settingsStore.ts — TTL-cached JSON-blob Setting accessor.
  *
  * The "JSON blob in a Setting row" pattern (findUnique → parse-with-defaults →
- * upsert, fronted by a module-level TTL cache) is hand-rolled across many
- * services. createSettingStore() owns that ceremony: the caller keeps its
- * parse (defaults merge / validation) and its write-side merge rules; the
- * store owns the read cache, the row I/O, and the cache refresh on save.
+ * upsert, fronted by a module-level TTL cache). The caller keeps its parse
+ * (defaults merge / validation) and its write-side merge rules; the store owns
+ * the read cache, the row I/O, and the cache refresh on save.
  *
- * Multi-process note: the cache is per-process (exactly like every hand-rolled
- * copy it replaces) — cross-role propagation of a write is bounded by ttlMs.
+ * Multi-process note: the cache is per-process — cross-role (and cross-node)
+ * propagation of a write is bounded by ttlMs.
  *
- * Adopters so far: azureAuthService (sso), entraProxyAuthService (entraProxy),
- * dashSettingsService (dashConfig), loginAccessService (loginAccessConfig),
- * apiDocsAccessService (apiDocsConfig), passwordPolicyService
- * (passwordPolicyConfig), passkeyService (passkeyConfig). Remaining
- * hand-rolled sites migrate incrementally as they're touched.
- *
- * Note what the last two do NOT share: each wraps get() in its own try/catch
- * answering a different fallback — the password policy answers the DEFAULT
- * rules (a settings outage must not lower the bar), the passkey policy answers
- * "off" (a settings outage must not be what decides a credential may sign
- * someone in). The store deliberately has no opinion: a fallback is a policy
- * question, and the two right answers here are opposites.
+ * A store has no opinion on read failures: each caller wraps get() with the
+ * fallback its policy needs (the password policy answers its DEFAULT rules so
+ * an outage never lowers the bar; the passkey policy answers "off" so an
+ * outage never decides a credential may sign someone in).
  */
 
 import { prisma } from "../db.js";
@@ -57,7 +48,7 @@ export function createSettingStore<T>(opts: {
     },
     async save(value: T): Promise<T> {
       await prisma.setting.upsert({
-        where:  { key },
+        where: { key },
         update: { value: value as never },
         create: { key, value: value as never },
       });

@@ -13,7 +13,7 @@ via the provider callback.
 
 | Agent action | Route | Server code |
 |---|---|---|
-| ask which login to show | `GET /api/v1/agent/auth-config` (public) | `src/services/authService.ts → getAgentAuthConfig()` |
+| ask which login to show | `GET /api/v1/agent/auth-config` (public) — `{ mode, params }`: `params.ready` (the provider is configured), `loginPath`, and `entityId` / `issuer` for SAML / OIDC; `ldap` for local mode (LDAP credentials also work at `/agents/login`). The mode is set in Users → Authentication → Settings (`PUT /auth/agent-mode`); the agent's SSO browser flow is not wired yet | `src/services/authService.ts → getAgentAuthConfig()` |
 | enroll | `POST /api/v1/agents/enroll` (public, `enrollLimiter`) | `src/services/agentEnrollmentService.ts → enroll()` — optional `observedFingerprint` (the leaf SHA-256 a pinned agent saw) must be an agent pin or the enroll is refused and the code left spent; a code minted by a push deployment flips that deployment `active` (`agentDeployService → markDeploymentEnrolled()`) |
 | heartbeat | `POST /api/v1/agents/heartbeat` (bearer) | `src/api/routes/agents.ts` (inline Endpoint update) |
 | posture | `POST /api/v1/agents/posture` (bearer) | `src/services/postureService.ts → ingestPosture()`; reconcile on change |

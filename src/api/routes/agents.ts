@@ -104,9 +104,9 @@ agentsRouter.post("/login", agentLoginLimiter, async (req, res, next) => {
     }
     const { username, password } = loginSchema.parse(req.body);
     if (!password) throw new AppError(400, "Password required for local login");
-    const result = await localLogin(username, password);
-    if (result.status === "mfa_required") return res.json({ mfaRequired: true });
     const ip = (req.ip || req.socket.remoteAddress || null) ?? null;
+    const result = await localLogin(username, password, { ip: ip ?? undefined, userAgent: req.get("user-agent") || undefined });
+    if (result.status === "mfa_required") return res.json({ mfaRequired: true });
     await bindVerification(req.agent!.endpointId, { userKey: username, userName: result.user!.displayName ?? username, ip, mode });
     await enqueueReconcile(req.agent!.endpointId);
     res.json({ ok: true, user: username });

@@ -19,7 +19,16 @@ The repo has three compose files; only `compose.dev.yml` is the per-worktree dev
 
 ## Bring it up
 
-From the worktree root (the stack bind-mounts the worktree, so hot reload edits this branch):
+From the worktree root (the stack bind-mounts the worktree's `src/`, `public/`, `prisma/`):
+
+> **Trap (2026-10-28): the app container may be running `node dist/index.js`, not tsx.** On
+> this PC podman compose has built the app from the production `Dockerfile` rather than
+> `Dockerfile.dev`. The bind-mounted `public/` is then live, but the server code is the `dist/`
+> compiled at stack creation, and `up -d --build` on a running stack re-tags the image without
+> recreating the container. File events from a Windows bind mount don't reach `--watch` in the
+> podman VM anyway. After server changes: `down` (no `-v`) then `up -d --build`, and confirm with
+> `podman exec <app> sh -c "tr '\0' ' ' < /proc/2/cmdline"` and `ls dist/<new file>` before
+> trusting a live test.
 
     podman machine start                                  # idempotent
     printf '%s %s\n' "$(date -u +%FT%TZ)" "dev stack charon-<slug> pg=<pgport> app=<appport>" > DEVLOCK
@@ -31,9 +40,14 @@ From the worktree root (the stack bind-mounts the worktree, so hot reload edits 
 The app container migrates on start. Seed the built-in roles and a first admin (the seed only
 creates the admin when both variables are set — use throwaway values):
 
-    podman compose -f compose.dev.yml -p charon-<slug> exec \
-      -e CHARON_SEED_ADMIN_USER=admin -e CHARON_SEED_ADMIN_PASSWORD=<dev-only> app \
-      node --import tsx/esm prisma/seed.ts
+    podman exec -e CHARON_SEED_ADMIN_USER=admin -e 'CHARON_SEED_ADMIN_PASSWORD=<dev-only>' \
+      charon-<slug>_app_1 node dist/cli/seed.js
+
+Use the compiled seed: on 2026-10-28 the stack's app container ran the production entrypoint
+with no `tsx` in its `node_modules`, so `node --import tsx/esm prisma/seed.ts` failed with
+`ERR_MODULE_NOT_FOUND`. (`podman compose … exec` also exits 1 there; `podman exec` on the
+container name — underscores, `charon-<slug>_app_1` — works.) The admin password must meet the
+default password policy (8+ chars, upper, lower, number, special).
 
 Then open `http://127.0.0.1:<appport>`.
 

@@ -13,6 +13,8 @@
 
 import { Router } from "express";
 import authRouter from "./routes/auth.js";
+import authSsoRouter from "./routes/authSso.js";
+import authPasskeysRouter from "./routes/authPasskeys.js";
 import agentRouter from "./routes/agent.js";
 import eventsRouter from "./routes/events.js";
 import integrationsRouter from "./routes/integrations.js";
@@ -31,22 +33,29 @@ import settingsCustomizationRouter, { publicBrandingRouter } from "./routes/sett
 import settingsCredentialsRouter, { credentialsRouter } from "./routes/settings/credentials.js";
 import settingsApiTokensRouter, { apiTokensRouter } from "./routes/settings/apiTokens.js";
 import settingsHaRouter, { haRouter, haEnrollRouter } from "./routes/settings/ha.js";
-import settingsFirmwareRouter from "./routes/settings/firmware.js";
+import usersRouter from "./routes/users.js";
+import rolesRouter from "./routes/roles.js";
+import groupMappingsRouter from "./routes/groupMappings.js";
 import { agentsEnrollRouter, agentsRouter } from "./routes/agents.js";
 import agentBinaryRouter from "./routes/agentBinary.js";
 import agentDeployRouter from "./routes/agentDeploy.js";
 import settingsAgentsRouter from "./routes/settings/agents.js";
 import { requireAuth, attachApiToken } from "./middleware/auth.js";
 import { requirePermission } from "./middleware/permissions.js";
+import { revalidateSessionUser } from "./middleware/sessionRevalidate.js";
 
 export const router = Router();
 
-// Resolve any presented bearer token before any auth gate runs.
+// Resolve any presented bearer token before any auth gate runs, then confirm
+// (once a minute per session) that the session's account still exists.
 router.use(attachApiToken);
+router.use(revalidateSessionUser);
 
 // ─── Public surfaces ─────────────────────────────────────────────────────────
 // Operator auth (login/logout/me) and the agent's public auth-config probe.
 router.use("/auth", authRouter);
+router.use("/auth", authSsoRouter); // SAML / OIDC / App Proxy flows + provider settings (self-gated)
+router.use("/auth", authPasskeysRouter); // passkey sign-in, second factor, self-service, policy (self-gated)
 router.use("/agent", agentRouter);
 // Login-page branding (name, subtitle, opt-in logo) — read before sign-in.
 router.use("/branding", publicBrandingRouter);
@@ -87,7 +96,7 @@ router.use("/server-settings/maintenance", maintenanceRouter);
 for (const r of [
   settingsNtpRouter, settingsIdentificationRouter, settingsWebServerRouter,
   settingsMaintenanceRouter, settingsCustomizationRouter, settingsCredentialsRouter,
-  settingsApiTokensRouter, settingsHaRouter, settingsFirmwareRouter, settingsAgentsRouter,
+  settingsApiTokensRouter, settingsHaRouter, settingsAgentsRouter,
 ]) router.use("/server-settings", r);
 router.use("/credentials", credentialsRouter);
 router.use("/api-tokens", apiTokensRouter);
@@ -96,3 +105,7 @@ router.use("/device-icons", deviceIconsRouter);
 router.use("/asset-types", assetTypesRouter);
 router.use("/server-settings", requirePermission("serverSettingsSystem", "read"), serverSettingsRouter);
 router.use("/events", requirePermission("events", "read"), eventsRouter);
+router.use("/users", requirePermission("users", "read"), usersRouter);
+// Roles gate per route (roles:read / roles:write) — no mount gate.
+router.use("/roles", rolesRouter);
+router.use("/group-mappings", requirePermission("users", "fullwrite"), groupMappingsRouter);

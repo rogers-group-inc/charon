@@ -14,13 +14,20 @@ src/
 ├── api/
 │   ├── router.ts             # aggregate /api/v1; public mounts before requireAuth; per-mount requirePermission
 │   ├── middleware/
-│   │   ├── auth.ts           # session + API bearer + agent bearer (requireAuth, attachApiToken → 403 untrusted host)
+│   │   ├── auth.ts           # session + API bearer + agent bearer (requireAuth, requireSessionUser, attachApiToken → 403 untrusted host)
 │   │   ├── csrf.ts           # synchronizer token; agent paths, exactly /ha/enroll, session-less bearers exempt
-│   │   ├── permissions.ts    # dynamic-role matrix: FUNCTION_KEYS, requirePermission, session / API-token role snapshot
-│   │   ├── rateLimits.ts     # login, enroll, agent-login, admin-action limiters + makeRateLimiter
+│   │   ├── permissions.ts    # dynamic-role matrix: FUNCTION_KEYS, requirePermission, session / API-token role snapshot, escalation guards
+│   │   ├── sessionRevalidate.ts # once a minute per session: user row still exists / role still the same
+│   │   ├── entraProxyHeaders.ts # strip App Proxy identity headers from untrusted sources
+│   │   ├── rateLimits.ts     # login, enroll, agent-login, admin-action, TOTP-code, password-change, passkey, SSO limiters + makeRateLimiter
 │   │   └── errorHandler.ts   # AppError → JSON
 │   └── routes/
-│       ├── auth.ts           # login, login/totp (Local Login Access IP gate), logout, me
+│       ├── auth.ts           # login steps (password / totp / password-change), logout, me, own password + TOTP, password policy, session settings, agent mode
+│       ├── authSso.ts        # SAML / OIDC / App Proxy flows + SAML / OIDC / LDAP / App Proxy settings (mounted at /auth)
+│       ├── authPasskeys.ts   # passkey sign-in, second factor, self-service, passkey policy (mounted at /auth)
+│       ├── users.ts          # operator accounts (Users page)
+│       ├── roles.ts          # role CRUD + /roles/functions catalogue
+│       ├── groupMappings.ts  # IdP group → role mappings (users:fullwrite)
 │       ├── agent.ts          # GET /agent/auth-config (public)
 │       ├── agents.ts         # agentsEnrollRouter (POST /agents/enroll) + agentsRouter (heartbeat, posture, config [records delivered pins], login, logout)
 │       ├── agentsWs.ts       # telemetry WebSocket (/agents/ws)
@@ -30,7 +37,7 @@ src/
 │       ├── groups.ts         # custom groups + members
 │       ├── tags.ts           # tags + sources + reconcile
 │       ├── policies.ts       # Charon-managed policies
-│       ├── serverSettings.ts # ha (summary), auth-mode, identification
+│       ├── serverSettings.ts # ha (summary), identification
 │       ├── maintenance.ts    # agent installers only (/server-settings/maintenance/agents)
 │       ├── agentDeploy.ts    # /agent-deployments: list (endpoints read); deploy / retry / upgrade / uninstall / delete (endpoints FULLWRITE)
 │       ├── agentBinary.ts    # PUBLIC GET /agents/binary/:file — manifest installers only, rate-limited (Windows pinned download)
@@ -44,10 +51,13 @@ src/
 │           ├── credentials.ts    # credentialsRouter (/credentials); mibs, manufacturer-aliases, manufacturer-profiles
 │           ├── apiTokens.ts      # api-docs; apiTokensRouter (/api-tokens)
 │           ├── ha.ts             # haRouter (/ha); haEnrollRouter (/ha/enroll, PUBLIC)
-│           ├── firmware.ts       # /server-settings/firmware/* (Repository)
 │           └── agents.ts         # /server-settings/agents/*: SSH Deployment (windows-ssh), Intune publish, pinned SSH keys / TLS certs, server URL, installed, upgrade-all
 ├── services/                 # see references/services/*.md — one entry per file
 │   ├── crypto/identity:      apiTokenService, agentTokenService, authService, verificationService, eventService
+│   ├── operators/auth:       userService, roleService, groupMappingService, sessionRevocationService, passwordPolicyService,
+│   │                         sessionSettingsService, totpService, totpStepService, settingsStore (shared Setting-row cache)
+│   ├── operator SSO:         samlAuthService, oidcAuthService, ldapAuthService, entraProxyAuthService, passkeyService,
+│   │                         ssoProvisioning (find-or-provision), ssoProbe (SSRF-guarded IdP reachability)
 │   ├── integrations:         httpClient, integrationConfig, integrationService, integrationHealthService,
 │   │                         fortimanagerService, fmgWorker, fmgActivityService, fortigateService,
 │   │                         activeDirectoryService, ldapClient, entraIdService, directoryTypes,
@@ -59,7 +69,7 @@ src/
 │   ├── agent deploy:         agentDeployService (push install / upgrade / uninstall lifecycle), agentInstallScripts
 │   │                         (the scripts + preseed, pure), windowsSshOnboardingService + sshOnboardingScript
 │   │                         (SSH Deployment card: deployment keypair, onboarding scripts), intunePublishService
-│   │                         (publish the onboarding pair to Intune, unassigned), settingsStore (typed Setting row),
+│   │                         (publish the onboarding pair to Intune, unassigned),
 │   │                         agentChannelService (agent WS sessions, refresh-config / revoke over NOTIFY)
 │   ├── infra:                leaderElection, certInfo, nginxRenderer, nginxApplyService, backupService, capacityService,
 │   │                         updateService, agentDistService
@@ -68,7 +78,7 @@ src/
 │   ├── settings (ident):     assetTagService, assetTypeService, deviceIconService, dnsService, ouiService
 │   ├── settings (maint):     backupScheduleService, capacityAdvisorService, pgTuningService, dbSizeService,
 │   │                         platformLifecycleService, sampleRetentionService, agentEventLogService
-│   ├── settings (ha/fw):     haService, haEnrollmentService, firmwareRepositoryService
+│   ├── settings (ha):        haService, haEnrollmentService
 │   └── credentials/          credentialService, credentialProbeService, mibService, oidRegistry, stdMibLibrary (+ stdMibs/*.txt),
 │                             manufacturerAliasService, manufacturerProfileService, manufacturerProfilePortabilityService,
 │                             regexSafety + pure helpers (see services/server-settings.md)
@@ -86,9 +96,18 @@ src/
 │   ├── logger.ts             # Pino logger
 │   ├── errors.ts             # AppError (httpStatus)
 │   ├── crypto.ts             # AES-256-GCM envelopes, SHA-384/512, tokens, constant-time compare, mask sentinel
-│   ├── password.ts           # argon2id hash/verify
+│   ├── password.ts           # argon2id hash/verify + passwordInputSchema (shape only)
+│   ├── passwordPolicy.ts     # password complexity rules, pure (evaluate, describe, parse, clamp)
+│   ├── loginLockout.ts       # per-username failure counter / 15-min lockout (process-local)
+│   ├── pendingAuth.ts        # half-finished login (second factor / forced change) held in the session
+│   ├── settingSecret.ts      # sealed + masked secret inside a Setting row; never follows a changed destination
+│   ├── loginRedirect.ts      # post-login landing: charon_next cookie + SAML RelayState
+│   ├── safeRedirect.ts       # reduce an untrusted ?next= to a same-origin path
+│   ├── samlReplayCache.ts    # each SAML assertion accepted once (process-local)
+│   ├── webauthnChallenge.ts  # in-flight passkey ceremonies (single-use, 5 min, process-local)
+│   ├── webauthnRp.ts         # WebAuthn relying party from the request (secure context, hostname, override)
 │   ├── version.ts            # major.minor + git commit count (CHARON_BUILD_COMMIT_COUNT)
-│   ├── paths.ts              # STATE_DIR, ENV_FILE, SETUP_COMPLETE_MARKER, BACKUP_DIR, UPLOADS_DIR, AGENT_DIST_DIR, FIRMWARE_DIR(+_INCOMING_DIR)
+│   ├── paths.ts              # STATE_DIR, ENV_FILE, SETUP_COMPLETE_MARKER, BACKUP_DIR, UPLOADS_DIR, AGENT_DIST_DIR
 │   ├── metricsServer.ts      # metrics-only listener for enforcer/worker
 │   ├── envFile.ts            # set/replace one key in the runtime .env (token generate, advisor stage)
 │   ├── deploymentContext.ts  # runtimeIsContainer(), hasSystemd(), DB connection mode — cached heuristics
@@ -100,7 +119,6 @@ src/
 │   ├── ipAllowlist.ts        # IP / CIDR validation + matching (API token trusted hosts, API-docs scope)
 │   ├── ipScope.ts            # source-IP scope matching (Local Login Access)
 │   ├── haAdvisories.ts       # HA guidance arithmetic (RTT bands, WAL rate, RPO/RTO, install shape)
-│   ├── firmwareVersion.ts    # firmware version + image identity parsing (pure)
 │   ├── assetTypeMatch.ts     # device-type inference rules (pure; AssetTypeDef.matchRules)
 │   ├── deviceFilterCondition.ts # asset-tag auto-assign filter vocabulary + zod schema + guards
 │   │   ── ported from polaris: outbound trust + integration plumbing ──

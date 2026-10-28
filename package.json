@@ -28,6 +28,7 @@
     "@node-saml/node-saml": "^5.2.0",
     "@prisma/adapter-pg": "^7.10.1",
     "@prisma/client": "^7.10.1",
+    "@simplewebauthn/server": "^14.0.3",
     "@types/ws": "^8.18.2",
     "compression": "^1.8.2",
     "connect-pg-simple": "^10.0.0",

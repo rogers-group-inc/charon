@@ -335,54 +335,6 @@ function _csrfHeaders(extra) {
   return headers;
 }
 
-// A multipart upload that REPORTS PROGRESS. `fetch` cannot: it has no upload
-// progress event, and every other upload on the page (MIB, logo, restore) is
-// small enough to live with a static "Uploading…" span. A firmware image is
-// up to 300 MiB (a FortiGate) over whatever link the operator is on, so the Repository tab
-// drives one XMLHttpRequest and draws a bar from `upload.onprogress`.
-// Everything else matches `request`: CSRF header, the 401 redirect, JSON
-// bodies resolved or rejected on `error`, and a proxy's HTML error page
-// turned into a sentence by `_proxyErrorMessage` (a 413 here is the sign an
-// nginx-fronted install is missing the firmware location block, or still has
-// its pre-FortiGate 100m ceiling — re-apply Server Settings → Web Server).
-function _uploadWithProgress(path, formData, onProgress) {
-  return new Promise(function (resolve, reject) {
-    var xhr = new XMLHttpRequest();
-    xhr.open("POST", API_BASE + path);
-    var headers = _csrfHeaders();
-    Object.keys(headers).forEach(function (k) { xhr.setRequestHeader(k, headers[k]); });
-    if (xhr.upload && typeof onProgress === "function") {
-      xhr.upload.onprogress = function (e) {
-        onProgress(e.lengthComputable ? e.loaded / e.total : null);
-      };
-    }
-    xhr.onload = function () {
-      if (xhr.status === 401) { window.location.href = "/login.html"; return; }
-      var text = xhr.responseText || "";
-      var data = null;
-      if (text) { try { data = JSON.parse(text); } catch (_e) { data = null; } }
-      if (data === null && text) {
-        var perr = new Error(xhr.status >= 200 && xhr.status < 300
-          ? "Server returned a non-JSON response (" + xhr.status + ")"
-          : _proxyErrorMessage(xhr.status, text));
-        perr.status = xhr.status;
-        reject(perr);
-        return;
-      }
-      if (xhr.status < 200 || xhr.status >= 300) {
-        var err = new Error((data && data.error) || ("Upload failed (" + xhr.status + ")"));
-        err.status = xhr.status;
-        err.data = data;
-        reject(err);
-        return;
-      }
-      resolve(data);
-    };
-    xhr.onerror = function () { reject(new Error("Network error during upload")); };
-    xhr.send(formData);
-  });
-}
-
 // One-shot guard so the stale-Secure-cookie alert only fires once per page
 // load — otherwise a page that fires off several mutations on init would
 // stack alerts on top of each other.
@@ -691,13 +643,12 @@ const api = {
     create:        (body)   => request("POST", "/users", body),
     resetPassword: (id, b)  => request("PUT", `/users/${id}/password`, b),
     updateRole:    (id, b)  => request("PUT", `/users/${id}/role`, b),
-    updateRegions: (id, b)  => request("PUT", `/users/${id}/regions`, b),
     delete:        (id)     => request("DELETE", `/users/${id}`),
     resetTotp:     (id)     => request("DELETE", `/users/${id}/totp`),
     passkeys:      (id)     => request("GET", `/users/${id}/passkeys`),
     revokePasskeys:(id)     => request("DELETE", `/users/${id}/passkeys`),
-    roleReviewNotifications: ()   => request("GET", "/users/role-review-notifications"),
-    dismissRoleReview:       (id) => request("DELETE", `/users/${id}/role-review`),
+    // Clears the "new SSO account — review its role" flag.
+    dismissRoleReview: (id) => request("DELETE", `/users/${id}/role-review`),
   },
   roles: {
     list:      ()        => request("GET", "/roles"),
@@ -705,7 +656,6 @@ const api = {
     create:    (body)    => request("POST", "/roles", body),
     update:    (id, b)   => request("PUT",  `/roles/${id}`, b),
     delete:    (id)      => request("DELETE", `/roles/${id}`),
-    markReviewed: (id)   => request("POST", `/roles/${id}/grant-review`),
     functions: ()        => request("GET", "/roles/functions"),
   },
   groupMappings: {
@@ -1040,32 +990,6 @@ const api = {
     workload:             (id)       => request("GET",  `/assets/${id}/workload`),
     workloadAction:       (id, verb, body) => request("POST", `/assets/${id}/workload/${encodeURIComponent(verb)}`, body || {}),
     workloadCheckUpdates: (id)       => request("POST", `/assets/${id}/workload/check-updates`, {}),
-    // Firmware upgrade (business rule 87): what the Repository can offer this
-    // device (plus its pending booking, `schedule`), the start (assets:write;
-    // `imageId` is the image the operator approved by name), and the asset's
-    // run history.
-    firmwareUpgrade:      (id)       => request("GET",  `/assets/${id}/firmware-upgrade`),
-    startFirmwareUpgrade: (id, body) => _bookingWrite(request("POST", `/assets/${id}/firmware-upgrade`, body)),
-    firmwareUpgradeRuns:  (id)       => request("GET",  `/assets/${id}/firmware-upgrade/runs`),
-    firmwareUpgradeRun:   (id, runId) => request("GET", `/assets/${id}/firmware-upgrade/runs/${encodeURIComponent(runId)}`),
-    // Scheduled upgrades (business rule 93): book (`{ imageId, scheduledFor
-    // ISO, notifyEmails }`), change, cancel; `defaults` is the booker's own
-    // email for the modal to pre-fill.
-    firmwareSchedules:        (id)            => request("GET",    `/assets/${id}/firmware-upgrade/schedules`),
-    firmwareScheduleDefaults: (id)            => request("GET",    `/assets/${id}/firmware-upgrade/schedules/defaults`),
-    scheduleFirmwareUpgrade:  (id, body)      => _bookingWrite(request("POST",   `/assets/${id}/firmware-upgrade/schedules`, body)),
-    updateFirmwareSchedule:   (id, sid, body) => _bookingWrite(request("PATCH",  `/assets/${id}/firmware-upgrade/schedules/${encodeURIComponent(sid)}`, body)),
-    cancelFirmwareSchedule:   (id, sid)       => _bookingWrite(request("DELETE", `/assets/${id}/firmware-upgrade/schedules/${encodeURIComponent(sid)}`)),
-    // Group upgrades (business rule 122): which FortiGate each selected device
-    // sits under (the bulk bar's red Upgrade button), the booking dialog's
-    // plan, book (`{ assetIds, scheduledFor ISO, concurrency, notifyEmails,
-    // cancelIndividual }`), read one, list, cancel / stop.
-    firmwareGroupSources: (assetIds)  => request("POST", "/assets/firmware-groups/sources", { assetIds }),
-    firmwareGroupPreview: (assetIds)  => request("POST", "/assets/firmware-groups/preview", { assetIds }),
-    createFirmwareGroup:  (body)      => _bookingWrite(request("POST", "/assets/firmware-groups", body)),
-    firmwareGroups:       (params)    => request("GET", "/assets/firmware-groups" + toQuery(params)),
-    firmwareGroup:        (groupId)   => request("GET", `/assets/firmware-groups/${encodeURIComponent(groupId)}`),
-    cancelFirmwareGroup:  (groupId)   => _bookingWrite(request("DELETE", `/assets/firmware-groups/${encodeURIComponent(groupId)}`)),
     // Reboots (business rule 115): what may reboot this asset and how (plus
     // its pending booking, `schedule`), reboot now (assets:write), the run
     // history, bookings, and an agent host's opt-in (assets:fullwrite).
@@ -1412,31 +1336,6 @@ const api = {
     testWebPush: ()       => request("POST",  "/delivery-channels/web-push/test"),
   },
   serverSettings: {
-    // Charon — Authentication tab (active login mode; also drives the agent GUI).
-    authModeGet:       ()        => request("GET",    "/server-settings/auth-mode"),
-    authModePut:       (body)    => request("PUT",    "/server-settings/auth-mode", body),
-    // Firmware repository — the Repository tab (business rule 87). The tree
-    // is one read; images are filed under a model node; a binding names the
-    // device-admin login at a manufacturer, device-type or model scope.
-    getFirmwareTree:      ()     => request("GET",    "/server-settings/firmware/tree"),
-    listFirmwareNodeAssets: (params) => request("GET", "/server-settings/firmware/assets" + toQuery(params)),
-    uploadFirmwareImage:  (file, fields, onProgress) => {
-      const formData = new FormData();
-      // Text fields BEFORE the file so multer has the scoping fields when it
-      // opens the stream.
-      formData.append("manufacturer", fields.manufacturer);
-      formData.append("assetType", fields.assetType);
-      formData.append("model", fields.model);
-      if (fields.notes) formData.append("notes", fields.notes);
-      formData.append("file", file);
-      return _uploadWithProgress("/server-settings/firmware/images", formData, onProgress);
-    },
-    deleteFirmwareImage:  (id)   => request("DELETE", `/server-settings/firmware/images/${encodeURIComponent(id)}`),
-    promoteFirmwareImage: (id)   => request("POST",   `/server-settings/firmware/images/${encodeURIComponent(id)}/make-primary`),
-    purgeFirmwareModel:   (body) => request("POST",   "/server-settings/firmware/models/purge", body),
-    setFirmwareBinding:   (body) => request("PUT",    "/server-settings/firmware/bindings", body),
-    listFirmwareRuns:     (params) => request("GET",  "/server-settings/firmware/runs" + toQuery(params)),
-    getFirmwareRun:       (id)   => request("GET",    `/server-settings/firmware/runs/${encodeURIComponent(id)}`),
     // Charon Agent card (Maintenance tab): push-deployed agents vs the
     // installer manifest, upgrade-all, and the agent server URL. Charon builds
     // no installers itself (no build / prune / signing / auto-build routes).
@@ -1490,8 +1389,8 @@ const api = {
     // Local login source-IP restriction (login form + password endpoints).
     // The GET also reports the caller's IP as Polaris resolves it, which is
     // what reveals a trust-proxy misconfiguration before the scope is trusted.
+    // Read-only here (the Web Server card); editing is api.auth.updateLoginAccess.
     loginAccessGet:       ()      => request("GET",  "/server-settings/login-access"),
-    loginAccessPut:       (body)  => request("PUT",  "/server-settings/login-access", body),
     // API documentation (/api) source-IP scope. GET also reports the caller's
     // resolved IP (trust-proxy visibility, same as login-access); PUT answers
     // { apiDocs, callerAllowed, nginx } — warn on callerAllowed false.
@@ -1784,10 +1683,20 @@ const api = {
     // Self-service. Body: { currentPassword, newPassword }. Local accounts
     // only; the admin-side reset is api.users.resetPassword().
     changePassword: (body) => request("PUT", "/auth/password", body),
-    azureConfig: () => request("GET", "/auth/azure/config"),
-    azureSettings: () => request("GET", "/auth/azure/settings"),
-    updateAzureSettings: (body) => request("PUT", "/auth/azure/settings", body),
-    testAzureSettings: () => request("POST", "/auth/azure/test"),
+    samlConfig: () => request("GET", "/auth/saml/config"),
+    samlSettings: () => request("GET", "/auth/saml/settings"),
+    updateSamlSettings: (body) => request("PUT", "/auth/saml/settings", body),
+    testSaml: () => request("POST", "/auth/saml/test"),
+    samlLogout: () => request("POST", "/auth/saml/logout"),
+    // Session: idle timeout + "skip login page" (Charon keeps these out of the SAML row).
+    sessionSettings: () => request("GET", "/auth/session-settings"),
+    updateSessionSettings: (body) => request("PUT", "/auth/session-settings", body),
+    // Local Login Access (source-IP scope on the local credential paths).
+    loginAccess: () => request("GET", "/auth/login-access"),
+    updateLoginAccess: (body) => request("PUT", "/auth/login-access", body),
+    // The endpoint agent's sign-in mode (local / saml / oidc).
+    agentMode: () => request("GET", "/auth/agent-mode"),
+    updateAgentMode: (body) => request("PUT", "/auth/agent-mode", body),
     oidcConfig: () => request("GET", "/auth/oidc/config"),
     oidcSettings: () => request("GET", "/auth/oidc/settings"),
     updateOidcSettings: (body) => request("PUT", "/auth/oidc/settings", body),

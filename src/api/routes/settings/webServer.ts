@@ -30,7 +30,7 @@
  *   POST   /agents/cert-pins/bulk-add            system:fullwrite stage a pin
  *   POST   /agents/cert-pins/bulk-remove         system:fullwrite retire a pin
  *   GET/PUT /ipv6                                system:read / write     (persist-only)
- *   GET/PUT /login-access                        system:read / fullwrite (gates /auth/login)
+ *   GET    /login-access                         system:read  read-only card (editing: PUT /auth/login-access)
  */
 
 import { Router, type Request } from "express";
@@ -58,25 +58,10 @@ import {
   stageNewPin,
   tallyPins,
 } from "../../../services/certPinService.js";
-import {
-  getIpv6Status,
-  getLoginAccessSettings,
-  loginSourceAllowed,
-  previewLoginAccessSettings,
-  saveLoginAccessSettings,
-  setIpv6Enabled,
-} from "../../../services/webAccessSettingsService.js";
-import { describeIpScope } from "../../../utils/ipScope.js";
+import { getIpv6Status, getLoginAccessSettings, setIpv6Enabled } from "../../../services/webAccessSettingsService.js";
 import { adminActionLimiter } from "../../middleware/rateLimits.js";
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
-
-const ScopeSchema = z.object({
-  enabled: z.boolean().optional(),
-  ipScope: z.enum(["rfc1918", "all", "custom"]).optional(),
-  // CIDR validation + normalization happens in the service.
-  allowedCidrs: z.array(z.string().max(64)).max(200).optional(),
-});
 
 const Ipv6ToggleSchema = z.object({ enabled: z.boolean() });
 
@@ -377,34 +362,8 @@ router.get("/login-access", requirePermission("serverSettingsSystem", "read"), a
   } catch (err) { next(err); }
 });
 
-router.put("/login-access", adminActionLimiter, requirePermission("serverSettingsSystem", "fullwrite"), async (req, res, next) => {
-  try {
-    const input = parse(ScopeSchema, req.body);
-    const before = await getLoginAccessSettings();
-    // Anti-lockout: refuse a scope that excludes the admin saving it.
-    const prospective = await previewLoginAccessSettings(input);
-    const callerIp = req.ip ?? "";
-    if (prospective.enabled && !loginSourceAllowed(callerIp, prospective)) {
-      throw new AppError(
-        400,
-        `Your own source IP (${callerIp || "unknown"}) is outside that scope — saving it would lock you out of the local login page. ` +
-          "Add a network covering it, or apply the restriction from an allowed network.",
-      );
-    }
-    const updated = await saveLoginAccessSettings(input);
-    await logEvent({
-      level: updated.enabled ? "warning" : "info",
-      action: "login_access.updated",
-      resourceType: "setting",
-      resourceName: "loginAccessConfig",
-      actor: actor(req),
-      message: updated.enabled
-        ? `Local login restricted to ${describeIpScope(updated.ipScope, updated.allowedCidrs)}`
-        : "Local login source-IP restriction removed",
-      details: { before, after: updated },
-    });
-    res.json({ loginAccess: updated, callerIp });
-  } catch (err) { next(err); }
-});
+// Editing moved to Users → Authentication → Settings: PUT /auth/login-access
+// (authentication:write) in routes/auth.ts. This GET stays for the Web Server
+// tab's read-only summary card.
 
 export default router;

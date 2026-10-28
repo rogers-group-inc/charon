@@ -59,3 +59,15 @@ in `stopSchedulers()`):
 `pg_try_advisory_lock(key)`. Session-scoped, so it auto-frees on process death or
 DB failover. Standby retries every `CHARON_LEADER_RETRY_MS` and acquires the lock
 once free. `/health` reports `{ role, isLeader }` for the GSLB. See `deploy/HA.md`.
+
+### Operator sign-in state across nodes
+
+Sessions live in Postgres (connect-pg-simple), so a signed-in session — and a
+half-finished login (`pendingAuth`: second factor or forced password change owed) — survives
+a failover and can finish on either node. Three pieces of sign-in state are process-local by
+design and reset on restart or failover: the per-username login lockout
+(`src/utils/loginLockout.ts`; each node counts separately), the SAML assertion replay cache
+(`src/utils/samlReplayCache.ts`; an assertion also expires on its own NotOnOrAfter) and
+in-flight passkey ceremonies (`src/utils/webauthnChallenge.ts`; a ceremony is one click,
+and pre-auth rows in the session table would be an unauthenticated write surface). The GSLB
+sends a sign-in to the active node start to finish, which is what these rely on.

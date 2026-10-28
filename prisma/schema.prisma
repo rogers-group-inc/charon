@@ -110,8 +110,8 @@ model User {
   roleId       String  @map("role_id")
   role         Role    @relation(fields: [roleId], references: [id], onDelete: Restrict)
 
-  authProvider String  @default("local") @map("auth_provider") // "local" | "saml" | "oidc" | "ldap"
-  azureOid     String? @unique @map("azure_oid")
+  authProvider String  @default("local") @map("auth_provider") // "local" | "saml" | "oidc" | "ldap" | "entra-proxy"
+  azureOid     String? @unique @map("azure_oid") // Entra object id (SAML objectidentifier claim, else NameID; App Proxy shares it)
   oidcSubject  String? @unique @map("oidc_subject")
   ldapUid      String? @unique @map("ldap_uid")
   ssoGroups    String[] @default([]) @map("sso_groups")
@@ -119,12 +119,19 @@ model User {
   email        String?
   lastLogin    DateTime? @map("last_login")
 
-  // TOTP second factor — local accounts only.
+  // TOTP second factor — local accounts only. The secret is a crypto.ts
+  // envelope (rule 3), never plaintext base32.
   totpSecret      String?   @map("totp_secret")
   totpEnabledAt   DateTime? @map("totp_enabled_at")
   totpBackupCodes String[]  @default([]) @map("totp_backup_codes")
+  // Last accepted TOTP time-step: a code is refused unless its step is newer
+  // (replay protection, totpStepService).
+  totpLastStep    Int?      @map("totp_last_step")
 
+  // Set on a first SSO provisioning; cleared when an operator assigns a role.
   needsRoleReview Boolean @default(false) @map("needs_role_review")
+
+  passkeys UserPasskey[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -133,18 +140,46 @@ model User {
   @@map("users")
 }
 
-/// Maps a normalized IdP/directory group key → a Charon Role for SSO-provisioned
-/// operators. Highest-privilege match wins (see permissions.ts).
-model GroupMapping {
-  id        String   @id @default(uuid())
-  groupKey  String   @map("group_key") // normalized directory group identifier
-  roleId    String   @map("role_id")
-  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+/// A WebAuthn passkey registered by an operator (passwordless sign-in and/or a
+/// second factor, per the passkeyConfig Setting). Local accounts only.
+model UserPasskey {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId String    @unique @map("credential_id")
+  publicKey    Bytes     @map("public_key")
+  counter      BigInt    @default(0)
+  transports   String[]  @default([])
+  name         String // operator-set label; defaults to a User-Agent guess
+  aaguid       String? // authenticator model id; all-zero when undisclosed
+  deviceType   String?   @map("device_type") // "singleDevice" | "multiDevice"
+  backedUp     Boolean   @default(false) @map("backed_up")
+  lastUsedAt   DateTime? @map("last_used_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
 
-  @@unique([groupKey, roleId])
-  @@index([groupKey])
+  @@index([userId])
+  @@map("user_passkeys")
+}
+
+/// Maps one IdP group (scoped by provider) → a Charon Role for SSO-provisioned
+/// operators. At SAML / OIDC / LDAP / App Proxy login the user's group claims
+/// are matched against the enabled mappings; highest-privilege match wins
+/// (permissions.ts → pickHighestPrivilegeRoleId).
+model GroupMapping {
+  id          String   @id @default(uuid())
+  provider    String // "saml" | "oidc" | "ldap" | "entra-proxy"
+  groupKey    String   @map("group_key") // normalized match key (groupMappingService.normalizeGroupKey)
+  groupLabel  String?  @map("group_label") // as entered, for display
+  roleId      String   @map("role_id")
+  role        Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  enabled     Boolean  @default(true)
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([provider, groupKey])
+  @@index([provider, enabled])
+  @@index([roleId])
   @@map("group_mappings")
 }
 
@@ -738,60 +773,6 @@ model HaEnrollment {
   @@index([tokenPrefix])
   @@index([status])
   @@map("ha_enrollments")
-}
-
-// ─── Server Settings: Repository (firmware) ───
-// Ported from polaris (business rule 87). Bytes live on disk under
-// FIRMWARE_DIR (data/firmware); rows carry identity and placement. The CHECKs
-// and PARTIAL unique indexes Prisma cannot express live in migration
-// 20261028000007_settings_firmware. No upgrade-run / schedule / group models:
-// Charon has no Asset inventory and never flashes a device.
-
-/// One uploaded `.out`, filed under a manufacturer › device type › model node.
-/// Each PLATFORM under a node holds at most one `primary` and one `backup`.
-model FirmwareImage {
-  id           String   @id @default(uuid())
-  manufacturer String
-  assetType    String   @map("asset_type") // "switch" | "access_point" | "firewall" — CHECK in the migration
-  model        String // tree placement only
-  platform     String? // header token, e.g. S108FF / FP231K; null = filename-only parse, never offered
-  versionMajor Int?     @map("version_major")
-  versionMinor Int?     @map("version_minor")
-  versionPatch Int?     @map("version_patch")
-  build        Int?
-  versionLabel String   @map("version_label") // "7.6.8 build1164", or "7 build1164" from a filename-only parse
-  parsedFrom   String   @map("parsed_from") // "header" | "filename"
-  role         String   @default("primary") // "primary" | "backup" ("swapping" only inside the make-primary transaction)
-  filename     String // original upload name
-  sizeBytes    Int      @map("size_bytes") // ≤ 300 MiB (FortiGate); ≤ 100 MiB switch / AP
-  sha256       String   @unique
-  storagePath  String   @map("storage_path") // relative to FIRMWARE_DIR: "<id>.out"
-  notes        String?  @db.Text
-  uploadedBy   String?  @map("uploaded_by")
-  uploadedAt   DateTime @default(now()) @map("uploaded_at")
-
-  @@index([manufacturer, assetType, platform])
-  @@index([manufacturer, assetType, model])
-  @@map("firmware_images")
-}
-
-/// Which device-admin login applies at a manufacturer (assetType null), device
-/// type (model null) or model scope; the most specific live one wins.
-/// credentialId names a Credential LOOSELY (no relation / FK — Charon
-/// adaptation): a deleted credential leaves a dangling id that reads as stale.
-model FirmwareCredentialBinding {
-  id           String   @id @default(uuid())
-  manufacturer String
-  assetType    String?  @map("asset_type") // null = manufacturer-wide
-  model        String? // non-null only with assetType
-  source       String   @default("credential") // "credential" | "integration-token" (firewall scopes only)
-  credentialId String?  @map("credential_id")
-  createdBy    String?  @map("created_by")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
-
-  @@index([manufacturer, assetType, model])
-  @@map("firmware_credential_bindings")
 }
 
 // ─── Server Settings: Credentials (MIB database + manufacturer profiles) ───

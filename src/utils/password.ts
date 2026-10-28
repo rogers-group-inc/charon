@@ -4,9 +4,21 @@
  * Call sites:
  *   - hashPassword()   — every place a new/updated local password is stored
  *   - verifyPassword() — every place a stored local password is checked
+ *   - passwordInputSchema — shape only; the complexity bar is the live policy
+ *     (services/passwordPolicyService.ts → assertPasswordMeetsPolicy)
  */
 
 import { hash as argonHash, verify as argonVerify, Algorithm } from "@node-rs/argon2";
+import { z } from "zod";
+
+/**
+ * A password in a request body: non-empty and bounded (argon2 would happily
+ * hash a megabyte, and nothing upstream bounds a JSON string). Complexity is
+ * NOT checked here — that is the operator's live policy.
+ */
+export const passwordInputSchema = z.string()
+  .min(1, "Password is required")
+  .max(1024, "Password must be at most 1024 characters");
 
 // OWASP 2024 second-option params — ~50ms/login on commodity hardware, good
 // GPU resistance via 19 MiB of memory per hash.

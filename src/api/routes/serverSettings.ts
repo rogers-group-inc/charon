@@ -1,8 +1,8 @@
 /**
- * src/api/routes/serverSettings.ts — Server Settings (HA, Auth, Identification).
+ * src/api/routes/serverSettings.ts — Server Settings (HA, Identification).
  *
- * HA tab reports leader/replication status. Auth tab sets the active login
- * mode (which also drives the agent GUI). The original Certificates routes
+ * HA tab reports leader/replication status. The agent sign-in mode moved to
+ * Users → Authentication (routes/auth.ts → /auth/agent-mode). The original Certificates routes
  * (/certificates, /certificates/stage, /certificates/promote) moved to
  * routes/settings/webServer.ts — the polaris Web Server tab's dual-pin
  * Rotate flow (preflight → stage → swap → retire) replaces them.
@@ -11,10 +11,8 @@
  */
 
 import { Router } from "express";
-import { z } from "zod";
 import { prisma } from "../../db.js";
 import { requirePermission } from "../middleware/permissions.js";
-import { logEvent } from "../../services/eventService.js";
 import { getAppVersion } from "../../utils/version.js";
 
 const router = Router();
@@ -22,9 +20,6 @@ const router = Router();
 async function getSetting<T>(key: string, dflt: T): Promise<T> {
   const row = await prisma.setting.findUnique({ where: { key } });
   return (row?.value as T) ?? dflt;
-}
-async function putSetting(key: string, value: unknown): Promise<void> {
-  await prisma.setting.upsert({ where: { key }, create: { key, value: value as any }, update: { value: value as any } });
 }
 
 // ─── High Availability status ────────────────────────────────────────────────
@@ -39,23 +34,6 @@ router.get("/ha", requirePermission("serverSettingsSystem", "read"), async (_req
       );
     } catch { /* standby / no perms */ }
     res.json({ isLeader: isLeader(), publicUrl: process.env.CHARON_PUBLIC_URL ?? null, replication });
-  } catch (err) { next(err); }
-});
-
-// ─── Authentication mode (drives operator + agent login) ──────────────────────
-router.get("/auth-mode", requirePermission("serverSettingsSystem", "read"), async (_req, res, next) => {
-  try {
-    const { getActiveAuthMode } = await import("../../services/authService.js");
-    res.json({ mode: await getActiveAuthMode() });
-  } catch (err) { next(err); }
-});
-
-router.put("/auth-mode", requirePermission("serverSettingsSystem", "fullwrite"), async (req, res, next) => {
-  try {
-    const { mode } = z.object({ mode: z.enum(["local", "saml", "oidc"]) }).parse(req.body);
-    await putSetting("auth.mode", { mode });
-    await logEvent({ action: "auth.mode.changed", actor: req.session.username, message: `Active auth mode set to ${mode}` });
-    res.json({ ok: true, mode });
   } catch (err) { next(err); }
 });
 

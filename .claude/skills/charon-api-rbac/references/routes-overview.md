@@ -10,6 +10,7 @@ Order inside `router.ts` matters:
 | Order | Mount | Router file | Gate |
 |---|---|---|---|
 | 0 | (all) | — | `attachApiToken` resolves any bearer first |
+| 0a | (all) | — | `revalidateSessionUser` (`src/api/middleware/sessionRevalidate.ts`): once a minute per session, the user row must still exist (else the session is emptied) and a changed role is adopted |
 | 1 | `/auth` | `src/api/routes/auth.ts` | public |
 | 2 | `/agent` | `src/api/routes/agent.ts` | public |
 | 2a | `/branding` | `src/api/routes/settings/customization.ts` (`publicBrandingRouter`) | public (login-page branding; rate-limited; trimmed view) |
@@ -24,7 +25,7 @@ Order inside `router.ts` matters:
 | 9 | `/tags` | `src/api/routes/tags.ts` | `tags` read |
 | 10 | `/policies` | `src/api/routes/policies.ts` | `policies` read |
 | 11 | `/server-settings/maintenance` | `src/api/routes/maintenance.ts` | `serverSettingsData` read (inside the router) — mounted BEFORE `/server-settings` so its guard applies instead of serverSettingsSystem |
-| 11a | `/server-settings` | `src/api/routes/settings/{ntp,identification,webServer,maintenance,customization,credentials,apiTokens,ha,firmware}.ts` (default exports) | none at the mount — each route declares its own `requirePermission` (`serverSettingsSystem` / `serverSettingsData` / `credentials` / `apiTokens`). Mounted BEFORE the blanket `/server-settings` gate; a `router.use()` gate inside one of them would fire for every `/server-settings` path passing through it |
+| 11a | `/server-settings` | `src/api/routes/settings/{ntp,identification,webServer,maintenance,customization,credentials,apiTokens,ha}.ts` (default exports) | none at the mount — each route declares its own `requirePermission` (`serverSettingsSystem` / `serverSettingsData` / `credentials` / `apiTokens`). Mounted BEFORE the blanket `/server-settings` gate; a `router.use()` gate inside one of them would fire for every `/server-settings` path passing through it |
 | 11b | `/credentials` | `src/api/routes/settings/credentials.ts` (`credentialsRouter`) | per route (`credentials`) |
 | 11c | `/api-tokens` | `src/api/routes/settings/apiTokens.ts` (`apiTokensRouter`) | per route (`apiTokens`) |
 | 11d | `/ha` | `src/api/routes/settings/ha.ts` (`haRouter`) | per route (`serverSettingsSystem` read / fullwrite) |
@@ -32,6 +33,9 @@ Order inside `router.ts` matters:
 | 11f | `/asset-types` | `src/api/routes/settings/identification.ts` (`assetTypesRouter`) | per route (`serverSettingsSystem`) |
 | 12 | `/server-settings` | `src/api/routes/serverSettings.ts` | `serverSettingsSystem` read |
 | 13 | `/events` | `src/api/routes/events.ts` | `events` read |
+| 14 | `/users` | `src/api/routes/users.ts` | `users` read (mutations add write) |
+| 15 | `/roles` | `src/api/routes/roles.ts` | none at the mount — per route `roles` read / write |
+| 16 | `/group-mappings` | `src/api/routes/groupMappings.ts` | `users` fullwrite |
 
 The telemetry WebSocket handler lives in `src/api/routes/agentsWs.ts` (bearer in
 `Sec-WebSocket-Protocol`).
@@ -44,5 +48,7 @@ Three routes carry no permission key on purpose (auth-only): `GET /server-settin
 (`src/services/certPinService.ts → recordDeliveredPins()`, best-effort) — the source of the Web
 Server tab's pin-uptake summary.
 
-Not yet mounted: users / roles management — TODO: populate when those routers exist (their
-function keys are already in the catalogue).
+`src/app.ts` also runs, before the router: the CSRF middleware, the idle-timeout middleware
+(`sessionConfig.autoLogoutMinutes`; an API request after the limit gets 401, a page load a
+redirect to `/signed-out.html?reason=inactivity`), and the login limiter on the `/api/v1/auth/login`
+prefix (the `/password-change` step is skipped — it carries its own limiter).

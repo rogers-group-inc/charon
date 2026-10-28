@@ -22,11 +22,19 @@
     .login-card h2 { text-align: center; margin: 0 0 0.25rem; font-size: 1.25rem; font-weight: 700; color: var(--color-text-primary); text-transform: uppercase; letter-spacing: 1px; }
     .login-card .subtitle { text-align: center; color: var(--color-text-tertiary); font-size: 0.8rem; margin-bottom: 1.5rem; letter-spacing: 0.5px; }
     .login-error { background: rgba(255,23,68,0.12); color: var(--color-danger); border: 1px solid rgba(255,23,68,0.3); border-radius: var(--radius-md); padding: 0.5rem 0.75rem; font-size: 0.85rem; margin-bottom: 1rem; }
-    .login-card .btn-primary { width: 100%; justify-content: center; }
+    .login-notice { background: var(--color-bg-secondary); color: var(--color-text-secondary); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.5rem 0.75rem; font-size: 0.85rem; margin-bottom: 1rem; }
+    .login-card .btn-primary, .login-card .btn-sso { width: 100%; justify-content: center; }
+    .btn-sso { display: inline-flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; }
     /* Push the submit button down so its gap from the password field matches
        the username→password gap (which also includes the password label:
        0.8rem × 1.5 line-height + 4px label margin). */
     #loginForm .btn-primary { margin-top: calc(0.8rem * 1.5 + 4px); }
+    .login-divider { display: flex; align-items: center; gap: 0.75rem; color: var(--color-text-tertiary); font-size: 0.75rem; margin: 1.1rem 0 0.4rem; }
+    .login-divider::before, .login-divider::after { content: ""; flex: 1; border-top: 1px solid var(--color-border); }
+    .login-link { display: inline-block; margin-top: 0.75rem; font-size: 0.8rem; color: var(--color-text-secondary); }
+    .login-step-intro { font-size: 0.85rem; color: var(--color-text-secondary); margin-bottom: 1rem; }
+    .pw-rules { list-style: none; padding: 0; margin: 0.4rem 0 0; font-size: 0.78rem; color: var(--color-text-tertiary); }
+    .pw-rules li.ok { color: var(--color-success, #22c55e); }
 </style>
 </head>
 <body>
@@ -35,26 +43,72 @@
       <img id="loginLogo" class="login-logo" alt="" hidden>
       <h2 id="loginAppName">Charon</h2>
       <p class="subtitle" id="loginSubtitle">Zero Trust Network Access</p>
+      <div class="login-notice" id="loginNotice" hidden></div>
       <div class="login-error" id="loginError" hidden></div>
-      <form id="loginForm" autocomplete="on">
-        <div class="form-group">
-          <label for="username">Username</label>
-          <input type="text" id="username" name="username" autocomplete="username" required autofocus>
+
+      <!-- Step 1: how to sign in. -->
+      <div id="entrySection">
+        <form id="loginForm" autocomplete="on">
+          <div class="form-group">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" autocomplete="username" required autofocus>
+          </div>
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" autocomplete="current-password" required>
+          </div>
+          <button type="submit" class="btn btn-primary" id="loginBtn">Sign in</button>
+        </form>
+        <div id="passkeySection" hidden>
+          <button type="button" class="btn btn-secondary btn-sso" id="btnPasskey">Sign in with a passkey</button>
         </div>
-        <div class="form-group">
-          <label for="password">Password</label>
-          <input type="password" id="password" name="password" autocomplete="current-password" required>
+        <div id="ssoSection" hidden>
+          <div class="login-divider">or</div>
+          <button type="button" class="btn btn-secondary btn-sso" id="btnSaml" hidden>Sign in with SSO</button>
+          <button type="button" class="btn btn-secondary btn-sso" id="btnOidc" hidden>Sign in with OpenID Connect</button>
+          <button type="button" class="btn btn-secondary btn-sso" id="btnEntraProxy" hidden>Continue with Microsoft Entra</button>
         </div>
-        <div class="form-group" id="totpGroup" hidden>
-          <label for="totp">Verification code</label>
-          <input type="text" id="totp" name="totp" inputmode="numeric" autocomplete="one-time-code" placeholder="123456">
+      </div>
+
+      <!-- Step 2: a second factor is owed (TOTP / backup code, or a passkey). -->
+      <div id="mfaSection" hidden>
+        <form id="mfaForm" autocomplete="off">
+          <div class="form-group">
+            <label for="mfaCode" id="mfaCodeLabel">Verification code</label>
+            <input type="text" id="mfaCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" data-mode="totp">
+            <p class="hint" id="mfaHint">Enter the 6-digit code from your authenticator app.</p>
+          </div>
+          <button type="submit" class="btn btn-primary">Verify</button>
+          <a href="#" class="login-link" id="btnUseBackup">Use a backup code</a>
+        </form>
+        <div id="mfaPasskeyBlock" hidden>
+          <p class="login-step-intro" id="mfaPasskeyHint">Confirm with the passkey registered to your account.</p>
+          <button type="button" class="btn btn-primary" id="btnMfaPasskey">Use my passkey</button>
         </div>
-        <button type="submit" class="btn btn-primary" id="loginBtn">Sign in</button>
-      </form>
+        <a href="#" class="login-link" id="btnMfaSwitch" hidden>Use a passkey instead</a>
+      </div>
+
+      <!-- Step 3: the password works but fails the operator's policy. -->
+      <div id="pwChangeSection" hidden>
+        <p class="login-step-intro">Your password no longer meets this server's password policy. Choose a new one to finish signing in.</p>
+        <form id="pwChangeForm" autocomplete="off">
+          <div class="form-group">
+            <label for="pwNew">New password</label>
+            <input type="password" id="pwNew" autocomplete="new-password" required>
+            <ul class="pw-rules" id="pwRules"></ul>
+          </div>
+          <div class="form-group">
+            <label for="pwConfirm">Confirm new password</label>
+            <input type="password" id="pwConfirm" autocomplete="new-password" required>
+          </div>
+          <button type="submit" class="btn btn-primary">Set password and sign in</button>
+        </form>
+      </div>
     </div>
   </div>
   <script src="/js/api.js"></script>
   <script src="/js/brand-logo.js"></script>
+  <script src="/js/webauthn.js"></script>
   <script src="/js/login.js"></script>
 </body>
 </html>

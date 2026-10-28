@@ -1,6 +1,6 @@
 ---
 name: charon-api-rbac
-description: "Charon REST API under /api/v1 and its permission model: every route file and mount, which surfaces are public (operator login, agent auth-config, agent enroll + bearer-guarded telemetry, the agent WebSocket, HA node enrollment /ha/enroll), the Server Settings tab routers (src/api/routes/settings/*) and their per-route gates and which sit behind requireAuth, Zod schema placement, the 15 function keys (endpoints, invitationCodes, tags, policies, groups, integrations, enforcement, directory, credentials, events, apiTokens, users, roles, serverSettingsSystem, serverSettingsData), requirePermission levels (none/read/write/fullwrite), built-in roles (Administrator / Operator / Read-Only), session role snapshots, SSO group mapping (highest privilege wins), role-bound API tokens with trusted hosts and agent bearers, CSRF (incl. session-less bearer exemption), the Local Login Access IP gate, and the login / enroll rate limiters. Load when adding or changing an endpoint or route gate, adding a permission key, debugging a 401/403 or CSRF failure, asking who can do X, minting tokens, anything about login, TOTP, SAML/OIDC, or touching src/api/."
+description: "Charon REST API under /api/v1 and its permission model: every route file and mount, which surfaces are public (operator login, agent auth-config, agent enroll + bearer-guarded telemetry, the agent WebSocket, HA node enrollment /ha/enroll), the Server Settings tab routers (src/api/routes/settings/*) and their per-route gates and which sit behind requireAuth, Zod schema placement, the 16 function keys (endpoints, invitationCodes, tags, policies, groups, integrations, enforcement, directory, credentials, events, apiTokens, users, roles, authentication, serverSettingsSystem, serverSettingsData), requirePermission levels (none/read/write/fullwrite), built-in roles (Administrator / Operator / Read-Only), session role snapshots, SSO group mapping (highest privilege wins), the users / roles / group-mappings routes and their escalation guards, session rotation / revocation / idle timeout, role-bound API tokens with trusted hosts and agent bearers, CSRF (incl. session-less bearer exemption), the Local Login Access IP gate, and the login / enroll rate limiters. Load when adding or changing an endpoint or route gate, adding a permission key, debugging a 401/403 or CSRF failure, asking who can do X, minting tokens, anything about login, TOTP, passkeys, LDAP, SAML/OIDC, Entra App Proxy, password policy, group mappings, idle timeout, or touching src/api/."
 ---
 
 # Charon API and RBAC
@@ -53,7 +53,7 @@ applies its own `requirePermission(functionKey, level)`. Handlers are thin: vali
 | Role | Matrix |
 |---|---|
 | Administrator | fullwrite everywhere; `isProtected` |
-| Operator | write everywhere except: `roles` none; `enforcement`, `users`, `apiTokens`, `serverSettingsData` read |
+| Operator | write everywhere except: `roles` none; `enforcement`, `users`, `authentication`, `apiTokens`, `serverSettingsData` read |
 | Read-Only | read everywhere |
 
 Related: `charon-change-impact` (services behind each route), `charon-agent` (the agent

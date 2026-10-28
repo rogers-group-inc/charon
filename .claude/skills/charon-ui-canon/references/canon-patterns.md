@@ -33,10 +33,9 @@ ported from polaris. The `.page-tabs.page-tabs-glass` strip sits in a
 INSIDE the card and its top edge never slides under the pinned header (`page-top-curtain.js`
 draws the curtain). `server-settings.js` is only the shell: tab visibility
 (`SETTINGS_TAB_PERMS` + `permAtLeast`), switching, `?tab=` persistence and lazy first-activation
-loads; each tab's body is its own `server-settings-<tab>.js` module (the HA and Repository tabs
-expose `window.*Tab.load()` and guard their own once-per-page load). Internal keys outlived
-label changes: the Web Server tab is `data-tab="certificates"` and the Repository tab is
-`firmware`. Script order: `theme-init.js` (head) → `page-top-curtain.js` → `settings-api.js` →
+loads; each tab's body is its own `server-settings-<tab>.js` module (the HA tab
+exposes `window.*Tab.load()` and guard their own once-per-page load). Internal keys outlived
+label changes: the Web Server tab is `data-tab="certificates"`. Script order: `theme-init.js` (head) → `page-top-curtain.js` → `settings-api.js` →
 `folder-tabs.js` → `panel-lock.js` → `brand-logo.js` → `app.js` (+ the `#polaris-nav-ready`
 marker right after it) → `settings-ui.js` → shared widgets
 (`condition-builder.js`, `pinned-tls-certs.js`) → tab modules → `server-settings.js` last.

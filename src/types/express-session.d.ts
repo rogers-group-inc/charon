@@ -16,8 +16,21 @@ declare module "express-session" {
     roleSnapshot?: SessionRoleSnapshot;
     csrfToken?: string;
     lastActivity?: number;
-    // Pending second-factor: set after password verify, before TOTP verify.
-    mfaPendingUserId?: string;
+    // Last time sessionRevalidate confirmed the user row still exists (ms).
+    checkedAt?: number;
+    // A login that is partly complete (second factor or forced password
+    // change still owed) — utils/pendingAuth.ts. Not authenticated.
+    pendingAuth?: import("../utils/pendingAuth.js").PendingAuth;
+    // How this session signed in: "local" | "ldap" | "saml" | "oidc" | "entra-proxy" | "passkey".
+    authProvider?: string;
+    // SSO hand-off (pre-auth; dropped by the session rotation at sign-in,
+    // except the SAML logout pair which is stamped after it).
+    samlRelayState?: string;
+    samlNameID?: string;
+    samlSessionIndex?: string;
+    oidcState?: string;
+    oidcNonce?: string;
+    oidcCodeVerifier?: string;
   }
 }
 
@@ -30,6 +43,8 @@ declare global {
       agent?: { endpointId: string };
       /** Set by requirePermission after a successful check. */
       permissionLevel?: AccessLevel;
+      /** The caller's resolved role (bearer token or session), set by requirePermission. */
+      roleSnapshot?: SessionRoleSnapshot;
     }
   }
 }

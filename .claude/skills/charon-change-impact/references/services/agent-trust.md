@@ -224,17 +224,6 @@ getOnboardingScript()`, Prisma `Integration`.
 
 ---
 
-## services/settingsStore.ts
-
-**What it owns:** `createSettingStore<T>()` — one typed, cached Setting row with defaults
-(polaris helper).
-**Public API:** `createSettingStore`; type `SettingStore`.
-**Cross-service deps:** Prisma `Setting`.
-**Used by:** `windowsSshOnboardingService`.
-**Invariants:** the cache is per process; writers invalidate it.
-
----
-
 ## services/agentChannelService.ts
 
 **What it owns:** the agent WebSocket session map for THIS process (ported from polaris, keyed

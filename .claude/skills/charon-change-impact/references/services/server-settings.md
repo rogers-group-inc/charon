@@ -122,7 +122,9 @@ from `GET /server-settings/branding`.
 **Invariants:** logos are magic-byte checked (PNG / JPEG / WebP), never SVG; only Charon's own
 fixed upload names are rendered. The logo file is not in a DB backup.
 **When changing this:** the sidebar's logo regex in `public/js/app.js → brandHtml()` must match
-the stored URL shape.
+the stored URL shape. `public/js/brand-logo.js → isCustom()` reads both payloads: the
+authenticated one by `customLogo`, the public one (`toPublicBranding`) by "a `logoUrl` is
+present" — keep the public view sending `logoUrl` only when a custom logo is to be shown.
 
 ---
 

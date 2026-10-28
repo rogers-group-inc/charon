@@ -1,0 +1,23 @@
+/*
+ * agent/ui/css/agent.css — the agent window's own layout.
+ *
+ * styles.css, charon.css and js/theme-init.js are COPIES of the server's
+ * public/ files (tests/unit/agentUiSync.test.ts fails when they drift), so the
+ * agent carries the same polaris theme system: morning / noon / nightfall,
+ * following the OS. This file holds only the login-card layout, which on the
+ * server lives inline in public/login.html.
+ */
+
+[hidden] { display: none !important; }
+
+/* No fill: the body's ground shows the theme's sky glow through. */
+.login-wrapper { min-height: 100vh; min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+.login-card {
+  background: var(--color-bg-primary); border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg); padding: 2rem 2.5rem; width: 100%; max-width: 380px; box-shadow: var(--shadow-md);
+}
+.login-card h2 { text-align: center; margin: 0 0 0.25rem; font-size: 1.25rem; font-weight: 700; color: var(--color-text-primary); text-transform: uppercase; letter-spacing: 1px; }
+.login-card .subtitle { text-align: center; color: var(--color-text-tertiary); font-size: 0.8rem; margin-bottom: 1.5rem; letter-spacing: 0.5px; }
+.login-card .btn-primary { width: 100%; justify-content: center; }
+.login-card .muted { margin: 0 0 1rem; }
+.agent-version { text-align: center; margin: 1rem 0 0; font-size: 0.7rem; color: var(--color-text-tertiary); letter-spacing: 0.02em; }

@@ -5,9 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Charon — Custom Groups</title>
   <script src="/js/theme-init.js"></script>
+  <link rel="expect" href="#polaris-nav-ready" blocking="render">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/styles.css">
+  <link rel="stylesheet" href="/css/page-transitions.css">
   <link rel="stylesheet" href="/css/charon.css">
 </head>
 <body>
@@ -59,7 +61,9 @@
   </div>
 
   <script src="/js/api.js"></script>
+  <script src="/js/brand-logo.js"></script>
   <script src="/js/app.js"></script>
+  <span id="polaris-nav-ready" hidden></span>
   <script src="/js/groups.js"></script>
 </body>
 </html>

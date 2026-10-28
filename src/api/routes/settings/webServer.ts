@@ -2,7 +2,7 @@
  * src/api/routes/settings/webServer.ts — Server Settings: Web Server tab.
  *
  * Ported from polaris (src/api/routes/serverSettings.ts /certificates, /https,
- * /dash, /ipv6, /login-access, /agents/cert-pins/*, and proxySettings.ts) to
+ * /ipv6, /login-access, /agents/cert-pins/*, and proxySettings.ts) to
  * back the ported public/js/server-settings-webserver.js module at the exact
  * paths public/js/settings-api.js calls. Mounted WITHOUT a router-level gate
  * (router.ts) — every route declares its own requirePermission(), because a
@@ -29,7 +29,6 @@
  *   GET    /agents/cert-pins/summary             system:read      pin uptake across agents
  *   POST   /agents/cert-pins/bulk-add            system:fullwrite stage a pin
  *   POST   /agents/cert-pins/bulk-remove         system:fullwrite retire a pin
- *   GET/PUT /dash                                system:read / fullwrite (persist-only)
  *   GET/PUT /ipv6                                system:read / write     (persist-only)
  *   GET/PUT /login-access                        system:read / fullwrite (gates /auth/login)
  */
@@ -60,12 +59,10 @@ import {
   tallyPins,
 } from "../../../services/certPinService.js";
 import {
-  getDashSettings,
   getIpv6Status,
   getLoginAccessSettings,
   loginSourceAllowed,
   previewLoginAccessSettings,
-  saveDashSettings,
   saveLoginAccessSettings,
   setIpv6Enabled,
 } from "../../../services/webAccessSettingsService.js";
@@ -344,34 +341,6 @@ router.post("/agents/cert-pins/bulk-remove", adminActionLimiter, requirePermissi
       details: { ...result, outcome },
     });
     res.json(result);
-  } catch (err) { next(err); }
-});
-
-// ─── Dash wallboard (persist-only: charon has no /dash surface yet) ──────────
-
-router.get("/dash", requirePermission("serverSettingsSystem", "read"), async (_req, res, next) => {
-  try {
-    res.json({ dash: await getDashSettings() });
-  } catch (err) { next(err); }
-});
-
-router.put("/dash", requirePermission("serverSettingsSystem", "fullwrite"), async (req, res, next) => {
-  try {
-    const input = parse(ScopeSchema, req.body);
-    const before = await getDashSettings();
-    const updated = await saveDashSettings(input);
-    await logEvent({
-      level: updated.enabled && updated.ipScope === "all" ? "warning" : "info",
-      action: "dash_settings.updated",
-      resourceType: "setting",
-      resourceName: "dashConfig",
-      actor: actor(req),
-      message: updated.enabled
-        ? `Dash wallboard enabled (${describeIpScope(updated.ipScope, updated.allowedCidrs)})`
-        : "Dash wallboard disabled",
-      details: { before, after: updated },
-    });
-    res.json({ dash: updated });
   } catch (err) { next(err); }
 });
 

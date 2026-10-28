@@ -33,7 +33,7 @@ import { logger } from "../utils/logger.js";
 import { getProxyConfig, saveProxyConfig, type ProxyConfig } from "./proxyConfigService.js";
 import { renderNginxConfig, sha256Hex } from "./nginxRenderer.js";
 import { applyNginxContents, isWrapperAvailable, readLiveNginxConfig, LIVE_NGINX_CONF } from "./nginxApplyService.js";
-import { getPinStore, swapCanonicalPin } from "./certPinService.js";
+import { adoptBootstrapPin, getPinStore, swapCanonicalPin } from "./certPinService.js";
 
 const CERT_SETTING = "cert.leaf";
 const DEFAULT_CERT_PATH = resolve(STATE_DIR, "certs", "charon.crt");
@@ -122,6 +122,27 @@ async function currentFacts(): Promise<{ leaf: LeafRecord; facts: CertFacts | nu
 /** SHA-256 (bare hex) of the leaf cert nginx is configured to serve, or null. */
 export async function getServedCertFingerprint(): Promise<string | null> {
   return (await currentFacts()).facts?.fingerprint ?? null;
+}
+
+/**
+ * Fresh install: make the bootstrap cert's pin the canonical agent pin (run
+ * once by the leader on acquire). A no-op when a canonical pin already exists
+ * or no served cert can be read. Writes a warning Event when it adopts.
+ */
+export async function adoptBootstrapAgentPin(): Promise<string | null> {
+  const served = await getServedCertFingerprint();
+  if (!served) return null;
+  const adopted = await adoptBootstrapPin(served);
+  if (adopted) {
+    const { logEvent } = await import("./eventService.js");
+    await logEvent({
+      level: "warning",
+      action: "cert.pin.bootstrap",
+      actor: "system",
+      message: `No agent pin was set — adopted the served certificate's pin ${adopted} as canonical. Rotate to your own certificate from Server Settings → Web Server.`,
+    });
+  }
+  return adopted;
 }
 
 function publicUrl(): URL | null {

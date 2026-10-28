@@ -46,7 +46,7 @@ function dnsCardsHTML() {
         '<input type="checkbox" id="f-dns-verifytls"' + (_dnsDefaults.verifyTls === true ? ' checked' : '') + '>' +
         '<span>Verify resolver TLS certificate</span>' +
       '</label>' +
-      '<p class="hint" style="color:var(--color-warning,#d98c00)">Recommended. When off, encrypted DNS (DoT/DoH) accepts any certificate, so a network attacker can impersonate the resolver and return forged answers that drive hostname learning and auto-reservations. Public resolvers (Google, Cloudflare, Quad9) present valid certificates and work with this on. Turn off only for an internal resolver that uses a private CA.</p>' +
+      '<p class="hint" style="color:var(--color-warning,#d98c00)">Recommended. When off, encrypted DNS (DoT/DoH) accepts any certificate, so a network attacker can impersonate the resolver and return forged answers to Charon&rsquo;s lookups. Public resolvers (Google, Cloudflare, Quad9) present valid certificates and work with this on. Turn off only for an internal resolver that uses a private CA.</p>' +
     '</div>' +
     '<div style="display:flex;gap:8px;align-items:center">' +
       '<button class="btn btn-primary" id="btn-dns-save">Save DNS Settings</button>' +
@@ -247,7 +247,6 @@ var _tagsData = [];
 var _emptyCategories = [];
 var _tagSettings = { enforce: false };
 var _ouiOverrides = [];
-var _placeholderMac = null;
 var _mibsData = [];
 var _mibFacets = { manufacturers: [], modelsByManufacturer: {} };
 var _manufacturerAliases = [];
@@ -459,7 +458,6 @@ async function loadIdentificationTab() {
       api.serverSettings.listManufacturerAliases().catch(function () { return []; }),
       api.deviceIcons.list().catch(function () { return []; }),
       api.serverSettings.listManufacturerProfiles().catch(function () { return { profiles: [], transforms: [] }; }),
-      api.serverSettings.getPlaceholderMac().catch(function () { return null; }),
       api.assetTypes.list({ withUsage: 1 }).catch(function () { return { types: [] }; }),
       api.assetTypes.matchSchema().catch(function () { return null; }),
     ]);
@@ -481,9 +479,8 @@ async function loadIdentificationTab() {
     _mfgProfileTransforms = profilePayload.transforms || [];
     _mfgProfileCombiners = profilePayload.combiners || [];
     _mfgMetricTransforms = profilePayload.metricTransforms || {};
-    _placeholderMac = results[9] || null;
-    _assetTypes = (results[10] || {}).types || [];
-    if (results[11]) _assetTypeMatchSchema = results[11];
+    _assetTypes = (results[9] || {}).types || [];
+    if (results[10]) _assetTypeMatchSchema = results[10];
     _tagsLoaded = true;
     renderIdentificationTab();
   } catch (err) {
@@ -533,39 +530,6 @@ function renderIdentificationTab() {
       'then <strong>Manufacturer Aliases</strong> normalize the vendor name, ' +
       'and the <strong>IEEE OUI Database</strong> provides the base lookup.' +
     '</p>';
-
-  // ── Placeholder MAC Prefix ──
-  // Sits in this card because it IS a MAC-prefix setting, next to the OUI
-  // machinery that interprets prefixes — an operator will often add a matching
-  // Prefix Override ("02:0F:5E → Polaris (placeholder)") a few inches below.
-  var phPrefix = (_placeholderMac && _placeholderMac.prefix) || "02:0F:5E";
-  html += '<h5 class="mac-id-section-heading">Placeholder MAC Prefix</h5>' +
-    '<p style="font-size:0.82rem;color:var(--color-text-secondary);margin-bottom:0.75rem">' +
-      'A DHCP reservation is a MAC&rarr;IP binding, so reserving an IP for a device that isn\'t racked yet ' +
-      'needs a MAC before there is a device to supply one. The IP panel\'s <strong>Generate</strong> button ' +
-      'builds one from this prefix, and it is the <em>only</em> thing marking that MAC as a placeholder &mdash; ' +
-      'Fortinet discovery replaces a MAC matching it with the real device\'s MAC once one appears at that IP ' +
-      '(per-integration opt-in on the DHCP Push tab). A MAC that does not match is never touched.' +
-    '</p>' +
-    '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.5rem">' +
-      '<div style="flex:1;min-width:160px">' +
-        '<label style="font-size:0.78rem;font-weight:500">Prefix</label>' +
-        '<input type="text" id="f-placeholder-mac-prefix" value="' + escapeHtml(phPrefix) + '" ' +
-          'placeholder="02:0F:5E" style="font-family:var(--font-mono);font-size:0.85rem">' +
-      '</div>' +
-      '<button class="btn btn-primary" id="btn-save-placeholder-mac">Save</button>' +
-    '</div>' +
-    '<ul class="hint" style="margin:0.25rem 0 1.25rem 1.2rem;padding:0">' +
-      '<li>1&ndash;5 hex octets. The first octet must be <strong>locally administered and unicast</strong> ' +
-        '(02, 06, 0A, 0E, &hellip;). A real vendor OUI is rejected: it would make that vendor\'s genuine ' +
-        'devices look like placeholders, and discovery would be free to overwrite them.</li>' +
-      '<li><strong>Changing this is not retroactive, in either direction.</strong> Reservations carrying the ' +
-        'old prefix stop being adoptable, and any reservation that happens to match the new one becomes ' +
-        'adoptable immediately.</li>' +
-      '<li>Installs that generated MACs before this setting existed used a bare <code>02</code>. Set the ' +
-        'prefix to <code>02</code> to have those recognized &mdash; noting that <code>02</code> alone also ' +
-        'matches genuine KVM, Docker and FortiOS-HA MACs.</li>' +
-    '</ul>';
 
   // ── Prefix Overrides ──
   html += '<h5 class="mac-id-section-heading">Prefix Overrides</h5>' +
@@ -810,8 +774,6 @@ function renderIdentificationTab() {
   wireDeviceTypeHandlers();
 
   // Placeholder MAC prefix
-  var phBtn = document.getElementById("btn-save-placeholder-mac");
-  if (phBtn) phBtn.addEventListener("click", savePlaceholderMacPrefix);
 
   // OUI override events
   document.getElementById("btn-add-oui-override").addEventListener("click", addOuiOverride);
@@ -897,35 +859,6 @@ function renderIdentificationTab() {
   _maybeRerenderCredentialsTabForMibOrProfile();
 }
 
-// Save the placeholder MAC prefix. The confirm is the load-bearing part: a
-// prefix change silently changes which existing reservations discovery is
-// allowed to overwrite, in both directions, and nothing else in the UI would
-// tell the operator that.
-async function savePlaceholderMacPrefix() {
-  var input = document.getElementById("f-placeholder-mac-prefix");
-  if (!input) return;
-  var prefix = input.value.trim();
-  var current = (_placeholderMac && _placeholderMac.prefix) || "";
-  if (!prefix) { showToast("Enter a prefix", "error"); return; }
-  if (prefix.toUpperCase() === current.toUpperCase()) { showToast("Prefix unchanged"); return; }
-
-  var ok = await showConfirm(
-    "Change the placeholder MAC prefix from " + current + " to " + prefix + "?\n\n"
-      + "Reservations still carrying " + current + " will no longer be adopted by discovery, and any "
-      + "reservation whose MAC happens to match " + prefix + " becomes adoptable immediately.\n\n"
-      + "This does not change any existing reservation by itself.",
-  );
-  if (!ok) return;
-
-  try {
-    _placeholderMac = await api.serverSettings.setPlaceholderMac({ prefix: prefix });
-    showToast("Placeholder MAC prefix saved");
-    renderIdentificationTab();
-  } catch (err) {
-    showToast(err.message, "error");
-  }
-}
-
 async function addOuiOverride() {
   var prefix = document.getElementById("f-oui-prefix").value.trim();
   var manufacturer = document.getElementById("f-oui-manufacturer").value.trim();
@@ -966,12 +899,12 @@ async function deleteOuiOverrideUI(prefix) {
 
 // ─── Device Icons ──────────────────────────────────────────────────────────
 //
-// Operator-uploaded images that override generic node shapes on the Device
-// Map's topology graph. Resolution at render time is most-specific-wins:
+// Operator-uploaded vendor logos for Charon's device views, keyed by
+// manufacturer + device type or model. Resolution is most-specific-wins:
 // manufacturer + model → manufacturer + assetType; both need a manufacturer
 // (deviceIconService.buildResolutionCandidates). Storage is bytes-in-DB
 // behind the /api/v1/device-icons endpoints; admin-only CRUD; image-serve
-// is auth-only with HTTP cache headers so the topology modal doesn't refetch
+// is auth-only with HTTP cache headers so a re-render doesn't refetch
 // on every render.
 
 var _deviceIconAssetTypes = [
@@ -1376,7 +1309,7 @@ function openDeviceTypeModal(id) {
       '<input type="text" id="f-dt-name" value="' + escapeHtml(t ? t.name : "") + '"' + (locked ? " disabled" : "") + ' placeholder="rack_pdu">' +
       '<div class="hint">' +
         (locked
-          ? 'Built-in. Monitoring, topology and dashboard behaviour key on this name, so it is fixed.'
+          ? 'Built-in. Other features key on this name, so it is fixed.'
           : (isNew
             ? 'Lowercase letters, digits, dash and underscore. Stored on every asset of this type — renaming later rewrites them all.'
             : 'Renaming rewrites every asset currently using this type, in one transaction.')) +
@@ -1661,7 +1594,7 @@ function deviceIconsCardHTML() {
   var html = '<div class="settings-card">' +
     '<h4>Device Icons</h4>' +
     '<p style="font-size:0.82rem;color:var(--color-text-secondary);margin-bottom:1rem">' +
-      'Upload PNG / JPEG / WebP images (max 256 KB) or SVG (max 32 KB, strict validation — no scripts, no external refs) to overlay vendor logos on the Device Map\'s topology graph. ' +
+      'Upload PNG / JPEG / WebP images (max 256 KB) or SVG (max 32 KB, strict validation — no scripts, no external refs) to show vendor logos for devices in Charon (endpoints of a matching manufacturer and type or model). ' +
       'Every icon is keyed to a <strong>manufacturer</strong> plus either an asset <strong>type</strong> or a specific <strong>model</strong>. ' +
       'The manufacturer field accepts any value — the dropdown only suggests names already on file. ' +
       'On render: <strong>manufacturer + model</strong> exact match wins over the <strong>manufacturer + type</strong> fallback. The asset\'s status (Up/Missed/Down/Recovering) keeps coloring the ring around the logo so both signals stay visible.' +
@@ -1937,16 +1870,6 @@ function _loadTagFilterSchema() {
   return _tagFilterSchemaPromise;
 }
 
-/** The category the Device Map owns. Server-authoritative; this is the fallback
- *  for a schema payload that predates the field. */
-function _regionCategoryOf(schema) {
-  // Charon adaptation: charon has no Device Map, so the server publishes
-  // regionCategory: null — honour that rather than falling back, or a tag an
-  // operator files under "Map Regions" would lose its filter builder.
-  if (schema && Object.prototype.hasOwnProperty.call(schema, "regionCategory")) return schema.regionCategory;
-  return "Map Regions";
-}
-
 /** Suggestion source for one field, mirroring the address book's mapping. */
 function _tagValueOptions(schema) {
   return function (field) {
@@ -1987,23 +1910,11 @@ function _tagStoredCondition(tag) {
  * The auto-assign section. `builder` must already exist (its field/operator
  * selects are rendered from the fetched vocabulary), which is why both modals
  * await the schema before assembling their body.
- *
- * A tag in the Device Map's category gets an explanation instead of a builder:
- * those tag names are already managed by the region reconcile through
- * RegionTagAssignment, and a second managed-sync engine on the same string would
- * spend every cycle undoing the first.
+
+ * (Polaris also exempts its Device Map's region category here; Charon has no
+ * map, so every tag can carry a device filter.)
  */
 function _tagFilterSectionHTML(tag, builder, schema) {
-  var regionCat = _regionCategoryOf(schema);
-  if (tag && (tag.category || "") === regionCat) {
-    return '<div class="form-group" style="border-top:1px solid var(--color-border);padding-top:12px;margin-top:4px">' +
-      '<label>Auto-assign</label>' +
-      '<p class="hint" style="margin:0">This tag belongs to the <strong>' + escapeHtml(regionCat) + '</strong> category, so the ' +
-        'Device Map applies it to every device inside its region &mdash; edit the region there to change who gets it. ' +
-        'It cannot also carry a device filter.</p>' +
-    '</div>';
-  }
-
   var stored = _tagStoredCondition(tag);
   var stuck = (tag && tag.assetFilterUnconvertible) || [];
   // A stuck filter is one the builder can't RENDER, not one that stopped
@@ -2199,19 +2110,15 @@ async function openAddTagModal() {
     showToast((err && err.message) || "Couldn't load the device-filter options", "error");
     return;
   }
-  var regionCat = _regionCategoryOf(schema);
 
   // Collect existing categories (including empty tracked ones) for the dropdown.
-  // The Device Map's category is deliberately NOT offered: every tag in it is
-  // minted by a region save and kept in step by the region reconcile, so a
-  // hand-added sibling would be owned by nothing. The server refuses it too.
   var existingCats = [];
   _tagsData.forEach(function (t) {
     var cat = t.category || "General";
-    if (cat !== regionCat && existingCats.indexOf(cat) === -1) existingCats.push(cat);
+    if (existingCats.indexOf(cat) === -1) existingCats.push(cat);
   });
   _emptyCategories.forEach(function (cat) {
-    if (cat !== regionCat && existingCats.indexOf(cat) === -1) existingCats.push(cat);
+    if (existingCats.indexOf(cat) === -1) existingCats.push(cat);
   });
   existingCats.sort();
 
@@ -2309,10 +2216,6 @@ async function openEditTagModal(id) {
     showToast((err && err.message) || "Couldn't load the device-filter options", "error");
     return;
   }
-  var regionCat = _regionCategoryOf(schema);
-  // A tag ALREADY in the Device Map's category keeps it (that is the map's own
-  // row); it just isn't offered as a destination for anything else.
-  var inRegionCat = (tag.category || "") === regionCat;
   // Fields a legacy filter uses that the builder can't render — see
   // _collectTagFilter for why the save has to know.
   var stuckFields = tag.assetFilterUnconvertible || [];
@@ -2320,16 +2223,14 @@ async function openEditTagModal(id) {
   var existingCats = [];
   _tagsData.forEach(function (t) {
     var cat = t.category || "General";
-    if (cat !== regionCat && existingCats.indexOf(cat) === -1) existingCats.push(cat);
+    if (existingCats.indexOf(cat) === -1) existingCats.push(cat);
   });
   _emptyCategories.forEach(function (cat) {
-    if (cat !== regionCat && existingCats.indexOf(cat) === -1) existingCats.push(cat);
+    if (existingCats.indexOf(cat) === -1) existingCats.push(cat);
   });
   existingCats.sort();
 
-  var catOptions = inRegionCat
-    ? '<option value="' + escapeHtml(regionCat) + '" selected>' + escapeHtml(regionCat) + '</option>'
-    : '<option value="General"' + (tag.category === "General" ? ' selected' : '') + '>General</option>';
+  var catOptions = '<option value="General"' + (tag.category === "General" ? ' selected' : '') + '>General</option>';
   existingCats.forEach(function (c) {
     if (c !== "General") {
       catOptions += '<option value="' + escapeHtml(c) + '"' + (tag.category === c ? ' selected' : '') + '>' + escapeHtml(c) + '</option>';

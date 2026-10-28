@@ -68,13 +68,12 @@ model Event {
 | `proxyConfig` | nginx controls (TLS 1.3 only, HSTS, HTTP/3, metrics allow-list, managed mode) | `src/services/proxyConfigService.ts` | `src/services/nginxRenderer.ts`, `src/services/webServerService.ts` |
 | `trustedCertificates` | operator-uploaded trusted CA records (CA certs only, private keys refused) | `src/services/trustedCaService.ts` | `src/services/httpClient.ts` (outbound TLS verify) |
 | `loginAccessConfig` | `{ enabled, ipScope, allowedCidrs }` for local password login | `src/services/webAccessSettingsService.ts` | `src/api/routes/auth.ts` |
-| `dashConfig` / `ipv6Config` | wallboard source scope / IPv6 switch (persist-only) | `src/services/webAccessSettingsService.ts` | Web Server tab |
+| `ipv6Config` | IPv6 switch (persist-only) | `src/services/webAccessSettingsService.ts` | Web Server tab |
 | `apiDocsConfig` | API-docs page source-IP scope (loopback / rfc1918 / custom; never public) | `src/services/apiDocsAccessService.ts` | API Tokens tab (no docs page is served yet) |
 | `ha.config` | HA nodes, load-balancer figures, replication password (envelope; never in a response) | `src/services/haService.ts` | `haService.ts`, `src/services/haEnrollmentService.ts` |
 | `dnsSettings` | resolver mode (standard / DoT / DoH) + servers | `src/services/dnsService.ts` | Identification tab |
 | `oui_database` / `oui_overrides` | IEEE OUI prefix → vendor map / operator overrides | `src/services/ouiService.ts` (+ `src/jobs/ouiRefresh.ts`) | `ouiService.ts` lookups |
 | `tagSettings` | asset-tag registry options | `src/services/assetTagService.ts` | Identification tab |
-| `reservationMacPlaceholder` | placeholder-MAC prefix (persist-only; no consumer yet) | `src/services/reservationMacService.ts` | Identification tab |
 
 #### Event action names
 

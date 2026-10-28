@@ -40,8 +40,9 @@ narrative by design. From rule 8 on, every invariant ends with a pointer to its
    `src/services/certPinService.ts → swapCanonicalPin()` keeps the previous pin accepted.
    `retirePin()` never removes the last remaining pin (`computeRetire()` → `last_pin`), and
    `POST /server-settings/agents/cert-pins/bulk-remove` refuses the pin of the certificate nginx
-   is serving (`getServedCertFingerprint()`). Pins are bare lowercase-hex SHA-256. Leans on
-   rule 4.
+   is serving (`getServedCertFingerprint()`). The fresh-install bootstrap
+   (`certPinService.computeBootstrap()`) adopts the served cert's pin only when NO canonical pin
+   exists — it never replaces one. Pins are bare lowercase-hex SHA-256. Leans on rule 4.
 8. **API tokens act only through their bound role** — A verified bearer token is authorised by
    the permission matrix of `ApiToken.roleId`, read fresh per request
    (`src/api/middleware/permissions.ts → resolveSnapshot()`), and wins over any ambient session.

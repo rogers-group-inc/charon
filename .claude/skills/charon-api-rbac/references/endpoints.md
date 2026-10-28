@@ -54,6 +54,12 @@ file.
 - `GET    /policies`
 - `POST   /policies`, `PUT /policies/:id`, `DELETE /policies/:id` — `policies write`
 
+### Public — login branding (`src/api/routes/settings/customization.ts` → `publicBrandingRouter`)
+Mounted at `/branding` BEFORE `requireAuth`; rate-limited (120/min). Returns only
+`{ appName, subtitle, logoUrl, logoVersion }` — the logo only when one is uploaded AND "show on
+login page" is on; never the app version (`brandingService.toPublicBranding`).
+- `GET    /branding`
+
 ### Public — HA node enrollment (`src/api/routes/settings/ha.ts` → `haEnrollRouter`)
 Mounted at `/ha/enroll` BEFORE `requireAuth`; rate-limited (`haEnrollLimiter`); CSRF-exempt at
 exactly this path. The caller holds a single-use token, never a session (business rule 9).
@@ -83,7 +89,6 @@ declares its own `requirePermission`. "sys" = `serverSettingsSystem`, "data" =
 - `GET|PUT /server-settings/dns`, `POST /dns/test` (write)
 - `GET /server-settings/oui`, `POST /oui/refresh`, `GET /oui/lookup/:prefix`,
   `GET|POST /oui/overrides`, `DELETE /oui/overrides/:prefix`
-- `GET|PUT /server-settings/reservation-mac`
 - root mount `/device-icons`: `GET /`, `POST /`, `PUT /:id`, `DELETE /:id`; `GET /:id/image` —
   no permission key (any signed-in user; SVG served under a sandboxing CSP)
 - root mount `/asset-types`: `GET /`, `GET /match-schema`, `POST /match-preview` (read),
@@ -101,7 +106,7 @@ declares its own `requirePermission`. "sys" = `serverSettingsSystem`, "data" =
 - `POST /server-settings/agents/cert-pins/bulk-add` (fullwrite, `adminActionLimiter`) — stage a pin
 - `POST /server-settings/agents/cert-pins/bulk-remove` (fullwrite, `adminActionLimiter`) — retire a pin; 409 for the
   served cert's pin; the last pin is never retired (business rule 4a)
-- `GET|PUT /server-settings/dash` (read / fullwrite), `GET|PUT /ipv6` (read / write),
+- `GET|PUT /server-settings/ipv6` (read / write),
   `GET|PUT /login-access` (read / fullwrite)
 
 **Maintenance + Retention** (`maintenance.ts`, mounted at `/server-settings`)
@@ -120,6 +125,7 @@ declares its own `requirePermission`. "sys" = `serverSettingsSystem`, "data" =
 
 **Customization** (`customization.ts`)
 - `GET /server-settings/branding` — no permission key (the sidebar reads it for every user);
+  the login page reads the trimmed public view at `GET /branding` (see Public — login branding);
   `PUT /branding`, `POST /branding/logo` (multipart, magic-byte checked, no SVG),
   `DELETE /branding/logo` — sys write
 - `GET|PUT /server-settings/reboot` (sys read / write)

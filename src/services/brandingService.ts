@@ -166,6 +166,34 @@ export async function getBranding(): Promise<BrandingView> {
   };
 }
 
+/** What the unauthenticated login page may see (GET /api/v1/branding). */
+export interface PublicBranding {
+  appName: string;
+  subtitle: string;
+  /** The custom logo, only when one is set AND "show on login page" is on. */
+  logoUrl: string | null;
+  logoVersion: string | null;
+}
+
+/**
+ * Pre-login view: name, subtitle and (opt-in) logo only. Deliberately no app
+ * version or sidebar flags, so an anonymous caller learns nothing the login
+ * page would not already show.
+ */
+export function toPublicBranding(view: Pick<BrandingView, "appName" | "subtitle" | "logoUrl" | "logoOnLogin" | "customLogo" | "logoVersion">): PublicBranding {
+  const showLogo = view.customLogo && view.logoOnLogin;
+  return {
+    appName: displayAppName(view),
+    subtitle: view.subtitle,
+    logoUrl: showLogo ? view.logoUrl : null,
+    logoVersion: showLogo ? view.logoVersion : null,
+  };
+}
+
+export async function getPublicBranding(): Promise<PublicBranding> {
+  return toPublicBranding(await getBranding());
+}
+
 async function saveBrandingRow(next: BrandingSettings): Promise<void> {
   await prisma.setting.upsert({
     where:  { key: BRANDING_KEY },

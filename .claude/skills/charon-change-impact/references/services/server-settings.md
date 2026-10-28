@@ -70,16 +70,15 @@ cheap and failure-tolerant.
 ## services/webAccessSettingsService.ts
 
 **What it owns:** source-IP-scoped settings — `loginAccessConfig` (Local Login Access),
-`dashConfig` (wallboard, persist-only) — and the `ipv6Config` switch (persist-only); short TTL
+the `ipv6Config` switch (persist-only); short TTL
 caches.
 **Public API:** `getLoginAccessSettings`, `saveLoginAccessSettings`,
-`previewLoginAccessSettings`, `loginSourceAllowed`, `isLoginSourceAllowed`, `getDashSettings`,
-`saveDashSettings`, `getIpv6Status`, `setIpv6Enabled`, `parseIpv6Config`, `isRoutableIpv6`,
+`previewLoginAccessSettings`, `loginSourceAllowed`, `isLoginSourceAllowed`, `getIpv6Status`, `setIpv6Enabled`, `parseIpv6Config`, `isRoutableIpv6`,
 `routableHostIpv6`, `parseScopedAccess`, `mergeScopedAccess`, `defaultScopedAccess`; types
 `ScopedAccessSettings`, `Ipv6Config`, `Ipv6Status`.
 **Cross-service deps:** `src/utils/ipScope.ts`.
 **Used by:** `src/api/routes/auth.ts` (`POST /auth/login`, `/auth/login/totp`),
-`src/api/routes/settings/webServer.ts` (`/login-access`, `/dash`, `/ipv6`).
+`src/api/routes/settings/webServer.ts` (`/login-access`, `/ipv6`).
 **Invariants:** the login gate applies to the local PASSWORD path only (SAML/OIDC never) and
 fails OPEN on a settings read error — a DB blip must never lock operators out.
 **When changing this:** preview before save (`previewLoginAccessSettings`) so an operator sees
@@ -112,7 +111,8 @@ stages, the root wrapper re-validates every line.
 
 **What it owns:** the `branding` Setting (app name, subtitle, logo URL, placement flags) and the
 uploaded logo file under `public/uploads/`.
-**Public API:** `getBranding`, `updateBranding`, `setCustomLogo`, `clearCustomLogo`,
+**Public API:** `getBranding`, `getPublicBranding` (+ pure `toPublicBranding` — the login page's
+trimmed view: name, subtitle, opt-in logo, never the version), `updateBranding`, `setCustomLogo`, `clearCustomLogo`,
 `detectImageMagic`, `hasCustomLogo`, `displayAppName`, `cleanBrandingText`,
 `logoVersionStamp`, `parseBranding`, `normalizeBrandingFlag`, `normalizeTemperatureUnit`,
 `BRANDING_KEY`, `LOGO_MAX_BYTES`; types `BrandingSettings`, `BrandingView`.
@@ -219,19 +219,6 @@ DNS-over-HTTPS) that never changes the process's own DNS.
 **Invariants:** overrides take priority over the IEEE map; only the leader refreshes on a
 schedule (rule 5).
 **When changing this:** a format change in the stored map must keep reading the old row.
-
----
-
-## services/reservationMacService.ts
-
-**What it owns:** the `reservationMacPlaceholder` Setting (placeholder-MAC prefix).
-**Public API:** `getReservationMacSettings`, `saveReservationMacSettings`,
-`normalizePlaceholderPrefix`, `normalizeReservationMacSettings`,
-`DEFAULT_PLACEHOLDER_MAC_PREFIX`; type `ReservationMacPlaceholderSettings`.
-**Cross-service deps:** `eventService`.
-**Used by:** `src/api/routes/settings/identification.ts` (`/reservation-mac`).
-**Invariants:** persist-only — Charon has no DHCP-reservation flow.
-**When changing this:** `tests/unit/macPlaceholder.test.ts`.
 
 ---
 

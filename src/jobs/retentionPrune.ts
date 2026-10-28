@@ -1,37 +1,43 @@
 /**
  * src/jobs/retentionPrune.ts — Leader-scheduled retention pruning.
  *
- * Trims the audit log to a configurable window (Setting "retention.eventDays",
- * default 90) and clears expired/old VerificationSessions. Runs on the leader
- * (web) on a daily-ish interval; deletes are batched and best-effort.
+ * Trims the audit log and clears expired/revoked VerificationSessions to the
+ * windows set on Server Settings → Retention (Setting "sampleRetention", see
+ * services/sampleRetentionService.ts; the pre-port "retention.eventDays" key
+ * still seeds the audit-log window). Runs on the leader (web) every 6h;
+ * deletes are best-effort. −1 = keep forever.
  */
 
 import { prisma } from "../db.js";
 import { startJobTimer, recordJobOutcome } from "../metrics.js";
 import { logger } from "../utils/logger.js";
+import { getSampleRetention, retentionCutoff } from "../services/sampleRetentionService.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // every 6h
 let timer: NodeJS.Timeout | null = null;
 
-async function eventRetentionDays(): Promise<number> {
-  const row = await prisma.setting.findUnique({ where: { key: "retention.eventDays" } });
-  const v = (row?.value as { days?: number } | undefined)?.days;
-  return typeof v === "number" && v > 0 ? v : 90;
-}
-
 export async function runRetentionPrune(): Promise<void> {
   const end = startJobTimer("retentionPrune");
   try {
-    const days = await eventRetentionDays();
-    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-    const events = await prisma.event.deleteMany({ where: { timestamp: { lt: cutoff } } });
-    // Expired verification sessions older than a day are no longer needed.
-    const sessionCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const sessions = await prisma.verificationSession.deleteMany({
-      where: { OR: [{ revokedAt: { lt: sessionCutoff } }, { expiresAt: { lt: sessionCutoff } }] },
-    });
-    if (events.count || sessions.count) {
-      logger.info({ events: events.count, sessions: sessions.count, retentionDays: days }, "retention prune");
+    const retention = await getSampleRetention();
+    const now = new Date();
+
+    let events = 0;
+    const eventCutoff = retentionCutoff(retention.events.days, now);
+    if (eventCutoff) {
+      events = (await prisma.event.deleteMany({ where: { timestamp: { lt: eventCutoff } } })).count;
+    }
+
+    let sessions = 0;
+    const sessionCutoff = retentionCutoff(retention.verificationSessions.days, now);
+    if (sessionCutoff) {
+      sessions = (await prisma.verificationSession.deleteMany({
+        where: { OR: [{ revokedAt: { lt: sessionCutoff } }, { expiresAt: { lt: sessionCutoff } }] },
+      })).count;
+    }
+
+    if (events || sessions) {
+      logger.info({ events, sessions, retention }, "retention prune");
     }
     recordJobOutcome("retentionPrune", "success");
   } catch (err: any) {

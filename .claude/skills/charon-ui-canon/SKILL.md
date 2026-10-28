@@ -1,6 +1,6 @@
 ---
 name: charon-ui-canon
-description: "Charon frontend (vanilla JS, no build step, public/): the shared Polaris UI design system (public/css/styles.css is a verbatim copy) plus the additive charon.css overlay, which file is the reference implementation of each UI pattern (table + modal + toast, cards + data-driven modal, tabs, the TableSF sortable / filterable / adjustable-column table), the page → permission-gate table, the shared modules never to re-derive (api.js, app.js window.Charon, table-sf.js, theme-init.js), and the agent's web GUI reusing the stylesheet. Load for any change under public/ or agent/ui/, any HTML/CSS/JS/theme work, a new page, table, modal, tab, badge or toast, nav or sidebar gating, Charon.can(), or a question about how the UI is built."
+description: "Charon frontend (vanilla JS, no build step, public/): the shared Polaris UI design system (public/css/styles.css is a verbatim copy) plus the additive charon.css overlay, which file is the reference implementation of each UI pattern (table + modal + toast, cards + data-driven modal, tabs, the Server Settings folder tabs + folder card with per-tab modules (settings-api.js / settings-ui.js), the TableSF sortable / filterable / adjustable-column table), the page → permission-gate table, the shared modules never to re-derive (api.js, app.js window.Charon, table-sf.js, theme-init.js), and the agent's web GUI reusing the stylesheet. Load for any change under public/ or agent/ui/, any HTML/CSS/JS/theme work, a new page, table, modal, tab, badge or toast, nav or sidebar gating, Charon.can(), or a question about how the UI is built."
 ---
 
 # Charon UI canon
@@ -38,9 +38,30 @@ commit (`/charon-docs-sync`).
 | Groups | `public/groups.html` | `groups:read` |
 | Integrations | `public/integrations.html` | `integrations:read` |
 | Events | `public/events.html` | `events:read` |
-| Server Settings | `public/server-settings.html` | `serverSettingsSystem:read` or `serverSettingsData:read` |
+| Server Settings | `public/server-settings.html` | nav: `serverSettingsSystem:read` or `serverSettingsData:read`; each tab gated separately (below) |
 | Login | `public/login.html` | public |
 | First-run setup | `public/setup.html` | public, only before setup completes |
+
+### Server Settings tab → gate (`public/js/server-settings.js → SETTINGS_TAB_PERMS`, read level)
+
+| Tab (data-tab) | Module | Gate |
+|---|---|---|
+| Identification (`identification`) | `server-settings-identification.js` | `serverSettingsSystem` |
+| Credentials (`credentials`) | `server-settings-credentials.js` | `credentials` |
+| Repository (`firmware`) | `server-settings-firmware.js` | `serverSettingsSystem` |
+| Customization (`customization`) | `server-settings-customization.js` | `serverSettingsSystem` |
+| Time & NTP (`ntp`) | `server-settings-ntp.js` | `serverSettingsSystem` |
+| Web Server (`certificates`) | `server-settings-webserver.js` (+ `pinned-tls-certs.js`) | `serverSettingsSystem` |
+| Authentication (`auth`) — Charon's own | `server-settings-auth.js` | `serverSettingsSystem` |
+| Maintenance (`maintenance`) | `server-settings-maintenance.js` | `serverSettingsData` |
+| Retention (`retention`) | `server-settings-maintenance.js` | `serverSettingsData` |
+| API Tokens (`api-tokens`) | `server-settings-api-tokens.js` | `apiTokens` |
+| High Availability (`ha`) | `server-settings-ha.js` | `serverSettingsSystem` |
+
+The tab hide is UX only — every route checks its own key (`charon-api-rbac` → endpoints.md),
+and a tab's mutating controls need the route's write / fullwrite level. Known gap: a user with
+only `credentials` or `apiTokens` read gets no sidebar link (the nav checks the two
+`serverSettings*` keys).
 
 ## Frontend conventions (always apply)
 
@@ -50,6 +71,11 @@ commit (`/charon-docs-sync`).
   `public/js/theme-init.js` (loaded first in `<head>`).
 - **Script order** on an app page: `theme-init.js` (head) → `api.js` → `app.js` → `table-sf.js`
   when used → the page script.
+- **The Server Settings page is a polaris port with its own client layer**: `settings-api.js`
+  (polaris `api.<namespace>.*`) and `settings-ui.js` (polaris `openModal` / `showConfirm` /
+  slide-overs / `permAtLeast`) are loaded ONLY by `public/server-settings.html`, where
+  `settings-api.js` replaces Charon's `api.js` (not loaded there). Never use them on another
+  page; a new tab module calls `settings-api.js`, not `window.api`.
 - **Escape everything interpolated into HTML** with `Charon.escapeHtml`.
 - **Gate controls with the key the route actually checks** — a client gate naming another
   page's key fails silently (the control never renders).

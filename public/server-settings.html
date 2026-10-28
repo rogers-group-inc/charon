@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Charon — Server Settings</title>
-  <script src="/js/theme-init.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <script src="/js/theme-init.js"></script>
   <link rel="stylesheet" href="/css/styles.css">
   <link rel="stylesheet" href="/css/charon.css">
 </head>
@@ -14,90 +14,77 @@
   <div class="layout">
     <aside class="sidebar" id="sidebar"></aside>
     <main class="main">
-      <div class="page-header"><h2>Server Settings</h2></div>
+      <div class="page-top-sticky">
+      <div class="page-header">
+        <h2>Server Settings</h2>
+      </div>
 
-      <nav class="page-tabs" id="tabs">
-        <button class="tab active" data-tab="certs">Certificates</button>
-        <button class="tab" data-tab="auth">Authentication</button>
-        <button class="tab" data-tab="ha">High Availability</button>
-        <button class="tab" data-tab="maint">Maintenance</button>
-      </nav>
+      <!-- Folder tabs (styles.css "Table head row") over one page-sized card
+           (.folder-card) that holds every tab's panel — the tabs open into it.
+           folder-head-card: the tab takes the card's glass, not a table
+           header's fill (folder-tabs.js gives each tab the .tab-glass layer
+           that carries it). Ported from polaris; "Authentication" is Charon's
+           own (login mode, which also drives the agent login GUI). -->
+      <div class="table-head-row folder-head-card">
+        <div class="page-tabs page-tabs-glass" id="settings-tabs">
+          <button class="page-tab active" data-tab="identification">Identification</button>
+          <button class="page-tab" data-tab="credentials">Credentials</button>
+          <button class="page-tab" data-tab="firmware">Repository</button>
+          <button class="page-tab" data-tab="customization">Customization</button>
+          <button class="page-tab" data-tab="ntp">Time &amp; NTP</button>
+          <button class="page-tab" data-tab="certificates">Web Server</button>
+          <button class="page-tab" data-tab="auth">Authentication</button>
+          <button class="page-tab" data-tab="maintenance">Maintenance</button>
+          <button class="page-tab" data-tab="retention">Retention</button>
+          <button class="page-tab" data-tab="api-tokens">API Tokens</button>
+          <button class="page-tab" data-tab="ha">High Availability</button>
+        </div>
+      </div>
+      </div>
 
-      <!-- Certificates -->
-      <section class="tab-panel" id="panel-certs">
-        <div class="settings-card">
-          <h4>Active certificate &amp; agent pin</h4>
-          <div id="certCurrent" class="muted">Loading…</div>
+      <!-- The card stays put and its panels scroll INSIDE it
+           (.folder-card-scroll), so its rounded top edge, the folder join and
+           its ring shadow never slide under the pinned header. -->
+      <div class="folder-card folder-body">
+        <div class="folder-card-scroll">
+          <div class="page-tab-panel active" id="tab-identification"></div>
+          <div class="page-tab-panel" id="tab-credentials"></div>
+          <div class="page-tab-panel" id="tab-firmware"></div>
+          <div class="page-tab-panel" id="tab-customization"></div>
+          <div class="page-tab-panel" id="tab-ntp"></div>
+          <div class="page-tab-panel" id="tab-certificates"></div>
+          <div class="page-tab-panel" id="tab-auth"></div>
+          <div class="page-tab-panel" id="tab-maintenance"></div>
+          <div class="page-tab-panel" id="tab-retention"></div>
+          <div class="page-tab-panel" id="tab-api-tokens"></div>
+          <div class="page-tab-panel" id="tab-ha"></div>
         </div>
-        <div class="settings-card" style="margin-top:1rem">
-          <h4>Upload / rotate certificate</h4>
-          <div class="form-group"><label for="serverName">Server name (SNI / SAN)</label><input id="serverName" type="text" placeholder="charon.example.com"></div>
-          <div class="form-group"><label for="certPem">Certificate (PEM)</label><textarea id="certPem" rows="5" style="width:100%;font-family:var(--font-mono)"></textarea></div>
-          <div class="form-group"><label for="keyPem">Private key (PEM)</label><textarea id="keyPem" rows="5" style="width:100%;font-family:var(--font-mono)"></textarea></div>
-          <p class="muted">The leaf SHA-256 becomes the agent pin. To rotate without re-enrolling agents: <em>stage</em> the new cert's pin first (agents accept old+new), swap the cert, then promote.</p>
-          <p id="certError" class="form-error" hidden></p>
-          <p id="certOk" class="form-success" hidden></p>
-          <div class="card-actions">
-            <button class="btn btn-primary" id="certUpload">Upload &amp; apply</button>
-            <button class="btn btn-secondary" id="certStage">Stage new pin only</button>
-          </div>
-        </div>
-      </section>
-
-      <!-- Authentication -->
-      <section class="tab-panel" id="panel-auth" hidden>
-        <div class="settings-card">
-          <h4>Active login mode</h4>
-          <p class="muted">Drives both operator login and the endpoint agent's login GUI.</p>
-          <div class="form-group">
-            <select id="authMode"><option value="local">Local (password + TOTP)</option><option value="saml">SAML</option><option value="oidc">OIDC</option></select>
-          </div>
-          <button class="btn btn-primary" id="authSave">Save</button>
-        </div>
-      </section>
-
-      <!-- HA -->
-      <section class="tab-panel" id="panel-ha" hidden>
-        <div class="settings-card">
-          <h4>Leader / replication</h4>
-          <div id="haStatus" class="muted">Loading…</div>
-        </div>
-      </section>
-
-      <!-- Maintenance -->
-      <section class="tab-panel" id="panel-maint" hidden>
-        <div class="settings-card">
-          <h4>Capacity</h4>
-          <div id="capacity" class="muted">Loading…</div>
-        </div>
-        <div class="settings-card" style="margin-top:1rem">
-          <h4>Backup / Restore</h4>
-          <div class="form-group"><label for="bkPass">Encryption password (optional, ≥8 chars)</label><input id="bkPass" type="password"></div>
-          <button class="btn btn-primary" id="bkCreate">Create backup</button>
-          <div id="backups" class="muted" style="margin-top:0.75rem">Loading…</div>
-        </div>
-        <div class="settings-card" style="margin-top:1rem">
-          <h4>Application updates</h4>
-          <div id="updateInfo" class="muted">Loading…</div>
-          <label style="display:block;margin:0.5rem 0"><input type="checkbox" id="bkBeforeUpdate" checked> Back up before updating</label>
-          <label style="display:block;margin:0.5rem 0"><input type="checkbox" id="confirmNode"> I confirm this node is safe to update (HA: standby first)</label>
-          <button class="btn btn-primary" id="updateStart" disabled>Update now</button>
-          <div id="updateProgress" class="muted" style="margin-top:0.5rem"></div>
-        </div>
-        <div class="settings-card" style="margin-top:1rem">
-          <h4>Agent installers</h4>
-          <div id="agentInstallers" class="muted">Loading…</div>
-        </div>
-        <div class="settings-card" style="margin-top:1rem">
-          <h4>Restart</h4>
-          <p class="muted">Restarts the whole charon.target (web, endpoint, enforcer, worker) and re-renders nginx.</p>
-          <button class="btn btn-secondary" id="restartBtn">Restart Charon</button>
-        </div>
-      </section>
+      </div>
     </main>
   </div>
-  <script src="/js/api.js"></script>
+
+  <script src="/js/page-top-curtain.js"></script>
+  <!-- settings-api.js is polaris's api.js (api.<namespace>.*, showToast,
+       escapeHtml, …); it replaces Charon's api.js on this page only. -->
+  <script src="/js/settings-api.js"></script>
+  <script src="/js/folder-tabs.js"></script>
+  <script src="/js/panel-lock.js"></script>
   <script src="/js/app.js"></script>
+  <script src="/js/settings-ui.js"></script>
+  <!-- Tag auto-assign device filter (Add/Edit Tag): the shared nested AND/OR
+       condition builder. -->
+  <script src="/js/condition-builder.js"></script>
+  <script src="/js/server-settings-ha.js"></script>
+  <script src="/js/server-settings-firmware.js"></script>
+  <script src="/js/pinned-tls-certs.js"></script>
+  <script src="/js/server-settings-ntp.js"></script>
+  <script src="/js/server-settings-identification.js"></script>
+  <script src="/js/server-settings-webserver.js"></script>
+  <script src="/js/server-settings-maintenance.js"></script>
+  <script src="/js/server-settings-customization.js"></script>
+  <script src="/js/server-settings-credentials.js"></script>
+  <script src="/js/server-settings-api-tokens.js"></script>
+  <script src="/js/server-settings-auth.js"></script>
   <script src="/js/server-settings.js"></script>
 </body>
 </html>

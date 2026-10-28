@@ -13,6 +13,7 @@ import { ensureSessionRoleSnapshot } from "../middleware/permissions.js";
 import { prisma } from "../../db.js";
 import { AppError } from "../../utils/errors.js";
 import { logEvent } from "../../services/eventService.js";
+import { isLoginSourceAllowed } from "../../services/webAccessSettingsService.js";
 
 const router = Router();
 
@@ -21,8 +22,18 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+// Local Login Access (Server Settings → Web Server): optional source-IP scope
+// on the PASSWORD path only — SAML/OIDC are never restricted. Fails open on a
+// settings read error (webAccessSettingsService) so a DB blip is never a lockout.
+async function assertLoginSourceAllowed(ip: string | undefined): Promise<void> {
+  if (!(await isLoginSourceAllowed(ip ?? ""))) {
+    throw new AppError(403, "Local login is not permitted from this network");
+  }
+}
+
 router.post("/login", async (req, res, next) => {
   try {
+    await assertLoginSourceAllowed(req.ip);
     const { username, password } = loginSchema.parse(req.body);
     const result = await localLogin(username, password);
     if (result.status === "mfa_required") {
@@ -42,6 +53,7 @@ const totpSchema = z.object({ code: z.string().min(1) });
 
 router.post("/login/totp", async (req, res, next) => {
   try {
+    await assertLoginSourceAllowed(req.ip);
     const pendingId = req.session.mfaPendingUserId;
     if (!pendingId) throw new AppError(400, "No login in progress");
     const { code } = totpSchema.parse(req.body);

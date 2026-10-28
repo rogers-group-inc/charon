@@ -9,8 +9,12 @@
   `integrationConfig.SECRET_FIELDS`). `enforcementMode` defaults `dry_run`; flipping to
   `enforce` needs the `enforcement` fullwrite permission and human review (business rule 2).
   `lastTestAt` / `lastTestOk` are stamped by the health-check job.
-- **Credential** — a stored connection credential (`ldap`, `restapi`, …) used by integrations;
-  secret fields are AES-256-GCM envelopes.
+- **Credential** — a stored connection credential; secret fields are AES-256-GCM envelopes.
+  The Server Settings → Credentials tab owns the `snmp` / `winrm` / `ssh` / `restapi` / `http`
+  types (`src/services/credentials/credentialService.ts → CREDENTIAL_TYPES`) and sees ONLY
+  those — a row of any other type is invisible to it (404 by id). `createdBy` is the ownership
+  column for the `credentials` key: write = your own rows, fullwrite = any row; null = unowned
+  (fullwrite-only), never backfilled. Business rule 3a.
 - **DirectoryObject** — a read-only mirror of a directory user / group / OU, unique on
   `(integrationId, kind, externalId)`. `attributes` feeds custom-group rules. Charon never
   writes back to the directory.
@@ -51,10 +55,16 @@ model Integration {
 model Credential {
   id        String   @id @default(uuid())
   name      String   @unique
-  type      String // "ldap" | "restapi" | ...
+  type      String // "snmp" | "winrm" | "ssh" | "restapi" | "http" (Server Settings → Credentials)
   config    Json     @default("{}") // secret fields are AES-256-GCM envelopes
+  // Ownership dimension for the `credentials` function key (ported from
+  // polaris): write = edit/delete/test your own rows, fullwrite = any row. A
+  // username, no FK; null = UNOWNED (fullwrite-only) — never backfilled.
+  createdBy String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  customWidgets ManufacturerCustomWidget[] @relation("ManufacturerCustomWidgetCredential")
 
   @@index([type])
   @@map("credentials")

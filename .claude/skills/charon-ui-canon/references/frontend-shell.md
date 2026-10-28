@@ -16,6 +16,11 @@ when `can(permKey, "read")`, and shows Server Settings when either `serverSettin
 `permissions[key]` (from `/auth/me`) against the level, defaulting to `read`. A new page needs a
 `NAV_ITEMS` row with the key its mount checks (`charon-api-rbac` → routes-overview.md).
 
+The sidebar brand (name, subtitle, optional logo) comes from `GET /server-settings/branding`
+(Server Settings → Customization), cached in localStorage (`charon-branding`) so it paints
+without a flash; only Charon's fixed `/uploads/custom-logo.(png|jpg|webp)` URLs render as a
+logo (`app.js → brandHtml()`).
+
 ## `window.Charon`
 
 `init`, `toast`, `escapeHtml`, `csrfHeaders`, `can`, `user` — exported by `public/js/app.js`.

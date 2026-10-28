@@ -30,6 +30,30 @@ GSLB steers clients to the active DC using each node's `/health`.
   DB fails over. The standby's `web` keeps retrying and acquires the lock once
   it's free — at which point it resumes schedulers and Fortinet sync.
 
+## Building the pair from the UI (Server Settings → High Availability)
+
+The tab drives `setup-ha.sh` without anyone copying secrets by hand:
+
+1. Enter both nodes (name + cluster address; the standby's must be an IP) and
+   **Enable**. Charon generates the replication password and stores it
+   encrypted in `ha.config` — nothing on either host changes yet.
+2. **Generate** the primary script, run it as root on the primary. It pins the
+   server leaf SHA-256 (the agent pin), registers with a single-use token
+   (SHA-384-hashed server-side, 24 h TTL) and waits.
+3. **Approve** the request in the tab after checking the source address + SSH
+   host keys. The script downloads its bundle once (same source address only)
+   and runs `setup-ha.sh --role primary --repl-pass-file …`.
+4. Repeat for the standby. Its bundle also carries the primary's `.env`
+   (same `CHARON_DATA_KEY`) and nginx leaf + key (agents pin that leaf), and its
+   script runs `setup-ha.sh --role standby --repl-pass-file …`, then installs
+   both and starts `charon.target` as a follower.
+
+Every mutation needs `serverSettingsSystem` **fullwrite** and logs an Event.
+The node-facing endpoints (`POST /api/v1/ha/enroll`, `GET /api/v1/ha/enroll/:req`)
+are unauthenticated by design and rate limited. **Disable** only changes
+configuration; the generated **teardown script** (run on the node that keeps the
+database) removes the replication setup. Container installs are not covered.
+
 ## Normal operation
 
 - DC-A Postgres is primary; DC-B streams. DC-A `web` holds the advisory lock →

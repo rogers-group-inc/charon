@@ -38,6 +38,15 @@ Graceful shutdown stops leader election + pg-boss on SIGTERM/SIGINT.
 Leader-only interval producers also run in-process: health-check scheduler,
 retention prune.
 
+In-process leader-only jobs (no pg-boss queue; started in `app.ts → startSchedulers()`, stopped
+in `stopSchedulers()`):
+
+| Job | Cadence | What it does |
+|---|---|---|
+| `src/jobs/retentionPrune.ts` | every 6 h | trims Events + expired/revoked VerificationSessions to the `sampleRetention` windows |
+| `src/jobs/ouiRefresh.ts` | weekly (fetches on first run if missing / stale) | refreshes the IEEE OUI database (`ouiService.refreshOuiDatabase()`) |
+| `src/jobs/scheduledBackup.ts` | 5-min tick (first tick after 2 min), runs when `isScheduledBackupDue()` | takes a scheduled backup, prunes old scheduled copies, optional off-host copy; default off |
+
 ## HA / leader election
 
 `leaderElection.ts` holds a dedicated pg client and calls

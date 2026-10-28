@@ -1,6 +1,6 @@
 ---
 name: charon-business-rules
-description: "The numbered Charon business rules — each invariant and the incident that forced it. Load BEFORE changing any behavior around Fortinet writes and the charon-* ownership namespace, the dry-run / enforce toggle (EnforcementMode), at-rest secrets and their masking, bearer / API-token / invitation-code hashing, CHARON_DATA_KEY, agent trust (leaf-cert pin, dual-pin rotation, bearer revocation), leader election and which schedulers run where, process roles and roleConfig() flags, or anything that could put secrets, hostnames or real data into this public repo; whenever code, a commit or a doc cites 'business rule N' / 'rule N' / 'rule Na'; and when asked to add or retire a rule, or which rule number is free next."
+description: "The numbered Charon business rules — each invariant and the incident that forced it. Load BEFORE changing any behavior around Fortinet writes and the charon-* ownership namespace, the dry-run / enforce toggle (EnforcementMode), at-rest secrets and their masking, bearer / API-token / invitation-code hashing, CHARON_DATA_KEY, agent trust (leaf-cert pin, dual-pin rotation, bearer revocation), leader election and which schedulers run where, API-token role binding, HA node enrollment, Credentials-tab secrets, process roles and roleConfig() flags, or anything that could put secrets, hostnames or real data into this public repo; whenever code, a commit or a doc cites 'business rule N' / 'rule N' / 'rule Na'; and when asked to add or retire a rule, or which rule number is free next."
 user-invocable: false
 ---
 
@@ -37,8 +37,10 @@ rule from 8 on has a narrative file.
 | You are about to… | Read |
 |---|---|
 | write to a Fortinet device, name a Fortinet object, add a policy push | 1, 2 |
-| touch a secret field, a token, a code, `CHARON_DATA_KEY` | 3 |
-| change enrollment, the agent's TLS trust, cert upload or rotation | 4 |
+| touch a secret field, a token, a code, `CHARON_DATA_KEY` | 3, 3a, 9 |
+| change enrollment, the agent's TLS trust, cert upload or rotation | 4, 4a |
+| change API-token auth, token roles, CSRF for bearers | 8 |
+| change HA node enrollment or the `/ha/enroll` surface | 9 |
 | add a scheduler, a periodic job, anything that must run exactly once | 5 |
 | gate code on the process role | 6 |
 | add a fixture, seed, migration, test data, example config | 7 |
@@ -62,7 +64,9 @@ rule from 8 on has a narrative file.
 ## Reference files
 
 - [references/invariants.md](references/invariants.md) — every rule's invariant, in number order.
-- Narratives: none yet (rules 1–7 have none by design). Add `narrative-N.md` links here.
+- Narratives (rules 1–7 and lettered clauses on them have none by design):
+  [references/narrative-8.md](references/narrative-8.md) (rule 8),
+  [references/narrative-9.md](references/narrative-9.md) (rule 9).
 
 ## Index
 
@@ -71,10 +75,14 @@ rule from 8 on has a narrative file.
 | 1 | Fortinet ownership scoping — Charon only creates/edits `charon-*` objects | invariants | — |
 | 2 | Enforcement is dry-run by default | invariants | — |
 | 3 | Secrets never leave plaintext | invariants | — |
+| 3a | Credentials-tab secrets are sealed and never returned; integration-owned rows are invisible to the tab | invariants | — |
 | 4 | Agent trust = pin + bearer | invariants | — |
+| 4a | A pin rotation can never strand the fleet (unstaged pin refused; last / served pin never retired) | invariants | — |
 | 5 | Leader-only singletons | invariants | — |
 | 6 | Roles branch on flags, never the role string | invariants | — |
 | 7 | The repo is public — no secrets, real hostnames, PII/COI/CIM | invariants | — |
+| 8 | API tokens act only through their bound role | invariants | narrative-8 |
+| 9 | An HA enrollment token buys only the right to ask | invariants | narrative-9 |
 
 Related: `charon-change-impact` (where each rule is enforced in code),
 `charon-enforcement` (rules 1, 2, 5 in the pipeline), `charon-agent` (rule 4).

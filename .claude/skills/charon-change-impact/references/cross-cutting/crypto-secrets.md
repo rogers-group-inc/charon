@@ -16,10 +16,20 @@ path as the documented next step. **Expert crypto review required before product
 - `src/services/integrationConfig.ts → writeConfig()` (Integration.config secrets).
 - `agentTokenService`, `apiTokenService`, `invitationCodeService` (hash-only token storage).
 - `src/services/backupService.ts` (optional AES-256-GCM backups, scrypt-derived key).
+- `src/services/credentials/credentialService.ts → sealSecrets()` (Credentials-tab secrets,
+  rule 3a); `src/services/haService.ts` (`ha.config` replication password);
+  `src/services/backupScheduleService.ts` (scheduled-backup passphrase) — all `encryptSecret()`
+  envelopes.
+- `src/services/haEnrollmentService.ts` (HA enrollment token + poll handle, SHA-384 only;
+  rule 9).
 
 **Readers:**
 - `src/utils/crypto.ts → decryptSecret()`, `timingSafeHexEqual()`;
-  `integrationConfig → decryptConfig()` / `readConfigMasked()`.
+  `integrationConfig → decryptConfig()` / `readConfigMasked()`;
+  `credentialService → openSecrets()` (server-side probes only — never returned);
+  `haService → revealReplicationPassword()` (only into an approved node bundle);
+  `src/services/httpClient.ts` trusts the operator-uploaded CAs (`trustedCaService`) on top of
+  the system roots for outbound verify.
 
 **Invariants:**
 - `CHARON_DATA_KEY` is required in prod; losing it makes stored secrets unrecoverable — back it

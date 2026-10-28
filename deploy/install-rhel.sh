@@ -147,11 +147,21 @@ sed -e "s|{{SERVER_NAME}}|${SERVER_NAME:-_}|g" \
     -e "s|{{WEB_PORT}}|3000|g" -e "s|{{ENDPOINT_PORT}}|3001|g" \
     -e "s|{{CERT_PATH}}|$APP_DIR/state/certs/charon.crt|g" \
     -e "s|{{KEY_PATH}}|$APP_DIR/state/certs/charon.key|g" \
+    -e "s|{{HTTPS_PORT}}|443|g" -e "s|{{SSL_PROTOCOLS_LIST}}|TLSv1.3|g" \
+    -e "s|{{QUIC_LISTEN}}|listen 443 quic reuseport;      # HTTP/3|g" \
+    -e "s|{{ALT_SVC_HEADER}}|add_header Alt-Svc 'h3=\":443\"; ma=86400' always;   # advertise HTTP/3|g" \
+    -e "s|{{HSTS_HEADER}}|add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always; proxy_hide_header Strict-Transport-Security;|g" \
+    -e "s|{{METRICS_ALLOW}}|deny all;|g" \
     "$APP_DIR/deploy/nginx/charon.conf.template" > /etc/nginx/conf.d/charon.conf
+# ^ The proxy-control defaults above match proxyConfigService.defaultProxyConfig();
+#   Server Settings → Web Server → nginx Proxy re-renders them once adopted.
 
 # Scoped sudoers so the app can apply nginx config from the Certificates tab.
 echo "$CHARON_USER ALL=(root) NOPASSWD: $APP_DIR/deploy/scripts/charon-nginx-apply.sh" > /etc/sudoers.d/charon-nginx
 chmod 440 /etc/sudoers.d/charon-nginx
+# …and chrony sources from Server Settings → Time & NTP (wrapper re-validates).
+echo "$CHARON_USER ALL=(root) NOPASSWD: $APP_DIR/deploy/scripts/charon-chrony-apply.sh" > /etc/sudoers.d/charon-chrony
+chmod 440 /etc/sudoers.d/charon-chrony
 
 # ── 9. firewalld + SELinux ────────────────────────────────────────────────────────
 log "Configuring firewalld + SELinux…"

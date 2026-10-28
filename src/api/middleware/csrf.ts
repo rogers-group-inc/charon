@@ -33,6 +33,29 @@ const EXEMPT_PATH_PREFIXES = [
   "/api/v1/agent/", // public agent auth-config probe (GET only anyway)
 ];
 
+// HA node enrollment (Server Settings → High Availability) — a bootstrap
+// script on another host with no session; the single-use token in the body is
+// the defense. Matched EXACTLY (plus a trailing-slash segment), never as a bare
+// prefix: "/api/v1/ha/enrollments/:id/approve" is a session route that must
+// keep its CSRF check.
+const HA_ENROLL_PATH = "/api/v1/ha/enroll";
+function isHaEnrollPath(path: string): boolean {
+  return path === HA_ENROLL_PATH || path.startsWith(HA_ENROLL_PATH + "/");
+}
+
+/**
+ * External API-token callers (SIEM, scripts) have no browser session, so the
+ * synchronizer token cannot apply. A browser cannot attach an Authorization
+ * header cross-origin without a CORS preflight Charon never grants, so a
+ * bearer-carrying request with NO logged-in session is exempt. With a session
+ * present the normal check still runs.
+ */
+function isSessionlessBearer(req: Request): boolean {
+  if (req.session?.userId) return false;
+  const auth = req.get("authorization") || "";
+  return /^Bearer\s+\S+$/i.test(auth);
+}
+
 export function csrfMiddleware(req: Request, res: Response, next: NextFunction) {
   if (req.session) {
     if (!req.session.csrfToken) {
@@ -51,6 +74,8 @@ export function csrfMiddleware(req: Request, res: Response, next: NextFunction) 
 
   if (SAFE_METHODS.has(req.method)) return next();
   if (EXEMPT_PATH_PREFIXES.some((prefix) => req.path.startsWith(prefix))) return next();
+  if (isHaEnrollPath(req.path)) return next();
+  if (isSessionlessBearer(req)) return next();
 
   const fromHeader = req.get(HEADER_NAME);
   const fromSession = req.session?.csrfToken;

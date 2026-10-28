@@ -120,6 +120,32 @@
     ["/events.html", "Events", "activity", "events"],
   ];
 
+  // ─── Branding (Server Settings → Customization) ──────────────────────────────
+  // GET /server-settings/branding, cached in localStorage like polaris so the
+  // sidebar paints the saved name/logo on first render without a flash.
+  var BRAND_CACHE_KEY = "charon-branding";
+  var branding = (function () {
+    try { return JSON.parse(localStorage.getItem(BRAND_CACHE_KEY) || "null"); } catch (e) { return null; }
+  })();
+  function setBranding(b) {
+    if (!b || typeof b !== "object") return;
+    branding = b;
+    try { localStorage.setItem(BRAND_CACHE_KEY, JSON.stringify(b)); } catch (e) { /* storage blocked */ }
+    renderNav();
+  }
+  function brandHtml() {
+    var b = branding || {};
+    var name = typeof b.appName === "string" ? b.appName : "Charon";
+    var sub = typeof b.subtitle === "string" ? b.subtitle : "Zero Trust Network Access";
+    // Only our own fixed upload names (server: brandingService.hasCustomLogo).
+    var logo = b.customLogo && b.logoOnSidebar !== false && /^\/uploads\/custom-logo\.(png|jpg|webp)$/.test(b.logoUrl || "")
+      ? b.logoUrl + (b.logoVersion ? "?v=" + encodeURIComponent(b.logoVersion) : "")
+      : "";
+    return (logo ? '<img class="sidebar-logo" src="' + escapeHtml(logo) + '" alt="">' : "") +
+      (name ? '<h1 style="font-size:1.15rem;font-weight:700;margin:0.5rem 0 0;color:var(--color-text-primary);text-align:center;letter-spacing:1px;text-transform:uppercase">' + escapeHtml(name) + "</h1>" : "") +
+      (sub ? '<p style="font-size:0.72rem;color:var(--color-text-tertiary);margin:0.15rem 0 0;text-align:center;letter-spacing:0.5px">' + escapeHtml(sub) + "</p>" : "");
+  }
+
   function renderNav() {
     var sidebar = document.getElementById("sidebar");
     if (!sidebar) return;
@@ -131,13 +157,13 @@
       return '<li><a href="' + n[0] + '" class="' + active.trim() + '">' + ICONS[n[2]] + "<span>" + n[1] + "</span></a></li>";
     }).join("");
 
-    var showSettings = can("serverSettingsSystem", "read") || can("serverSettingsData", "read");
+    // Any key that unlocks a Server Settings tab (SETTINGS_TAB_PERMS in
+    // server-settings.js) earns the link — Credentials and API Tokens included.
+    var showSettings = ["serverSettingsSystem", "serverSettingsData", "credentials", "apiTokens"]
+      .some(function (k) { return can(k, "read"); });
 
     sidebar.innerHTML =
-      '<div class="sidebar-brand">' +
-        '<h1 style="font-size:1.15rem;font-weight:700;margin:0.5rem 0 0;color:var(--color-text-primary);text-align:center;letter-spacing:1px;text-transform:uppercase">Charon</h1>' +
-        '<p style="font-size:0.72rem;color:var(--color-text-tertiary);margin:0.15rem 0 0;text-align:center;letter-spacing:0.5px">Zero Trust Network Access</p>' +
-      "</div>" +
+      '<div class="sidebar-brand">' + brandHtml() + "</div>" +
       '<ul class="sidebar-nav">' + items + "</ul>" +
       '<div style="margin-top:auto">' +
         (showSettings
@@ -174,6 +200,11 @@
           .then(function (r) { return r.ok ? r.json() : null; })
           .then(function (d) { if (d && d.version) { currentUser._version = d.version; var v = document.getElementById("sidebar-version"); if (v) v.textContent = "v" + d.version; } })
           .catch(function () {});
+        // Saved branding (name / subtitle / logo) — repaints only if it changed.
+        fetch("/api/v1/server-settings/branding", { credentials: "same-origin" })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (b) { if (b && JSON.stringify(b) !== JSON.stringify(branding)) setBranding(b); })
+          .catch(function () {});
         if (typeof opts.onUser === "function") opts.onUser(user);
         return user;
       })
@@ -187,5 +218,6 @@
     csrfHeaders: csrfHeaders,
     can: function (k, l) { return can(k, l); },
     user: function () { return currentUser; },
+    setBranding: setBranding,
   };
 })();

@@ -19,7 +19,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { enroll } from "../../services/agentEnrollmentService.js";
 import { ingestPosture } from "../../services/postureService.js";
-import { getAgentCertPins } from "../../services/certPinService.js";
+import { getAgentCertPins, recordDeliveredPins } from "../../services/certPinService.js";
 import { getActiveAuthMode, localLogin } from "../../services/authService.js";
 import { bindVerification, clearBinding } from "../../services/verificationService.js";
 import { requireAgentBearer } from "../middleware/auth.js";
@@ -77,6 +77,9 @@ agentsRouter.post("/posture", async (req, res, next) => {
 agentsRouter.get("/config", async (req, res, next) => {
   try {
     const [pins, mode] = await Promise.all([getAgentCertPins(), getActiveAuthMode()]);
+    // Record the pin set this agent was handed — Server Settings → Web Server's
+    // rotate dialog tallies uptake from it. Best-effort: never fail the config.
+    await recordDeliveredPins(req.agent!.endpointId, pins).catch(() => undefined);
     res.json({ serverCertPins: pins, authMode: mode, heartbeatIntervalSec: 60 });
   } catch (err) { next(err); }
 });

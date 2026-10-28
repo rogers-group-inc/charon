@@ -34,6 +34,35 @@ function getInsecureDispatcher(): Agent {
   return insecureDispatcher;
 }
 
+// Verifying dispatcher that ALSO trusts the operator-uploaded CAs (Server
+// Settings → Web Server → Trusted CAs). undefined = no extra CAs → Node's
+// default (system roots). Re-read every 60s so an upload made in the web
+// process reaches worker/enforcer processes without a restart. A read failure
+// keeps the default trust store — it never disables verification.
+const TRUSTED_CA_TTL_MS = 60_000;
+let trustedCache: { at: number; key: string; dispatcher: Agent | undefined } | null = null;
+async function getTrustedDispatcher(): Promise<Agent | undefined> {
+  if (trustedCache && Date.now() - trustedCache.at < TRUSTED_CA_TTL_MS) return trustedCache.dispatcher;
+  let pems: string[];
+  try {
+    const { getTrustedCaPems } = await import("./trustedCaService.js");
+    pems = await getTrustedCaPems();
+  } catch {
+    return trustedCache?.dispatcher;
+  }
+  const key = pems.join("\n");
+  if (trustedCache && trustedCache.key === key) {
+    trustedCache.at = Date.now();
+    return trustedCache.dispatcher;
+  }
+  const { rootCertificates } = await import("node:tls");
+  const old = trustedCache?.dispatcher;
+  const dispatcher = pems.length ? new Agent({ connect: { ca: [...rootCertificates, ...pems] } }) : undefined;
+  trustedCache = { at: Date.now(), key, dispatcher };
+  if (old) void old.close().catch(() => undefined);
+  return dispatcher;
+}
+
 export interface HttpOptions {
   method?: string;
   headers?: Record<string, string>;
@@ -77,7 +106,7 @@ async function attempt(url: string, opts: HttpOptions): Promise<Response> {
         body: opts.body,
         signal: controller.signal,
         // @ts-expect-error — undici dispatcher is accepted by Node's fetch at runtime
-        dispatcher: opts.verifyTls === false ? getInsecureDispatcher() : undefined,
+        dispatcher: opts.verifyTls === false ? getInsecureDispatcher() : await getTrustedDispatcher(),
       });
     } catch (err: any) {
       if (opts.signal?.aborted && !timedOut) throw err; // intentional external abort — never retry

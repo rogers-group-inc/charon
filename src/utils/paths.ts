@@ -36,3 +36,10 @@ export const UPLOADS_DIR = resolve(STATE_DIR, "public", "uploads");
 // tarball drops per-platform installers under data/agents/<version>/ plus a
 // manifest.json the Maintenance tab serves from. Preserved across self-updates.
 export const AGENT_DIST_DIR = resolve(STATE_DIR, "data", "agents");
+
+// Server Settings → Repository: firmware images (bytes only — identity lives
+// in the firmware_images table). Uploads stream into .incoming first so the
+// final rename to <id>.out is on one filesystem and atomic. Never under
+// public/: an image is served to nothing.
+export const FIRMWARE_DIR = resolve(STATE_DIR, "data", "firmware");
+export const FIRMWARE_INCOMING_DIR = resolve(FIRMWARE_DIR, ".incoming");

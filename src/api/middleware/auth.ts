@@ -29,17 +29,33 @@ function extractBearerToken(req: Request): string | null {
 }
 
 /**
- * Resolve a bearer token (if any) and attach it to req.apiToken. Always calls
- * next() — does not enforce on its own. Mounted globally below session/CSRF so
- * downstream routes can opt in via the hybrid guards.
+ * Resolve a bearer token (if any) and attach it to req.apiToken. Does not
+ * enforce permissions on its own — requirePermission resolves the token's
+ * bound role downstream. Mounted globally below session/CSRF.
+ *
+ * One refusal happens here (polaris port): a REAL token presented from outside
+ * its trusted hosts is answered 403 naming the address Charon saw — behind a
+ * proxy with `trust proxy` unset that is the proxy's own address, the most
+ * likely reason a correct list "fails". Unknown/revoked/expired tokens fall
+ * through as "no token" and the downstream guard answers 401.
  */
 export async function attachApiToken(req: Request, _res: Response, next: NextFunction) {
   try {
     const raw = extractBearerToken(req);
     if (!raw) return next();
     const callerIp = (req.ip || req.socket.remoteAddress || null) ?? null;
-    const token = await verifyToken(raw, callerIp);
-    if (token) req.apiToken = token;
+    const result = await verifyToken(raw, callerIp);
+    if (result.ok) {
+      req.apiToken = result.token;
+    } else if (result.reason === "untrusted_host") {
+      return next(
+        new AppError(
+          403,
+          `API token "${result.tokenName}" is not accepted from ${result.callerIp || "this source address"} — ` +
+            "add the address to the token's trusted hosts, or if Charon sits behind a reverse proxy, check the trust-proxy setting",
+        ),
+      );
+    }
     next();
   } catch {
     next();

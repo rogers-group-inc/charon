@@ -8,7 +8,8 @@
   enforcement apply, integration edit) records one via
   `src/services/eventService.ts → logEvent()`. Best-effort: a failed write never breaks the
   underlying operation. `levelRank` (0 info, 1 warning, 2 error) is the sortable form of
-  `level`. Trimmed by `src/jobs/retentionPrune.ts` to `retention.eventDays` (default 90).
+  `level`. Trimmed by `src/jobs/retentionPrune.ts` to the `sampleRetention` Setting's `events` window
+  (default 90 days; never 0).
 
 ## Schema
 
@@ -51,11 +52,29 @@ model Event {
 | Key | Shape / meaning | Written by | Read by |
 |---|---|---|---|
 | `agent.cert_pins` | `{ canonical, staged[] }` — leaf-cert SHA-256 pins handed to agents | `src/services/certPinService.ts` | enrollment, `GET /agents/config` |
-| `cert.leaf` | the uploaded server leaf certificate | `src/api/routes/serverSettings.ts` (certificates) | `serverSettings.ts`, nginx render |
+| `cert.leaf` | `{ pem, certPath, keyPath }` — the served leaf certificate (the key stays on disk, 0600) | `src/services/webServerService.ts → rotateCertAndKey()` | `webServerService.ts` (HTTPS facts, rotate) |
 | `auth.mode` | the active AuthMode (operators and the agent login GUI) | `serverSettings.ts` (`PUT /auth-mode`) | `src/services/authService.ts → getActiveAuthMode()` |
 | `identification.name` | the server's display name | TODO: populate when a writer exists | `serverSettings.ts` (`GET /identification`) |
 | `posture.policy` | the operator-configured posture policy | `src/services/postureService.ts → setPosturePolicy()` | `postureService.ts → evaluatePosture()` |
-| `retention.eventDays` | audit-log retention window in days (default 90) | TODO: populate when a writer exists | `src/jobs/retentionPrune.ts` |
+| `retention.eventDays` | LEGACY audit-log window; only seeds `sampleRetention.events` when that row is absent | none | `src/services/sampleRetentionService.ts` |
+| `sampleRetention` | `{ events, verificationSessions }` day windows (-1 = forever; events never 0) | `src/services/sampleRetentionService.ts` (Retention tab) | `src/jobs/retentionPrune.ts`, `src/services/capacityService.ts` |
+| `agentEventLog` | agent OS event-log switch + filter (persist-only; no agent consumer yet) | `src/services/agentEventLogService.ts` | Retention tab |
+| `backupSchedule` | scheduled-backup cadence, retain count, optional passphrase (envelope), off-host dir | `src/services/backupScheduleService.ts` | `src/jobs/scheduledBackup.ts` |
+| `backup_history` | backup records, newest last, capped at 50 | `src/services/backupService.ts` | Maintenance tab |
+| `update.train` / `update.skip_backup` | updater channel / skip the pre-update backup | `src/services/updateService.ts` | `updateService.ts` |
+| `ntp` | `{ enabled, mode, servers[], timezoneOverride }` (timezone is display-only) | `src/services/ntpService.ts` | Time & NTP tab, chrony apply |
+| `branding` | app name / subtitle / logo URL + placement flags | `src/services/brandingService.ts` | `public/js/app.js` sidebar (`GET /server-settings/branding`) |
+| `rebootConfig` | reboot-reason requirement (persist-only; no consumer yet) | `src/services/rebootSettingsService.ts` | Customization tab |
+| `proxyConfig` | nginx controls (TLS 1.3 only, HSTS, HTTP/3, metrics allow-list, managed mode) | `src/services/proxyConfigService.ts` | `src/services/nginxRenderer.ts`, `src/services/webServerService.ts` |
+| `trustedCertificates` | operator-uploaded trusted CA records (CA certs only, private keys refused) | `src/services/trustedCaService.ts` | `src/services/httpClient.ts` (outbound TLS verify) |
+| `loginAccessConfig` | `{ enabled, ipScope, allowedCidrs }` for local password login | `src/services/webAccessSettingsService.ts` | `src/api/routes/auth.ts` |
+| `dashConfig` / `ipv6Config` | wallboard source scope / IPv6 switch (persist-only) | `src/services/webAccessSettingsService.ts` | Web Server tab |
+| `apiDocsConfig` | API-docs page source-IP scope (loopback / rfc1918 / custom; never public) | `src/services/apiDocsAccessService.ts` | API Tokens tab (no docs page is served yet) |
+| `ha.config` | HA nodes, load-balancer figures, replication password (envelope; never in a response) | `src/services/haService.ts` | `haService.ts`, `src/services/haEnrollmentService.ts` |
+| `dnsSettings` | resolver mode (standard / DoT / DoH) + servers | `src/services/dnsService.ts` | Identification tab |
+| `oui_database` / `oui_overrides` | IEEE OUI prefix → vendor map / operator overrides | `src/services/ouiService.ts` (+ `src/jobs/ouiRefresh.ts`) | `ouiService.ts` lookups |
+| `tagSettings` | asset-tag registry options | `src/services/assetTagService.ts` | Identification tab |
+| `reservationMacPlaceholder` | placeholder-MAC prefix (persist-only; no consumer yet) | `src/services/reservationMacService.ts` | Identification tab |
 
 #### Event action names
 

@@ -6,7 +6,11 @@ From `agent/README.md`.
 
 - `agent/src-tauri/` — Rust core (Tauri v2): `Cargo.toml` (`rust-version` is the MSRV pin —
   see `charon-tech-lifecycle`), `build.rs`, `tauri.conf.json`, `src/{main,client,config,posture}.rs`.
-- `agent/ui/` — web GUI (vanilla JS) reusing the Charon stylesheet.
+- `agent/ui/` — web GUI (vanilla JS) reusing the Charon stylesheet: `css/styles.css`,
+  `css/charon.css` and `js/theme-init.js` are exact copies of the server's `public/` files
+  (polaris theme system, following the OS; `tests/unit/agentUiSync.test.ts` fails on drift),
+  `css/agent.css` is the agent's own layout. The version lives in three places kept in step:
+  `agent/VERSION`, `agent/src-tauri/Cargo.toml` and `agent/src-tauri/tauri.conf.json`.
 - `agent/VERSION` — bumped on any agent change.
 
 ## Build

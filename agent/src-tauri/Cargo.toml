@@ -1,6 +1,6 @@
 [package]
 name = "charon-agent"
-version = "0.1.0"
+version = "0.1.1"
 description = "Charon endpoint agent — ZTNA identity + posture telemetry"
 authors = ["Rogers Group"]
 edition = "2021"

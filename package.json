@@ -19,7 +19,8 @@
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
     "typecheck": "tsc --noEmit",
-    "check:docs": "node scripts/check-docs.mjs"
+    "check:docs": "node scripts/check-docs.mjs",
+    "rules:next": "node scripts/next-rule-number.mjs"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.0.2",

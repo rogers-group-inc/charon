@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Guard so CI stays green during early scaffolding (no package.json yet).
       - name: Detect Node project
@@ -27,13 +27,19 @@ jobs:
 
       - name: Setup Node.js
         if: steps.detect.outputs.present == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: "npm"
 
       - name: Install dependencies
         if: steps.detect.outputs.present == 'true'
+        # postinstall runs `prisma generate`, and prisma.config.ts refuses to load
+        # without DATABASE_URL. Generate never connects, so a placeholder is enough.
+        # Scoped to this step only: set job-wide it would make DB-gated tests try
+        # to connect instead of skipping.
+        env:
+          DATABASE_URL: postgresql://placeholder:placeholder@localhost:5432/placeholder
         run: npm ci
 
       - name: Lint

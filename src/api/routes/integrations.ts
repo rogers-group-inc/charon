@@ -37,7 +37,7 @@ router.get("/:id", async (req, res, next) => {
 const createSchema = z.object({
   type: z.enum(INTEGRATION_TYPES as unknown as [string, ...string[]]),
   name: z.string().min(1),
-  config: z.record(z.unknown()).default({}),
+  config: z.record(z.string(), z.unknown()).default({}),
   enabled: z.boolean().optional(),
 });
 
@@ -50,7 +50,7 @@ router.post("/", requirePermission("integrations", "write"), async (req, res, ne
 
 const updateSchema = z.object({
   name: z.string().min(1).optional(),
-  config: z.record(z.unknown()).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
   enabled: z.boolean().optional(),
   autoDiscover: z.boolean().optional(),
   pollInterval: z.number().int().min(1).max(24).optional(),
@@ -80,7 +80,7 @@ router.post("/:id/test", requirePermission("integrations", "write"), async (req,
 // Preflight test of an UNSAVED config (the configure modal's Test button).
 const preflightSchema = z.object({
   type: z.enum(INTEGRATION_TYPES as unknown as [string, ...string[]]),
-  config: z.record(z.unknown()),
+  config: z.record(z.string(), z.unknown()),
   existingId: z.string().optional(),
 });
 

@@ -77,5 +77,8 @@ dependency demands it.
 - `pg`, `prisma`, `express` and other npm dependency ranges — Dependabot's job
   (dependency-audit.md), except when a major is architectural (Prisma 7's driver-adapter model,
   Express 5's route syntax): those get a playbook entry before they move.
-- GitHub Actions versions (`actions/checkout@v4`, …) — Dependabot's `github-actions` ecosystem.
+- GitHub Actions majors (`actions/checkout`, `actions/setup-node`, `github/codeql-action`,
+  `docker/*`) — Dependabot's `github-actions` ecosystem. Move one action's major across every
+  workflow at once (grep `uses:` in `.github/workflows/`), including workflows added after the
+  Dependabot PR was opened.
 - `agent/VERSION` and `package.json` `version` — the app's own versions, not the runtime's.

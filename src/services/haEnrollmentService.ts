@@ -57,8 +57,17 @@ export const CLAIM_WINDOW_MS = 10 * 60 * 1000;
 
 /** charon install root on RHEL (deploy/install-rhel.sh APP_DIR). */
 const APP_DIR = "/opt/charon";
-const PG_SERVICE = "postgresql-15";
-const PGDATA = "/var/lib/pgsql/15/data";
+/**
+ * Bash lines that resolve the host's PGDG major at run time, as deploy/setup-ha.sh
+ * does: a fresh install-rhel.sh host runs 17, but an older host keeps the major it
+ * was installed with, so a generated script must never bake one in.
+ */
+const PG_DETECT_LINES = [
+  "PG_MAJOR=\"$(ls -d /usr/pgsql-[0-9]* 2>/dev/null | sed 's#.*/pgsql-##' | sort -n | tail -1)\"",
+  "[[ -n \"$PG_MAJOR\" ]] || { echo 'no PGDG PostgreSQL under /usr/pgsql-*' >&2; exit 1; }",
+  "PGDATA=\"/var/lib/pgsql/${PG_MAJOR}/data\"",
+  "PG_SERVICE=\"postgresql-${PG_MAJOR}\"",
+];
 
 /** The stored form of a poll handle: only its SHA-384 is ever written. */
 export function hashRequestId(requestId: string): string {
@@ -557,8 +566,7 @@ export function renderTeardownScript(): NodeScript {
     "set -euo pipefail",
     "[[ $EUID -eq 0 ]] || { echo 'must run as root' >&2; exit 1; }",
     "",
-    `PGDATA='${PGDATA}'`,
-    `PG_SERVICE='${PG_SERVICE}'`,
+    ...PG_DETECT_LINES,
     "PSQL=(sudo -u postgres psql -v ON_ERROR_STOP=1 -qAt)",
     "",
     "read -r -p 'Type TEARDOWN to remove HA from this host: ' c",
@@ -566,7 +574,7 @@ export function renderTeardownScript(): NodeScript {
     "",
     "if [[ \"$(\"${PSQL[@]}\" -c 'SELECT pg_is_in_recovery()')\" == t ]]; then",
     "  echo 'This node is a standby — promoting it to a standalone primary.'",
-    "  sudo -u postgres /usr/pgsql-15/bin/pg_ctl promote -D \"$PGDATA\" -w",
+    "  sudo -u postgres \"/usr/pgsql-${PG_MAJOR}/bin/pg_ctl\" promote -D \"$PGDATA\" -w",
     "fi",
     "",
     "# Replication settings written by pg_basebackup -R / setup-ha.sh.",
@@ -588,7 +596,7 @@ export function renderTeardownScript(): NodeScript {
     "",
     "echo",
     "echo 'HA removed from this host. It is now a standalone primary.'",
-    "echo 'On the OTHER node: stop charon.target and postgresql-15 so two primaries never'",
+    "echo \"On the OTHER node: stop charon.target and $PG_SERVICE so two primaries never\"",
     "echo 'serve at once, and repoint the GSLB at this node only.'",
     "echo 'Also turn HA off in Server Settings -> High Availability.'",
     "",

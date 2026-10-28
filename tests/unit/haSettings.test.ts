@@ -118,6 +118,13 @@ describe("HA enrollment", () => {
     }
   }, 60_000); // spawning bash is slow on Windows dev hosts
 
+  it("resolves the PostgreSQL major on the host instead of baking one into the teardown script", () => {
+    const sc = renderTeardownScript().script;
+    expect(sc).toContain("ls -d /usr/pgsql-[0-9]*");
+    expect(sc).toContain("/usr/pgsql-${PG_MAJOR}/bin/pg_ctl");
+    expect(sc).not.toMatch(/pgsql-\d|postgresql-\d|pgsql\/\d/);
+  });
+
   it("refuses to interpolate unsafe values into a script", () => {
     const bad = parseHaConfig({ ...cfg, nodes: { ...cfg.nodes, primary: { ...cfg.nodes.primary!, name: "a'; rm -rf /" } } });
     expect(() => renderNodeScript({ role: "primary", token: "charon_x", publicUrl: "https://h", certPin: PIN, cfg: bad })).toThrow();

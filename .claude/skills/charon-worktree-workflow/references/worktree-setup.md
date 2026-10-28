@@ -26,7 +26,10 @@ A fresh worktree has no `.env`, no `node_modules` and no `src/generated/prisma`.
    at config-load time without connecting.
 2. `npm install --no-audit --no-fund` — its own `node_modules` and, via `postinstall`, its own
    generated Prisma client. `postinstall` also runs `git config core.hooksPath .githooks`, so
-   the pre-commit doc guard is active here too.
+   the pre-commit doc guard is active here too. The path must stay **relative**: git resolves
+   a relative `core.hooksPath` per working tree, but an absolute one pointing at the main
+   checkout makes every worktree run main's hooks — or none, if main lacks them — and the
+   guard silently never fires. `git config --get core.hooksPath` should print `.githooks`.
 3. **Never junction `node_modules` or `src/generated` from the main checkout into a worktree.**
    Both `rm -rf` (MSYS) and `git worktree remove --force` follow directory junctions and delete
    the TARGET — the live repo's `node_modules/` and `src/generated/` with it. If a junction

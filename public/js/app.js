@@ -157,7 +157,10 @@
       return '<li><a href="' + n[0] + '" class="' + active.trim() + '">' + ICONS[n[2]] + "<span>" + n[1] + "</span></a></li>";
     }).join("");
 
-    var showSettings = can("serverSettingsSystem", "read") || can("serverSettingsData", "read");
+    // Any key that unlocks a Server Settings tab (SETTINGS_TAB_PERMS in
+    // server-settings.js) earns the link — Credentials and API Tokens included.
+    var showSettings = ["serverSettingsSystem", "serverSettingsData", "credentials", "apiTokens"]
+      .some(function (k) { return can(k, "read"); });
 
     sidebar.innerHTML =
       '<div class="sidebar-brand">' + brandHtml() + "</div>" +

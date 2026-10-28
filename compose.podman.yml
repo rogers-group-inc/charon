@@ -19,7 +19,7 @@ x-charon-image: &charon-image
 
 x-charon-env: &charon-env
   DATABASE_URL: postgresql://charon:charon@postgres:5432/charon
-  CHARON_DATA_KEY: cG9kbWFuLWRldi0zMi1ieXRlLWtleS1wb2RtYW4tMzJ4eA==
+  CHARON_DATA_KEY: cG9kbWFuLWRldi0zMi1ieXRlLWtleS1wb2RtYW4teHg=   # throwaway, exactly 32 bytes
   SESSION_SECRET: podman-local-dev-secret-change-me-0123456789
   NODE_ENV: production
 

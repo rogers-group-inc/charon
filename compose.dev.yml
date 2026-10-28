@@ -32,7 +32,7 @@ services:
     environment:
       DATABASE_URL: postgresql://charon:charon@postgres:5432/charon
       SESSION_SECRET: dev-only-secret-change-me
-      CHARON_DATA_KEY: ZGV2LW9ubHktMzItYnl0ZS1rZXktZGV2LW9ubHktMzJ4eA==
+      CHARON_DATA_KEY: ZGV2LW9ubHktMzItYnl0ZS1rZXktZGV2LW9ubHkteHg=   # throwaway, exactly 32 bytes
       NODE_ENV: development
       CHARON_BIND: "0.0.0.0"
     ports:

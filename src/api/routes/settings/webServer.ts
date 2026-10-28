@@ -377,7 +377,7 @@ router.get("/login-access", requirePermission("serverSettingsSystem", "read"), a
   } catch (err) { next(err); }
 });
 
-router.put("/login-access", requirePermission("serverSettingsSystem", "fullwrite"), async (req, res, next) => {
+router.put("/login-access", adminActionLimiter, requirePermission("serverSettingsSystem", "fullwrite"), async (req, res, next) => {
   try {
     const input = parse(ScopeSchema, req.body);
     const before = await getLoginAccessSettings();

@@ -66,7 +66,8 @@ Two more exemptions:
   `createdBy` is the caller, fullwrite any row; an unowned (null) row is fullwrite-only.
 - Settings-route limiters (`makeRateLimiter()`): `haEnrollLimiter` (`/ha/enroll`),
   `credentialTestLimiter` (`POST /credentials/test`), `maintenanceLimiter` (database / backup /
-  advisor reads), `logoLimiter` (branding logo).
+  advisor reads), `logoLimiter` (branding logo), `installerLimiter` (1 min / 30, the agent
+  installer listing + download in `src/api/routes/maintenance.ts`).
 
 ## Rate limits (`src/api/middleware/rateLimits.ts`)
 
@@ -83,7 +84,8 @@ Two more are attached per route, in the route file:
 - `adminActionLimiter` (15 min / 20) on the destructive Server Settings actions —
   `POST /server-settings/database/restore`, `/updates/apply`, `/restart`, `/certificates`
   (trusted-CA upload), `/proxy/apply`, `/proxy/cert/rotate`, `/agents/cert-pins/bulk-add|remove`,
-  and `POST /ha/enable|disable|tokens|enrollments/:id/approve` — placed before
+  `PUT /login-access` (the local-login source scope), and
+  `POST /ha/enable|disable|tokens|enrollments/:id/approve` — placed before
   `requirePermission`, **keyed by operator username** so admins on a shared jump host don't
   throttle each other. API-token callers have no session username, so they share their IP's
   bucket.
@@ -91,6 +93,9 @@ Two more are attached per route, in the route file:
 Both fall back to `ipKeyGenerator(req.ip)` when the key is missing. CodeQL's
 `js/missing-rate-limiting` flags any handler that does file-system, process or credential work
 without a limiter in front of it — give a new expensive or credential-checking route one.
+`tests/unit/rateLimits.test.ts` → "limiter attachment" asserts the attachments a port or route
+move has dropped before (the alert number stays with the line, not the route); add a route
+there when you give it a limiter.
 
 ## permissions (RBAC) — touches entry
 

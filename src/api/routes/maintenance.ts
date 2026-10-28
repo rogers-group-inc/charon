@@ -13,13 +13,18 @@
 import { Router } from "express";
 import { listInstallers, resolveInstaller } from "../../services/agentDistService.js";
 import { requirePermission } from "../middleware/permissions.js";
+import { makeRateLimiter } from "../middleware/rateLimits.js";
+
+// Both routes read the installer directory, and a download streams a file of
+// tens of MB — cap a runaway script or stolen session per address.
+export const installerLimiter = makeRateLimiter({ windowMs: 60_000, max: 30, message: "Too many installer requests — slow down." });
 
 const router = Router();
 router.use(requirePermission("serverSettingsData", "read"));
 
-router.get("/agents", (_req, res) => res.json(listInstallers()));
+router.get("/agents", installerLimiter, (_req, res) => res.json(listInstallers()));
 
-router.get("/agents/download/:file", (req, res) => {
+router.get("/agents/download/:file", installerLimiter, (req, res) => {
   const p = resolveInstaller(String(req.params.file));
   if (!p) return res.status(404).json({ error: "Installer not found in manifest" });
   res.download(p);

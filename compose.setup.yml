@@ -8,16 +8,18 @@
 #   podman compose -f compose.setup.yml up -d --build
 #   open http://localhost:3010          → redirects to /setup.html
 #
-# In the wizard, use this connection string (Postgres runs as a sibling service):
-#   postgresql://charon:charon@postgres:5432/charon
-# ...and choose your own admin username + password (min 12 chars).
+# In the wizard's Database step, enter these fields (Postgres runs as a sibling
+# service, so the host is the service name — NOT localhost):
+#   Host: postgres   Port: 5432   Username: charon   Password: charon   DB: charon
+# ...then choose your own admin username + password (8+ chars, mixed case,
+# number, special). The target DB already exists here, but the wizard will
+# create it automatically if it doesn't.
 #
 # The wizard writes /app/state/.env (generating SESSION_SECRET + the AES-256-GCM
-# CHARON_DATA_KEY), runs migrations, and seeds roles + your admin. It then tells
-# you to restart. Do:
-#   podman compose -f compose.setup.yml restart charon
-# On restart the entrypoint loads /app/state/.env, DATABASE_URL is now set, and
-# Charon boots the full app. Log in with the admin you created.
+# CHARON_DATA_KEY), runs migrations, and seeds roles + your admin, then exits.
+# `restart: unless-stopped` brings the container back up; the entrypoint loads
+# /app/state/.env (DATABASE_URL now set) and boots the full app. The wizard
+# polls /health and auto-redirects you to the login page.
 #
 # Fresh start (wipe DB + the written .env/.setup-complete to redo setup):
 #   podman compose -f compose.setup.yml down -v
@@ -52,6 +54,10 @@ services:
       CHARON_BIND: "0.0.0.0"
     ports:
       - "127.0.0.1:3010:3000"
+    # The wizard's finalize exits the process once it has written .env; this
+    # policy restarts the container, which then boots the fully configured app
+    # (entrypoint loads /app/state/.env → DATABASE_URL is now set).
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy

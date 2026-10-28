@@ -48,7 +48,7 @@ describe("authentication function key", () => {
   });
 });
 
-describe("escalation guards", () => {
+describe("escalation guards (business rule 10)", () => {
   it("grantsBeyond lists only keys above the caller, ignoring ones the row already had", () => {
     const caller = { users: "write", tags: "read" };
     const target = { users: "write", tags: "write", roles: "read" };

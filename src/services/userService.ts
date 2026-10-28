@@ -2,7 +2,7 @@
  * src/services/userService.ts — operator account management (the Users page).
  * Ported from polaris routes/users.ts, with the logic moved out of the route.
  *
- * Invariants:
+ * Invariants (business rule 10):
  *   - lastAdminEquivalent: no action may leave Charon with zero users holding
  *     an admin-equivalent role (users=fullwrite AND roles=fullwrite) → 409.
  *   - Escalation: acting on an admin-equivalent ACCOUNT (reset its password,

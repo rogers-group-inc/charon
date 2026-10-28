@@ -34,6 +34,16 @@ narrative by design. From rule 8 on, every invariant ends with a pointer to its
    serve server-side probes only. The tab sees only its own five types (`CREDENTIAL_TYPES`): a
    `Credential` row of any other type — one an integration owns — is invisible to it (filtered
    from the list, 404 by id), so the tab can neither show nor overwrite it. Leans on rule 3.
+3b. **A stored sign-in secret never follows a changed destination** — The OIDC client secret
+   and the LDAP bind password live inside JSON Setting rows (`oidc`, `ldap`) as
+   `src/utils/crypto.ts` envelopes (`src/utils/settingSecret.ts → sealSettingSecret()`), are
+   masked on every read (`maskSettingSecret()`), and an echoed mask keeps the stored value —
+   EXCEPT when the field naming where the secret is sent changes in the same save (OIDC
+   discovery URL or client id; LDAP server URL or certificate check):
+   `nextSettingSecret()` then answers 400 and the secret must be typed again. Otherwise an
+   operator with `authentication:write` could repoint a stored secret at a server they control
+   and read it off the wire. The TOTP secret (`User.totpSecret`) is an envelope too
+   (`src/services/authService.ts → startTotpEnrollment()`). Leans on rule 3.
 4a. **A pin rotation can never strand the fleet** — `src/services/webServerService.ts →
    rotateCertAndKey()` refuses (409) a certificate whose leaf SHA-256 is neither the canonical
    nor a staged pin (only the first cert, with no canonical pin, is exempt), and
@@ -65,3 +75,17 @@ narrative by design. From rule 8 on, every invariant ends with a pointer to its
    that registered, inside the claim window. Every token rejection returns the same text.
    Leans on rule 3.
    → [narrative-9.md#rule-9](narrative-9.md#rule-9)
+10. **Nobody grants authority they do not hold** — Wherever authority is handed out — creating or
+   editing a role, creating an account on a role or moving one onto it, a group mapping that
+   hands a role to IdP group members — the route calls
+   `src/api/middleware/permissions.ts → assertGrantWithinCaller()`: every function key in the
+   target must be within the caller's own level (`grantsBeyond()`; an edit counts only RAISED
+   keys), and an admin-equivalent target (`users` AND `roles` fullwrite) needs an
+   admin-equivalent caller (`assertNoPrivilegeEscalation()`). Acting ON an admin-equivalent
+   account (password / 2FA / passkey reset, re-role, delete) or withdrawing an admin-equivalent
+   group mapping needs an admin-equivalent caller too. The mirror guards keep at least one
+   admin-equivalent account: `src/services/userService.ts → changeRole() / deleteUser()` and
+   `src/services/roleService.ts → assertRoleDemotionAllowed()` (409). `requirePermission`
+   stashes the resolved snapshot on `req.roleSnapshot`, so the guards see API-token callers
+   too. Leans on rule 8.
+   → [narrative-10.md#rule-10](narrative-10.md#rule-10)

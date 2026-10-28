@@ -27,7 +27,7 @@ describe("settingSecret", () => {
     expect(nextSettingSecret(cur, "", dest, "bind password")).toBe("");
   });
 
-  it("never lets a kept secret follow a changed destination", () => {
+  it("never lets a kept secret follow a changed destination (business rule 3b)", () => {
     const cur = sealSettingSecret("old");
     expect(() =>
       nextSettingSecret(cur, SECRET_MASK, [{ label: "server URL", current: "ldap://a", incoming: "ldap://evil" }], "bind password"),

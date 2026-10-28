@@ -1,6 +1,6 @@
 /**
  * src/utils/settingSecret.ts — a secret field inside a JSON Setting row (the
- * OIDC client secret, the LDAP bind password).
+ * OIDC client secret, the LDAP bind password). Business rule 3b.
  *
  *   - At rest it is a crypto.ts envelope (rule 3); `openSettingSecret()` also
  *     reads a legacy plaintext value so a row written before sealing still works.

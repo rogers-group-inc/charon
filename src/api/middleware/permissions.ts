@@ -130,11 +130,12 @@ export function grantsBeyond(
 }
 
 /**
- * A grant may not exceed the granter. Applied wherever authority is handed
- * out: creating or editing a role, creating an account on a role or moving one
- * onto it, a group mapping that hands a role to IdP group members. Same
- * principle as API-token minting (apiTokenService.grantExceedsCaller, rule 8).
- * Pass `existingPermissions` for an edit so only raised keys count.
+ * Business rule 10 — a grant may not exceed the granter. Applied wherever
+ * authority is handed out: creating or editing a role, creating an account on
+ * a role or moving one onto it, a group mapping that hands a role to IdP group
+ * members. Same principle as API-token minting
+ * (apiTokenService.grantExceedsCaller, rule 8). Pass `existingPermissions` for
+ * an edit so only raised keys count.
  */
 export function assertGrantWithinCaller(
   req: Request,

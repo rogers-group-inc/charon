@@ -39,7 +39,8 @@ in `X-CSRF-Token` on state-changing requests (`public/js/api.js` threads it). Ag
 
 `loginLimiter` (15 min / 10) on `/api/v1/auth/login`; `enrollLimiter` (10 min / 30) on
 `/api/v1/agents/enroll` — both mounted with `app.use` in `src/app.ts`, so they are invisible
-from the route file. `makeRateLimiter()` builds others (the setup wizard uses its own).
+from the route file. `makeRateLimiter()` builds others — the first-run wizard's `setupActionLimiter` (15 min / 30) in
+`src/setup/setupRoutes.ts` guards its test-connection and finalize routes.
 
 ## permissions (RBAC) — touches entry
 

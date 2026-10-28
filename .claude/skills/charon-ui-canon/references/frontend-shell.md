@@ -25,7 +25,9 @@ Page scripts call `Charon.init()` first and build after it resolves; an unauthen
 ## Setup wizard
 
 `public/setup.html` + `public/js/setup.js` talk to the unauthenticated first-run API
-(`src/setup/setupRoutes.ts`, served by `src/setup/setupServer.ts`) and load no `app.js`.
+(`src/setup/setupRoutes.ts`, served by `src/setup/setupServer.ts`) and load no `app.js`. After
+finalize the server process exits; the page polls `/health` until the configured app answers,
+then redirects to login (`charon-deploy` → cross-cutting-deployment.md → First-run wizard).
 
 ## The agent GUI
 

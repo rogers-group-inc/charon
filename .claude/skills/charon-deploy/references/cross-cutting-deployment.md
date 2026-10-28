@@ -52,8 +52,21 @@ confirm.
 ### First-run wizard
 
 `src/setup/` + `public/setup.html`: when `web`/`all` starts with no `DATABASE_URL`, the wizard
-collects the DB connection and first admin, generates `SESSION_SECRET` + `CHARON_DATA_KEY`,
-writes `.env` under the state dir, migrates and seeds. `compose.setup.yml` exercises it.
+collects the DB connection as fields (host / port / user / password / database — inside a
+compose network the host is the service name, not localhost) and the first admin, generates
+`SESSION_SECRET` + `CHARON_DATA_KEY`, creates the target database if missing, writes `.env`
+under the state dir, migrates and seeds — then **exits the process**. Something must restart
+it (`restart: unless-stopped` in `compose.setup.yml`); a container with no restart policy just
+stays down. The RHEL installer writes `.env` itself and never reaches the wizard. On restart the entrypoint
+loads `/app/state/.env` and boots the full app; the wizard page polls `/health` and redirects
+to login. It never overwrites a working config.
+
+API (`src/setup/setupRoutes.ts`, unauthenticated, first-run only behind the `.setup-complete`
+lock): `GET /status`, `POST /preflight` (disk-free advisories for the app, state and local
+Postgres volumes), `POST /generate-secret`, `POST /test-connection` and `POST /finalize` — the
+last two DB-touching routes are rate-limited by `setupActionLimiter` (15 min / 30) so a network
+neighbour can't use them as a connect proxy or brute-force surface. `compose.setup.yml`
+exercises the flow.
 
 **When changing this:** run the deploy-surface audit in `SKILL.md`; a container-only change is
 also checked against the RHEL path and vice versa — both are supported install shapes.

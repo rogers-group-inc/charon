@@ -69,6 +69,9 @@ only `credentials` or `apiTokens` read gets no sidebar link (the nav checks the 
   CSRF-threaded, 401 → login), `public/js/app.js` (`window.Charon.{init,toast,escapeHtml,
   csrfHeaders,can,user}`), `public/js/table-sf.js` (`TableSF`, `setupColumnLayout`),
   `public/js/theme-init.js` (loaded first in `<head>`).
+- **Themes are polaris's** (`morning` / `noon` / `nightfall`, stepped by the sidebar band —
+  frontend-shell.md → Theme system). Branch on `Charon.isLightTheme()`, never on a theme id;
+  `dark` / `light` are retired.
 - **Script order** on an app page: `theme-init.js` (head) → `api.js` → `app.js` → `table-sf.js`
   when used → the page script.
 - **The Server Settings page is a polaris port with its own client layer**: `settings-api.js`

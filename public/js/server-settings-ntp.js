@@ -139,7 +139,7 @@ async function saveNtpSettings() {
   try {
     var servers = document.getElementById("f-ntp-servers").value
       .split("\n").map(function (s) { return s.trim(); }).filter(Boolean);
-    await api.serverSettings.updateNtp({
+    var saved = await api.serverSettings.updateNtp({
       enabled: document.getElementById("f-ntp-enabled").checked,
       mode: document.getElementById("f-ntp-mode").value,
       servers: servers,
@@ -148,7 +148,12 @@ async function saveNtpSettings() {
     // Invalidate the formatLocalTime cache so the next Maintenance render
     // picks up the new override without a full page refresh.
     _tzOverride = null;
-    showToast("NTP settings saved");
+    // Charon: the PUT also applies the servers to chronyd on the host (sudo
+    // wrapper) and reports how that went — surface a failed apply.
+    var apply = saved && saved.apply;
+    if (apply && !apply.applied && !apply.skipped) showToast(apply.message, "error");
+    else if (apply && apply.skipped && document.getElementById("f-ntp-enabled").checked) showToast(apply.message);
+    else showToast("NTP settings saved");
   } catch (err) {
     showToast(err.message, "error");
   } finally {

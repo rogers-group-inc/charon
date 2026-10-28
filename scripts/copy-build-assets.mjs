@@ -19,7 +19,11 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** Asset groups to mirror from src/<dir> into dist/<dir>, filtered by extension. */
-const ASSETS = [];
+const ASSETS = [
+  // Bundled IETF/IEEE MIB modules read by services/credentials/oidRegistry.ts
+  // and stdMibLibrary.ts (Server Settings → Credentials → MIB Database).
+  { dir: "services/credentials/stdMibs", exts: [".txt"] },
+];
 
 let copied = 0;
 for (const { dir, exts } of ASSETS) {

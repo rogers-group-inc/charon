@@ -36,12 +36,14 @@ function canEditCredential(cred) {
 }
 
 // Branding: polaris re-skins its sidebar here; Charon's sidebar is rendered by
-// app.js, so this keeps the document title in step and leaves the logo/name to
-// the Customization tab's own preview.
+// app.js, so this hands the payload to Charon.setBranding (which caches it and
+// repaints the sidebar name/subtitle/logo) and keeps the document title in step.
 var _branding = null;
 function applyBranding(b) {
   _branding = b || _branding;
-  if (_branding && _branding.appName) document.title = _branding.appName + " — Server Settings";
+  if (!_branding) return;
+  if (window.Charon && typeof window.Charon.setBranding === "function") window.Charon.setBranding(_branding);
+  document.title = ((_branding.appName || "").trim() || "Charon") + " — Server Settings";
 }
 
 window.__charonUserReady = window.Charon.init().then(function (user) {

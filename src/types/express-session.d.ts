@@ -25,7 +25,7 @@ declare global {
   namespace Express {
     interface Request {
       /** Set by attachApiToken when a valid bearer token is presented. */
-      apiToken?: { id: string; name: string; scopes: string[] };
+      apiToken?: { id: string; name: string; roleId: string | null; scopes: string[] };
       /** Set by requireAgentBearer when a valid agent bearer is presented. */
       agent?: { endpointId: string };
       /** Set by requirePermission after a successful check. */

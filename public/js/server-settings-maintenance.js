@@ -67,7 +67,9 @@ function renderAgentEventLogCard(cfg) {
       '<button class="btn btn-primary" id="btn-agent-event-log-save">Save</button>' +
     '</div>' +
     '<p style="font-size:0.82rem;color:var(--color-text-secondary);margin-bottom:0.85rem">' +
-      'When enabled, Polaris Agents ship matching OS event-log entries (Windows Event Log / Linux journald) which appear on each asset\'s <strong>Events</strong> tab and forward through your syslog / SFTP archival. Off by default. ' +
+      // Charon: stored only (Setting "agentEventLog") — the Charon agent does not ship OS event logs yet.
+      'When enabled, Charon Agents will ship matching OS event-log entries (Windows Event Log / Linux journald) into the audit log. Off by default. ' +
+      '<strong>Not yet collected:</strong> the current Charon agent does not send OS event logs, so this setting is stored for when it does. ' +
       'Event messages can contain hostnames or sensitive text — keep the severity filter tight and review before relying on it for compliance.' +
     '</p>' +
     '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;margin-bottom:0.85rem">' +
@@ -256,7 +258,7 @@ function renderEnginePoolStatHtml(db, capacity) {
       ? configured + ' (Prisma ' + prismaSize + ' + pg-boss ' + pgbossSize + ')'
       : String(configured);
     polarisPoolRows =
-      dbInfoRow("Polaris pool size", configuredLabel) +
+      dbInfoRow("Charon pool size", configuredLabel) +
       dbInfoRow("Peak observed", String(pollPool.peakObserved));
   }
 
@@ -296,6 +298,7 @@ function _advisorLabel(key) {
     case "QUEUE_MODE":                       return "Queue mode";
     case "DATABASE_POOL_SIZE":               return "DATABASE_POOL_SIZE (Prisma pool)";
     case "POLARIS_PGBOSS_POOL_SIZE":         return "POLARIS_PGBOSS_POOL_SIZE";
+    case "CHARON_PGBOSS_POOL_SIZE":          return "CHARON_PGBOSS_POOL_SIZE (pg-boss pool)";
     case "POLARIS_MONITOR_PROBE_WORKERS":    return "POLARIS_MONITOR_PROBE_WORKERS";
     case "POLARIS_MONITOR_FAST_WORKERS":     return "POLARIS_MONITOR_FAST_WORKERS";
     case "POLARIS_MONITOR_HEAVY_WORKERS":    return "POLARIS_MONITOR_HEAVY_WORKERS";
@@ -420,7 +423,7 @@ function renderCapacityAdvisorCard(advisor, pgConfigFile, dbConnectionMode) {
   // pool, so the advisor's max_connections recommendation is an upper bound
   // rather than a strict requirement under this topology.
   var pgbouncerNote = dbConnectionMode === "pgbouncer"
-    ? '<p class="hint" style="margin:0.4rem 0 0 0;font-size:0.78rem;color:var(--color-text-secondary)">PgBouncer detected. Polaris\'s pool size is what it opens to PgBouncer; PgBouncer\'s <code>default_pool_size</code> is what reaches PostgreSQL. The <code>PostgreSQL max_connections</code> recommendation below is a conservative upper bound — your actual PG max only needs to support PgBouncer\'s configured pool sizes plus admin/autovacuum overhead.</p>'
+    ? '<p class="hint" style="margin:0.4rem 0 0 0;font-size:0.78rem;color:var(--color-text-secondary)">PgBouncer detected. Charon\'s pool size is what it opens to PgBouncer; PgBouncer\'s <code>default_pool_size</code> is what reaches PostgreSQL. The <code>PostgreSQL max_connections</code> recommendation below is a conservative upper bound — your actual PG max only needs to support PgBouncer\'s configured pool sizes plus admin/autovacuum overhead.</p>'
     : "";
 
   var groupedRows = {
@@ -438,7 +441,7 @@ function renderCapacityAdvisorCard(advisor, pgConfigFile, dbConnectionMode) {
   if (_advisorJustStaged && staged === 0) {
     stageBtn = _advisorInContainer
       ? _advisorContainerRestartHtml()
-      : '<button class="btn btn-warning" id="capacity-advisor-restart-btn">Restart Polaris to apply</button>';
+      : '<button class="btn btn-warning" id="capacity-advisor-restart-btn">Restart Charon to apply</button>';
   } else if (staged > 0) {
     stageBtn = '<button class="btn btn-primary" id="capacity-advisor-stage-btn" data-staged-count="' + staged + '">Stage selected</button>';
   } else {
@@ -471,7 +474,7 @@ function renderCapacityAdvisorCard(advisor, pgConfigFile, dbConnectionMode) {
       '<tbody>' +
         (groupedRows.queue.length ? renderRows(groupedRows.queue) : "") +
         (groupedRows.env.length
-          ? '<tr class="advisor-divider"><td colspan="5"><strong>Pool &amp; worker (apply via .env, restart Polaris)</strong></td></tr>' + renderRows(groupedRows.env)
+          ? '<tr class="advisor-divider"><td colspan="5"><strong>Pool (apply via .env, restart Charon)</strong></td></tr>' + renderRows(groupedRows.env)
           : "") +
         (groupedRows.advisory.length
           ? '<tr class="advisor-divider"><td colspan="5"><strong>Advisory-only (require PostgreSQL restart)</strong></td></tr>' + renderRows(groupedRows.advisory)
@@ -482,7 +485,7 @@ function renderCapacityAdvisorCard(advisor, pgConfigFile, dbConnectionMode) {
     pgConfigHint +
     '<div style="margin-top:0.85rem;display:flex;align-items:center;gap:0.75rem">' +
       stageBtn +
-      '<span class="hint" style="font-size:0.78rem">Computed ' + escapeHtml(formatLocalTime(advisor.computedAt)) + '. ' + (_advisorInContainer ? 'Restart the Polaris container(s) after Stage to pick up changes.' : 'Restart Polaris after Stage to pick up changes.') + '</span>' +
+      '<span class="hint" style="font-size:0.78rem">Computed ' + escapeHtml(formatLocalTime(advisor.computedAt)) + '. ' + (_advisorInContainer ? 'Restart the Charon container(s) after Stage to pick up changes.' : 'Restart Charon after Stage to pick up changes.') + '</span>' +
     '</div>' +
   '</div>';
 }
@@ -657,7 +660,7 @@ function renderPlatformLifecycleCard(lifecycle) {
     '<table class="ip-table" style="width:100%;min-width:42rem">' +
       "<thead><tr>" +
         "<th>Component</th>" +
-        '<th style="width:9rem">Polaris target</th>' +
+        '<th style="width:9rem">Charon target</th>' +
         '<th style="width:8rem">Installed</th>' +
         '<th style="width:12rem">Supported until</th>' +
         '<th style="width:11rem">Status</th>' +
@@ -887,14 +890,13 @@ function renderCapacityCard(capacity, dbInfo, pgTuning, capacityTransition) {
   if (unlisted) {
     tablesHtml +=
       _capacityUnlistedRow("pg-boss job queue", unlisted.pgbossBytes,
-        "The monitor work queue's own schema. Real bytes on the same disk, but not a Polaris table.") +
+        "The pg-boss job queue's own schema. Real bytes on the same disk, but not a Charon table.") +
       _capacityUnlistedRow("PostgreSQL catalog", unlisted.catalogBytes,
         "pg_catalog + information_schema — PostgreSQL's own bookkeeping.") +
       _capacityUnlistedRow("Other schemas", unlisted.otherBytes,
-        "Anything outside public, pgboss and the system catalogs, including TimescaleDB's own catalog.") +
+        "Anything outside public, pgboss and the system catalogs.") +
       _capacityUnlistedRow("Unattributed", unlisted.unattributedBytes,
-        "Polaris-owned bytes the table list could not attribute to a table. Expected to be zero — " +
-        "anything here means the hypertable rows above are understated.");
+        "Charon-owned bytes the table list could not attribute to a table. Expected to be zero.");
     if (dbInfo && dbInfo.sizeBytes != null) {
       tablesHtml +=
         '<tr style="border-top:1px solid var(--color-border)">' +
@@ -992,23 +994,20 @@ function renderCapacityCard(capacity, dbInfo, pgTuning, capacityTransition) {
         dbInfoRow(
           "Current size",
           _capacityFormatBytes(db.sizeBytes),
-          "Every relation in the database: Polaris's tables with their indexes, TOAST and TimescaleDB " +
-          "chunks, plus the pg-boss queue schema and PostgreSQL's own catalog. The table list below " +
+          "Every relation in the database: Charon's tables with their indexes and TOAST, plus the " +
+          "pg-boss queue schema and PostgreSQL's own catalog. The table list below " +
           "accounts for all of it. Read from the catalog (pg_class.relpages) rather than by measuring " +
           "the data directory, so it is accurate as of the last ANALYZE.",
         ) +
         dbInfoRow(
           "Steady-state at current settings",
           _capacityFormatBytes(work.steadyStateSizeBytes),
-          "Steady-state size is what the database grows to if monitoring settings stay as " +
-          "they are. Reduce retention or cadence to lower it.\n\nLegitimately larger than " +
-          "the current size while sample tables are still filling. Retention is reclaimed a " +
-          "whole TimescaleDB chunk at a time, so tables grow and drop in a weekly cycle; this is " +
-          "the largest total they reach together, not each table's own peak added up.",
+          "Steady-state size is what the database grows to once the audit log reaches its " +
+          "retention window at the last week's event rate (Retention tab). Lower the audit-event " +
+          "retention to lower it. Blank when audit events are kept forever.",
         ) +
         (allTables.length ? dbInfoRow("Tables", allTables.length) : "") +
-        dbInfoRow("TimescaleDB", tsLabel) +
-        dbInfoRow("Monitor queue", queueLabel) +
+        dbInfoRow("Job queue", q.pgbossInstalled ? "pg-boss (active)" : "unavailable") +
       '</div>' +
       (tablesHtml
         ? '<div style="margin-top:0.75rem;max-height:240px;overflow-y:auto">' +
@@ -1025,23 +1024,19 @@ function renderCapacityCard(capacity, dbInfo, pgTuning, capacityTransition) {
 
   var workHtml =
     '<div class="capacity-stat-card">' +
-      '<h5>Monitoring workload</h5>' +
+      // Charon adaptation: ZTNA workload (endpoints / tags / policies / audit log).
+      '<h5>ZTNA workload</h5>' +
       '<div class="db-info-grid">' +
-        dbInfoRow("Assets", formatNumber(work.monitoredAssetCount || 0)) +
-        dbInfoRow("Interfaces", formatNumber(work.monitoredInterfaceCount || 0)) +
-        dbInfoRow("Storage mounts", formatNumber(work.monitoredStorageCount || 0)) +
-        dbInfoRow("Agents", formatNumber(work.agentCount || 0)) +
-        (work.cadences
-          ? dbInfoRow("Cadences",
-              work.cadences.responseTimeSec + "s response · " +
-              work.cadences.telemetrySec + "s telemetry · " +
-              work.cadences.systemInfoSec + "s system info")
-          : "") +
+        dbInfoRow("Endpoints", formatNumber(work.endpointCount || 0)) +
+        dbInfoRow("Online now", formatNumber(work.onlineEndpointCount || 0)) +
+        dbInfoRow("Tags", formatNumber(work.tagCount || 0)) +
+        dbInfoRow("Policies", formatNumber(work.policyCount || 0)) +
+        dbInfoRow("Directory objects", formatNumber(work.directoryObjectCount || 0)) +
+        dbInfoRow("Audit events", formatNumber(work.eventCount || 0) + " (~" + formatNumber(work.eventsPerDay || 0) + "/day)") +
         (work.retention
           ? dbInfoRow("Retention",
-              work.retention.monitorDays + "d monitor · " +
-              work.retention.telemetryDays + "d telemetry · " +
-              work.retention.systemInfoDays + "d system info")
+              (work.retention.eventDays === -1 ? "forever" : work.retention.eventDays + "d") + " audit events · " +
+              (work.retention.sessionDays === -1 ? "forever" : work.retention.sessionDays + "d") + " sessions")
           : "") +
       '</div>' +
     '</div>';
@@ -1077,43 +1072,26 @@ function renderCapacityCard(capacity, dbInfo, pgTuning, capacityTransition) {
 // configured retention to OPERATOR-SELECTED (monitored) rows only — unselected
 // bulk rows are kept a fixed 24h and never rolled up (chosen per-asset in the
 // interface/storage/IPsec slide-ins).
-var SAMPLE_RETENTION_ENTITIES = [
-  { key: "assets",      label: "Response time",  hint: "Per-asset response-time probe (asset_monitor_samples)." },
-  { key: "cpuMem",      label: "CPU & memory",   hint: "Per-asset CPU / memory telemetry." },
-  { key: "hardware",    label: "Hardware sensors", hint: "Per-asset hardware sensors (temperature / fan / voltage / power / disk)." },
-  { key: "interfaces",  label: "Interfaces",     hint: "Per-interface counters.", selectionAware: true },
-  { key: "storage",     label: "Storage",        hint: "Per-volume usage.",       selectionAware: true },
-  { key: "ipsec",       label: "IPsec tunnels",  hint: "Per-tunnel state.",       selectionAware: true },
-  { key: "perfSla",     label: "SD-WAN Perf SLA", hint: "Per health-check member latency / jitter / loss." },
-  { key: "pathCheck", label: "Path checks", hint: "Per agent host × check: latency, phases, HTTP status and pass/fail." },
-  { key: "process",     label: "Processes & services", hint: "Pinned-program CPU/RAM plus process + service log lines." },
-];
+// Charon adaptation: no tiered (detail/hourly/daily) sample streams exist, so
+// the tier table is empty and hidden; the flat windows are what Charon's
+// retention prune (src/jobs/retentionPrune.ts) deletes.
+var SAMPLE_RETENTION_ENTITIES = [];
 // FLAT entities: one window instead of detail/hourly/daily, for tables that are
 // current-state-with-age rather than tiered time-series. Same −1/0/N encoding.
 var SAMPLE_RETENTION_FLAT_ENTITIES = [
   {
-    key: "appMapConnections",
-    label: "Application Map connections",
-    hint: "Observed listening ports + peers for mapped processes/services. Rows accumulate " +
-          "(one per distinct socket) and age out on this window; capped at 200 listening / " +
-          "500 outbound / 200 inbound per program per host. Also sets how far back the " +
-          "Application Map's “Seen within” filter can reach.",
-    def: 30,
+    key: "events",
+    label: "Audit events",
+    hint: "The audit log (Events page). Rows older than this are deleted on each prune pass. " +
+          "−1 keeps them forever; 0 is refused for the audit log.",
+    def: 90,
   },
   {
-    key: "arpEntries",
-    label: "ARP / neighbour cache",
-    hint: "IP→MAC bindings read from each FortiGate. Rows accumulate (one per distinct " +
-          "binding, not one per poll) and age out on this window; capped at 4000 per device. " +
-          "Also sets how far back the ARP Table tab’s range selector can reach.",
-    def: 30,
-  },
-  {
-    key: "pathCheckTraceroutes",
-    label: "Path traceroutes",
-    hint: "Hop-by-hop paths the Polaris Agent traced for path checks (every Nth run " +
-          "and on each pass→fail). Sets how far back the Paths tab’s path history reaches.",
-    def: 30,
+    key: "verificationSessions",
+    label: "Expired verification sessions",
+    hint: "User↔device↔IP bindings, counted from when they expired or were revoked. " +
+          "Live sessions are never pruned.",
+    def: 1,
   },
 ];
 var SAMPLE_RETENTION_TIERS   = [
@@ -1189,10 +1167,17 @@ function renderSampleRetentionCard(retention) {
     '</tr>';
   }).join("");
   var flatSection = flatRows
-    ? '<h5 style="margin:1.1rem 0 0.35rem;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.04em;color:var(--color-text-secondary)">Single-window data</h5>' +
+    ? '<h5 style="margin:' + (SAMPLE_RETENTION_ENTITIES.length ? '1.1rem' : '0') + ' 0 0.35rem;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.04em;color:var(--color-text-secondary)">Single-window data</h5>' +
       '<table style="border-collapse:collapse"><tbody>' + flatRows + '</tbody></table>'
     : "";
 
+  // Charon: no tiered entities → no tier table (it would be headers only).
+  var tierTable = SAMPLE_RETENTION_ENTITIES.length
+    ? '<table style="border-collapse:collapse">' +
+        '<thead><tr><th></th>' + headerCells + '<th></th></tr></thead>' +
+        '<tbody>' + rows + '</tbody>' +
+      '</table>'
+    : "";
   return '<div class="settings-card" id="sample-retention-card">' +
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">' +
       '<h4 style="margin:0">Sample Retention</h4>' +
@@ -1202,19 +1187,12 @@ function renderSampleRetentionCard(retention) {
       '</div>' +
     '</div>' +
     '<p style="font-size:0.82rem;color:var(--color-text-secondary);margin-bottom:0.85rem">' +
-      'How long Polaris keeps each kind of sample data. Older samples roll up into hourly buckets, then daily buckets, then drop. Per cell: <strong>N</strong> = keep N days, <strong>0</strong> = drop that tier, <strong>−1</strong> = keep forever.' +
+      'How long Charon keeps data that grows without bound. Per row: <strong>N</strong> = keep N days, <strong>0</strong> = prune all, <strong>−1</strong> = keep forever.' +
     '</p>' +
-    '<table style="border-collapse:collapse">' +
-      '<thead><tr>' +
-        '<th></th>' +
-        headerCells +
-        '<th></th>' +
-      '</tr></thead>' +
-      '<tbody>' + rows + '</tbody>' +
-    '</table>' +
+    tierTable +
     footnote +
     flatSection +
-    '<p class="hint" style="margin-top:0.5rem;font-size:0.78rem">Defaults: 7 days detail / 30 days hourly / 365 days daily. Takes effect on the next nightly prune (heavy-loop tick) and on the next chart request.</p>' +
+    '<p class="hint" style="margin-top:0.5rem;font-size:0.78rem">Defaults: 90 days audit events / 1 day expired sessions. Takes effect on the next retention prune pass (every 6 hours).</p>' +
   '</div>';
 }
 
@@ -1294,21 +1272,17 @@ function _wireSampleRetentionCard() {
 // — the save itself deletes nothing. Sets expectations for when the operator
 // will actually see database size move.
 function _showRetentionPruneInfoModal() {
+  // Charon adaptation: one prune pass every 6 hours, row-level deletes.
   var p = 'style="font-size:0.9rem;color:var(--color-text-secondary);margin:0 0 0.75rem"';
   var body =
     '<p ' + p + '>Retention changes are applied by the <strong>retention prune pass</strong>, ' +
-      'which runs once every 24 hours — not at save time. The next pass fires when 24 hours ' +
-      'have elapsed since the previous one, so the new limits take effect ' +
-      '<strong>within the next 24 hours</strong>.</p>' +
-    '<p ' + p + '>When it runs, sample history is stored in one-day chunks and every chunk ' +
-      'entirely older than the new cutoff is dropped whole — that is what returns disk space ' +
-      'to the operating system, compressed history included. Expect a step down in database ' +
-      'size at that point, then a one-day trim on each pass after.</p>' +
-    '<p ' + p + '>Two caveats: the chunk straddling a cutoff is kept until it fully ages past it ' +
-      '(up to one extra day of data per tier), and rows removed by row-level deletes free space ' +
-      'for reuse inside PostgreSQL rather than shrinking files on disk.</p>' +
+      'which runs on the active (leader) node every 6 hours — not at save time. The new limits take effect ' +
+      '<strong>within the next 6 hours</strong>.</p>' +
+    '<p ' + p + '>Pruning deletes rows, which frees space for reuse inside PostgreSQL rather than ' +
+      'shrinking files on disk; autovacuum reclaims it over time. Expect the database to stop ' +
+      'growing rather than to shrink.</p>' +
     '<p style="font-size:0.85rem;color:var(--color-text-tertiary);margin:0">You can confirm the ' +
-      'prune ran on the Maintenance tab — the Database card’s volume bars and steady-state ' +
+      'prune ran on the Maintenance tab — the Database card’s audit-event count and steady-state ' +
       'size reflect the new retention after the next pass.</p>';
   var footer = '<button class="btn btn-primary" onclick="closeModal()">Got it</button>';
   openModal("When will the database shrink?", body, footer);
@@ -1418,7 +1392,7 @@ async function loadDatabaseInfo() {
       // ── Backup Card ──
       '<div class="settings-card">' +
         '<h4>Backup</h4>' +
-        '<p class="hint" style="margin-bottom:0.75rem">Create a compressed backup of the database. Optionally encrypt with a password for secure storage or transfer.</p>' +
+        '<p class="hint" style="margin-bottom:0.75rem">Create a compressed backup of the database. Optionally encrypt with a password for secure storage or transfer. Database only — firmware images and branding uploads under the state directory are not included; back those up with the host.</p>' +
         '<div class="form-row" style="align-items:flex-end;gap:12px;flex-wrap:wrap">' +
           '<div style="flex:1;min-width:200px">' +
             '<label for="backup-password">Encryption password <span style="color:var(--color-text-tertiary)">(optional)</span></label>' +
@@ -1456,7 +1430,7 @@ async function loadDatabaseInfo() {
           '</div>' +
           '<div id="restore-version-warning" style="display:none;margin-bottom:0.75rem;padding:0.6rem 0.75rem;border-radius:6px;background:color-mix(in srgb, var(--color-warning) 12%, transparent);border:1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);font-size:0.82rem;color:var(--color-text-primary)">' +
             '<strong style="color:var(--color-warning)">Version mismatch</strong> — ' +
-            'This backup was created with a different version of Polaris. ' +
+            'This backup was created with a different version of Charon. ' +
             'Restoring a backup from a different version may fail or cause issues if the database schema has changed. ' +
             'For best results, ensure the application version matches the backup version before restoring.' +
           '</div>' +
@@ -1511,7 +1485,7 @@ async function loadDatabaseInfo() {
           '</div>' +
           '<div style="flex:1;min-width:220px">' +
             '<label for="bksched-copyto">Off-host copy directory <span style="color:var(--color-text-tertiary)">(optional)</span></label>' +
-            '<input type="text" id="bksched-copyto" placeholder="/mnt/backups/polaris">' +
+            '<input type="text" id="bksched-copyto" placeholder="/mnt/backups/charon">' +
           '</div>' +
           '<div>' +
             '<button class="btn btn-primary" id="btn-bksched-save" style="white-space:nowrap">Save Schedule</button>' +
@@ -1540,21 +1514,8 @@ async function loadDatabaseInfo() {
 // Returns true if the caller should proceed. If discoveries are running, prompts
 // the user to abort them first; aborts on confirmation, cancels on dismissal.
 async function warnIfDiscoveryRunning(actionLabel) {
-  var result;
-  try { result = await api.integrations.discoveries(); } catch (_) { return true; }
-  var running = (result && result.discoveries) || [];
-  if (running.length === 0) return true;
-
-  var names = running.map(function (d) { return d.name; }).join(", ");
-  var confirmed = await showConfirm(
-    'A discovery is currently running (' + names + ').\n\n' +
-    'Abort the discovery and continue with the ' + actionLabel + '?'
-  );
-  if (!confirmed) return false;
-
-  await Promise.allSettled(running.map(function (d) {
-    return api.integrations.abortDiscover(d.id);
-  }));
+  // Charon adaptation: there is no network discovery to abort (polaris's
+  // api.integrations.discoveries / abortDiscover), so nothing blocks the action.
   return true;
 }
 
@@ -1599,7 +1560,7 @@ function wireAdvisorRestartBtn(restartBtn) {
   restartBtn.addEventListener("click", async function () {
     if (!await warnIfDiscoveryRunning("restart")) return;
     var ok = await showConfirm(
-      "Restart Polaris now?\n\n" +
+      "Restart Charon now?\n\n" +
       "The server will be unreachable for ~30 seconds. Any in-flight operator action " +
       "will fail and must be retried after the restart."
     );
@@ -1613,7 +1574,7 @@ function wireAdvisorRestartBtn(restartBtn) {
     } catch (err) {
       showToast("Restart failed: " + (err && err.message ? err.message : "unknown error"), "error");
       restartBtn.disabled = false;
-      restartBtn.textContent = "Restart Polaris to apply";
+      restartBtn.textContent = "Restart Charon to apply";
     }
   });
 }
@@ -1625,7 +1586,7 @@ function wireAdvisorRestartBtn(restartBtn) {
  */
 function _advisorContainerRestartHtml() {
   return '<span class="hint" id="capacity-advisor-container-restart" style="font-size:0.82rem;color:var(--color-warning)">' +
-    '<strong>Staged.</strong> Restart the Polaris container yourself to apply — ' +
+    '<strong>Staged.</strong> Restart the Charon container(s) yourself to apply — ' +
     '<code>docker compose restart</code> for a compose stack (every role reads <code>.env</code>), ' +
     '<code>docker restart &lt;name&gt;</code>, or Restart on your container host\'s Docker page.' +
     '</span>';
@@ -1668,7 +1629,7 @@ function initCapacityAdvisorActions() {
       return;
     }
     var msg = "Write " + checked.length + " value" + (checked.length === 1 ? "" : "s") +
-      " to .env? They take effect on next Polaris restart.\n\nKeys:\n  " + checked.join("\n  ") +
+      " to .env? They take effect on next Charon restart.\n\nKeys:\n  " + checked.join("\n  ") +
       "\n\nmax_connections and PostgreSQL tuning are NOT in this set — those require a Postgres restart and must be done manually.";
     var ok = await showConfirm(msg);
     if (!ok) return;
@@ -1692,7 +1653,7 @@ function initCapacityAdvisorActions() {
       _advisorJustStaged = true;
       appliedRows.forEach(function (r) { markAdvisorRowStaged(card, r.key); });
       showToast("Staged " + applied + " value" + (applied === 1 ? "" : "s") + ". " +
-        (_advisorInContainer ? "Restart the Polaris container(s) to apply." : "Restart Polaris to apply."), "success");
+        (_advisorInContainer ? "Restart the Charon container(s) to apply." : "Restart Charon to apply."), "success");
 
       var remaining = card.querySelectorAll("input.advisor-stage-checkbox").length;
       if (remaining === 0 && _advisorInContainer) {
@@ -1703,7 +1664,7 @@ function initCapacityAdvisorActions() {
         var restartBtn = document.createElement("button");
         restartBtn.className = "btn btn-warning";
         restartBtn.id = "capacity-advisor-restart-btn";
-        restartBtn.textContent = "Restart Polaris to apply";
+        restartBtn.textContent = "Restart Charon to apply";
         stageBtn.replaceWith(restartBtn);
         wireAdvisorRestartBtn(restartBtn);
       } else {
@@ -1836,7 +1797,7 @@ function initRestoreControls() {
           'border:1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);' +
           'font-size:0.85rem;color:var(--color-text-primary)">' +
           '<strong style="color:var(--color-warning)">Restart required</strong> — ' +
-          'every Polaris process must restart to pick up the restored schema. ' +
+          'every Charon process must restart to pick up the restored schema. ' +
           'Until then, queries may fail with "could not open relation".' +
           '</div>';
       }
@@ -1875,8 +1836,8 @@ function selectRestoreFile(file) {
   document.getElementById("restore-filename").textContent = file.name;
   document.getElementById("restore-filesize").textContent = formatFileSize(file.size);
 
-  // Extract version from filename: polaris-backup-1.0.0-2026-...gz
-  var versionMatch = file.name.match(/polaris-backup-(\d+\.\d+\.\d+)-/);
+  // Extract version from filename: charon-backup-1.0.42-2026-...gz (or charon-pre-update-…)
+  var versionMatch = file.name.match(/charon-(?:backup|pre-update)-(\d+\.\d+\.\d+)-/);
   var backupVersion = versionMatch ? versionMatch[1] : null;
   var currentVersion = _branding && _branding.version ? _branding.version : null;
   var versionEl = document.getElementById("restore-version");
@@ -1901,7 +1862,7 @@ function selectRestoreFile(file) {
     warningEl.innerHTML =
       '<strong style="color:var(--color-warning)">Unknown version</strong> — ' +
       'Could not determine the application version from this backup file. ' +
-      'Ensure this backup was created by a compatible version of Polaris before restoring.';
+      'Ensure this backup was created by a compatible version of Charon before restoring.';
   }
 
   var isEncrypted = file.name.includes(".enc");
@@ -1916,7 +1877,7 @@ function selectRestoreFile(file) {
     reader.onload = function () {
       var arr = new Uint8Array(reader.result);
       var magic = String.fromCharCode.apply(null, arr.slice(0, 7));
-      if (magic === "POLARIS") {
+      if (magic === "CHARONB") {
         document.getElementById("restore-encrypted").innerHTML = '<span class="badge badge-warning" style="font-size:0.75rem">Yes</span>';
         document.getElementById("restore-password-row").style.display = "";
       }
@@ -2241,7 +2202,7 @@ function _applyImageUpdateLayout() {
   var repo = document.getElementById("update-repo-info");
   if (repo) repo.innerHTML = "";
   var intro = document.getElementById("update-card-intro");
-  if (intro) intro.textContent = "Polaris checks the published image once a day and tells you here, and in the sidebar, when a newer one is out.";
+  if (intro) intro.textContent = "Charon compares this image with the published ghcr.io image when you check, and tells you here when a newer one is out.";
 }
 
 function renderImageUpdate(status) {
@@ -2277,7 +2238,7 @@ function renderImageUpdate(status) {
   } else if (status.note) {
     stateLine = '<span style="color:var(--color-text-secondary)">' + escapeHtml(status.note) + '</span>';
   } else {
-    stateLine = '<span style="color:var(--color-text-tertiary)">Not checked yet — the first check runs a minute after Polaris starts.</span>';
+    stateLine = '<span style="color:var(--color-text-tertiary)">Not checked yet — click Check for Updates to compare with the published image.</span>';
   }
 
   area.innerHTML =
@@ -2310,8 +2271,8 @@ async function loadUpdateRepoInfo() {
       return;
     }
     var src = info.source === "env"
-      ? 'configured via <span class="mono">POLARIS_UPDATE_REPO</span> in <span class="mono">.env</span>'
-      : 'from the <span class="mono">origin</span> git remote (set <span class="mono">POLARIS_UPDATE_REPO</span> in <span class="mono">.env</span> to override)';
+      ? 'configured via <span class="mono">CHARON_UPDATE_REPO</span> in <span class="mono">.env</span>'
+      : 'from the <span class="mono">origin</span> git remote (set <span class="mono">CHARON_UPDATE_REPO</span> in <span class="mono">.env</span> to override)';
     el.innerHTML =
       '<span style="font-weight:600">Update source:</span> ' +
       '<span class="mono" style="color:var(--color-text-secondary)">' + escapeHtml(info.url) + '</span>' +
@@ -2397,7 +2358,11 @@ async function checkForUpdatesUI() {
   btn.disabled = false;
 }
 
+// Charon: set from the check result; Apply then asks the HA question.
+var _updateHaPair = false;
+
 function renderUpdateAvailable(result) {
+  _updateHaPair = !!result.haPair;
   var area = document.getElementById("update-status-area");
 
   var changesHtml = "";
@@ -2450,6 +2415,18 @@ function renderUpdateAvailable(result) {
 async function applyUpdateUI() {
   if (!await warnIfDiscoveryRunning("update")) return;
 
+  // Charon HA guard (deploy/HA.md): in a replication pair the server refuses
+  // the update until the operator confirms this node is safe to update.
+  var confirmNode = false;
+  if (_updateHaPair) {
+    confirmNode = await showConfirm(
+      "This node is part of a high-availability pair.\n\n" +
+      "Update the standby first, fail over, then update this node. " +
+      "Confirm this node is safe to update now?"
+    );
+    if (!confirmNode) return;
+  }
+
   var backupCheckbox = document.getElementById("update-backup-checkbox");
   var backupEnabled = backupCheckbox ? backupCheckbox.checked : true;
 
@@ -2475,7 +2452,7 @@ async function applyUpdateUI() {
   btn.textContent = "Starting update...";
 
   try {
-    await api.serverSettings.applyUpdate(password, allowWithoutBackup);
+    await api.serverSettings.applyUpdate(password, allowWithoutBackup, confirmNode);
     renderUpdateProgress();
     startUpdatePolling();
     // Kick the sidebar's own update-progress panel (app.js). It self-paces at
@@ -2691,7 +2668,7 @@ function pollUntilServerReachable() {
   overlay.innerHTML =
     '<div class="blocking-overlay-card">' +
       '<div class="spinner" style="width:28px;height:28px;margin:0 auto 0.75rem"></div>' +
-      '<strong>Restarting Polaris...</strong>' +
+      '<strong>Restarting Charon...</strong>' +
       '<p id="restart-poll-msg" style="font-size:0.82rem;margin-top:0.5rem;color:var(--color-text-secondary)">' +
         'Waiting for the server to come back online.' +
       '</p>' +
@@ -2801,14 +2778,11 @@ function renderUpdateFailed(status) {
 
   var recoveryHtml = '';
   if (status.backupFile) {
-    // Three separate psql sessions, not one: a database with TimescaleDB must be
-    // restored between timescaledb_pre_restore() and timescaledb_post_restore(),
-    // and pre_restore only affects sessions opened after it. The single
-    // `gunzip | psql` this card used to print skipped both and corrupted a
-    // Timescale restore — same defect the fallback scripts carried until 2026-09.
+    // Charon adaptation: no TimescaleDB, so a single gunzip | psql restore;
+    // the process group is charon.target and the database is named in DATABASE_URL.
     var CODE = 'font-size:0.8rem;background:var(--color-bg-secondary);padding:1px 5px;border-radius:3px';
     var BLOCK = 'display:block;margin-top:0.3rem;font-size:0.8rem;background:var(--color-bg-secondary);padding:4px 8px;border-radius:3px;white-space:nowrap;overflow-x:auto';
-    var restoreCmd = 'gunzip -c ' + status.backupFile + ' | sudo -u postgres psql -v ON_ERROR_STOP=1 --single-transaction -d polaris';
+    var restoreCmd = 'gunzip -c ' + status.backupFile + ' | sudo -u postgres psql -v ON_ERROR_STOP=1 --single-transaction -d <charon database>';
     recoveryHtml =
       '<div style="margin-top:1rem;background:color-mix(in srgb, var(--color-warning) 8%, transparent);border:1px solid color-mix(in srgb, var(--color-warning) 35%, transparent);border-radius:6px;padding:1rem">' +
         '<div style="font-weight:600;font-size:0.88rem;margin-bottom:0.5rem">Pre-update backup available</div>' +
@@ -2817,17 +2791,13 @@ function renderUpdateFailed(status) {
           '<summary style="cursor:pointer;font-size:0.82rem;color:var(--color-text-secondary);user-select:none">Manual restore instructions (if the app is unavailable)</summary>' +
           '<ol style="font-size:0.82rem;margin:0.6rem 0 0.5rem;padding-left:1.4rem;line-height:1.7">' +
             '<li>Download the pre-update backup from <strong>Backup History</strong> below and copy it to the server.</li>' +
-            '<li>Prefer <strong>Server Settings → Maintenance → Restore</strong> once the app is reachable — it runs the TimescaleDB restore gates for you. The steps below are for when it is not.</li>' +
-            '<li>Stop the Polaris process group:<br>' +
-              '<code style="' + CODE + '">sudo systemctl stop polaris.target</code></li>' +
-            '<li>Open the TimescaleDB restore window (skip this and step 6 only if the extension is not installed):<br>' +
-              '<code style="' + BLOCK + '">sudo -u postgres psql -d polaris -c \'SELECT timescaledb_pre_restore();\'</code></li>' +
-            '<li>Restore the dump:<br>' +
+            '<li>Prefer <strong>Server Settings → Maintenance → Restore</strong> once the app is reachable. The steps below are for when it is not.</li>' +
+            '<li>Stop the Charon process group:<br>' +
+              '<code style="' + CODE + '">sudo systemctl stop charon.target</code></li>' +
+            '<li>Restore the dump (an encrypted backup must be restored through the app):<br>' +
               '<code style="' + BLOCK + '">' + escapeHtml(restoreCmd) + '</code></li>' +
-            '<li>Close the restore window — <strong>run this even if step 5 failed</strong>; a database left in restoring mode rejects hypertable writes:<br>' +
-              '<code style="' + BLOCK + '">sudo -u postgres psql -d polaris -c \'SELECT timescaledb_post_restore();\'</code></li>' +
             '<li>Start the process group again:<br>' +
-              '<code style="' + CODE + '">sudo systemctl start polaris.target</code></li>' +
+              '<code style="' + CODE + '">sudo systemctl start charon.target</code></li>' +
           '</ol>' +
         '</details>' +
       '</div>';

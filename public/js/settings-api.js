@@ -1677,10 +1677,11 @@ const api = {
       var k = key && key.indexOf("std:") === 0 ? key.slice(4) : key;
       return request("POST", "/server-settings/mibs/std/" + encodeURIComponent(k) + "/walk", body, signal);
     },
-    listManufacturerAliases:   ()      => request("GET",    "/manufacturer-aliases"),
-    createManufacturerAlias:   (body)  => request("POST",   "/manufacturer-aliases", body),
-    updateManufacturerAlias:   (id, b) => request("PUT",    `/manufacturer-aliases/${encodeURIComponent(id)}`, b),
-    deleteManufacturerAlias:   (id)    => request("DELETE", `/manufacturer-aliases/${encodeURIComponent(id)}`),
+    // Charon: served under /server-settings (polaris mounts /manufacturer-aliases at the API root).
+    listManufacturerAliases:   ()      => request("GET",    "/server-settings/manufacturer-aliases"),
+    createManufacturerAlias:   (body)  => request("POST",   "/server-settings/manufacturer-aliases", body),
+    updateManufacturerAlias:   (id, b) => request("PUT",    `/server-settings/manufacturer-aliases/${encodeURIComponent(id)}`, b),
+    deleteManufacturerAlias:   (id)    => request("DELETE", `/server-settings/manufacturer-aliases/${encodeURIComponent(id)}`),
     // Editable Manufacturer Profile (Slice 6). Reads = admin or assets-admin;
     // writes admin-only. The monitoring path doesn't consume these rows yet
     // — the resolver swap lands in a follow-up.
@@ -1747,10 +1748,12 @@ const api = {
     // allowWithoutBackup: only sent when the operator ticked the confirmation in
     // the Apply Update modal. Absent/false means the server ABORTS the update if
     // the pre-update backup fails.
-    applyUpdate:     (password, allowWithoutBackup) => {
+    // confirmNode (Charon): the HA "this node is safe to update" acknowledgement.
+    applyUpdate:     (password, allowWithoutBackup, confirmNode) => {
       const body = {};
       if (password) body.password = password;
       if (allowWithoutBackup) body.allowWithoutBackup = true;
+      if (confirmNode) body.confirmNode = true;
       return request("POST", "/server-settings/updates/apply", Object.keys(body).length ? body : undefined);
     },
     dismissUpdate:   () => request("POST", "/server-settings/updates/dismiss"),

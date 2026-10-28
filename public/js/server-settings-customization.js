@@ -7,11 +7,10 @@
 // ─── Customization Tab ─────────────────────────────────────────────────────
 
 var _brandingLoaded = false;
-// Shipped-default logo URLs, current first. "/logo.png" was retired 2026-08 but
-// is still stored by installs seeded before then; only the pre-upgrade fallback
-// below consults this. Mirrors DEFAULT_LOGO_URLS in services/brandingService.ts.
-var DEFAULT_LOGO_URLS = ["/img/brand/polaris-symbol-dark.png", "/logo.png"];
-var _brandingData = { appName: "Polaris", subtitle: "Network Management Tool", logoUrl: "/img/brand/polaris-symbol-dark.png" };
+// Charon: no shipped logo art — the default brand is the name + subtitle as
+// text, so the default logoUrl is "" (see services/brandingService.ts).
+var DEFAULT_LOGO_URLS = [""];
+var _brandingData = { appName: "Charon", subtitle: "Zero Trust Network Access", logoUrl: "" };
 
 var _rebootSettingsData = null;
 
@@ -42,41 +41,35 @@ function renderCustomizationTab() {
   var isCustomLogo = _brandingData.customLogo !== undefined
     ? _brandingData.customLogo
     : Boolean(_brandingData.logoUrl && DEFAULT_LOGO_URLS.indexOf(_brandingData.logoUrl) === -1);
-  // Placement + accent default ON/OFF the same way the server does, so an
-  // install that has never saved this card renders its real behavior.
-  var logoAccent    = _brandingData.logoAccent === true;
+  // Placement defaults ON the same way the server does, so an install that has
+  // never saved this card renders its real behavior.
+  // Charon: no logo accent — polaris composites its star onto the logo
+  // server-side (brandLogoService); Charon has no symbol art to overlay.
   var logoOnLogin   = _brandingData.logoOnLogin !== false;
   var logoOnSidebar = _brandingData.logoOnSidebar !== false;
-  // The preview must show what the surfaces show — i.e. the composited PNG
-  // once the accent is on. Cache-busted per render since the upload route
-  // reuses one filename.
+  // Cache-busted by the server-derived logoVersion since the upload route
+  // reuses one filename. Charon: no default art — the preview shows the name.
   var previewSrc = isCustomLogo
-    ? (logoAccent
-        // Same theme the surfaces will request, so the preview shows the
-        // variant this operator is actually looking at.
-        ? "/api/v1/server-settings/branding/logo-accent.png?theme=" +
-          PolarisBrandLogo.currentTheme() + "&t=" + Date.now()
-        : _brandingData.logoUrl)
-    : PolarisBrandLogo.ASSETS.sidebar[PolarisBrandLogo.currentTheme()];
-  // Pre-feature payloads carry no temperatureUnit — treat anything but "f" as °C,
-  // matching normalizeTemperatureUnit server-side.
-  var tempUnit = _brandingData.temperatureUnit === "f" ? "f" : "c";
+    ? _brandingData.logoUrl + (_brandingData.logoVersion ? "?v=" + encodeURIComponent(_brandingData.logoVersion) : "")
+    : "";
 
   container.innerHTML =
     '<div class="settings-cards-row">' +
     '<div class="settings-card">' +
       '<h4>Application Name</h4>' +
       '<p style="font-size:0.82rem;color:var(--color-text-secondary);margin-bottom:1rem">' +
-        'Change the name shown in browser tabs and PDF exports. ' +
-        'On the login page and in the sidebar it is printed <strong>only beside a custom logo</strong> — ' +
-        'the Polaris logo already spells the name out, so it is not repeated underneath. ' +
-        'Leave it blank if your own logo carries your wordmark.' +
+        // Charon: no wordmark art, so the name is always printed in the
+        // sidebar (beneath your logo when one is set) — polaris prints it only
+        // beside a custom logo.
+        'Change the name shown in the sidebar and browser tabs. ' +
+        'With a custom logo it is printed beneath the logo; ' +
+        'leave it blank if your own logo carries your wordmark.' +
       '</p>' +
       '<div class="form-group"><label>Application Name</label>' +
-        '<input type="text" id="f-brand-appname" value="' + escapeHtml(_brandingData.appName || "") + '" placeholder="e.g. Polaris">' +
+        '<input type="text" id="f-brand-appname" maxlength="100" value="' + escapeHtml(_brandingData.appName || "") + '" placeholder="e.g. Charon">' +
       '</div>' +
       '<div class="form-group"><label>Subtitle</label>' +
-        '<input type="text" id="f-brand-subtitle" value="' + escapeHtml(_brandingData.subtitle || "") + '" placeholder="e.g. Network Management Tool">' +
+        '<input type="text" id="f-brand-subtitle" maxlength="100" value="' + escapeHtml(_brandingData.subtitle || "") + '" placeholder="e.g. Zero Trust Network Access">' +
         '<p class="hint">Shown beneath the application name on the sidebar and login page.</p>' +
       '</div>' +
       '<button class="btn btn-primary" id="btn-brand-save">Save</button>' +
@@ -84,16 +77,20 @@ function renderCustomizationTab() {
     '<div class="settings-card">' +
       '<h4>Logo</h4>' +
       '<p style="font-size:0.82rem;color:var(--color-text-secondary);margin-bottom:1rem">' +
-        'Upload a custom logo to replace the Polaris one. Recommended size: 280\u00d7280px or larger. Supported formats: PNG, JPEG, WebP. ' +
-        'Wherever your logo is switched off below, Polaris shows its own mark in the version that suits the current theme.' +
+        'Upload a custom logo to show above the application name. Recommended size: 280×280px or larger. Supported formats: PNG, JPEG, WebP. ' +
+        'Wherever your logo is switched off below, Charon shows the application name on its own.' +
       '</p>' +
       '<div style="display:flex;align-items:flex-start;gap:1.5rem;flex-wrap:wrap">' +
         '<div style="flex-shrink:0">' +
           '<div class="logo-preview-box">' +
-            '<img id="logo-preview" src="' + escapeHtml(previewSrc) + '" alt="Current logo">' +
+            // Charon: no default logo art — preview the text brand instead.
+            (previewSrc
+              ? '<img id="logo-preview" src="' + escapeHtml(previewSrc) + '" alt="Current logo">'
+              : '<span id="logo-preview" style="font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--color-text-primary);text-align:center;padding:0.5rem;word-break:break-word">' +
+                  escapeHtml(_brandingData.appName || "Charon") + '</span>') +
           '</div>' +
           '<p style="font-size:0.78rem;color:var(--color-text-tertiary);margin-top:0.5rem;text-align:center">' +
-            (isCustomLogo ? 'Custom logo' : 'Polaris logo') +
+            (isCustomLogo ? 'Custom logo' : 'No logo (name only)') +
           '</p>' +
         '</div>' +
         '<div style="flex:1;min-width:200px">' +
@@ -107,55 +104,35 @@ function renderCustomizationTab() {
             : '') +
         '</div>' +
       '</div>' +
-      // Placement + accent. Shown always so the options are discoverable, but
-      // inert without a custom logo \u2014 they only choose where YOUR logo goes.
+      // Placement. Shown always so the options are discoverable, but
+      // inert without a custom logo — they only choose where YOUR logo goes.
       '<div style="margin-top:1.25rem;border-top:1px solid var(--color-border);padding-top:1rem' +
         (isCustomLogo ? '' : ';opacity:0.55') + '">' +
         '<label style="display:flex;align-items:flex-start;gap:0.5rem;margin-bottom:0.6rem">' +
           '<input type="checkbox" id="f-logo-on-login"' + (logoOnLogin ? ' checked' : '') + (isCustomLogo ? '' : ' disabled') + ' style="margin-top:0.2rem">' +
           '<span><strong>Show my logo on the login page</strong>' +
-            '<span style="display:block;font-size:0.78rem;color:var(--color-text-tertiary)">Off: the Polaris wordmark is shown there instead.</span>' +
+            '<span style="display:block;font-size:0.78rem;color:var(--color-text-tertiary)">Off: the Charon name is shown there instead.</span>' +
           '</span>' +
         '</label>' +
         '<label style="display:flex;align-items:flex-start;gap:0.5rem;margin-bottom:0.6rem">' +
           '<input type="checkbox" id="f-logo-on-sidebar"' + (logoOnSidebar ? ' checked' : '') + (isCustomLogo ? '' : ' disabled') + ' style="margin-top:0.2rem">' +
           '<span><strong>Show my logo in the top-left corner after login</strong>' +
-            '<span style="display:block;font-size:0.78rem;color:var(--color-text-tertiary)">Off: the Polaris mark is shown in the sidebar instead.</span>' +
+            '<span style="display:block;font-size:0.78rem;color:var(--color-text-tertiary)">Off: only the application name is shown in the sidebar.</span>' +
           '</span>' +
         '</label>' +
-        '<label style="display:flex;align-items:flex-start;gap:0.5rem">' +
-          '<input type="checkbox" id="f-logo-accent"' + (logoAccent ? ' checked' : '') + (isCustomLogo ? '' : ' disabled') + ' style="margin-top:0.2rem">' +
-          '<span><strong>Accent my logo with the Polaris symbol</strong>' +
-            '<span style="display:block;font-size:0.78rem;color:var(--color-text-tertiary)">Overlays the Polaris star on the bottom-right corner of your logo, at about 50% of its size.</span>' +
-          '</span>' +
-        '</label>' +
+        // Charon: polaris's "Accent my logo with the Polaris symbol" option is
+        // omitted (no symbol art / server-side compositing in Charon).
         '<button class="btn btn-primary" id="btn-logo-placement-save" style="margin-top:0.9rem"' + (isCustomLogo ? '' : ' disabled') + '>Save</button>' +
       '</div>' +
     '</div>' +
-    '<div class="settings-card">' +
-      '<h4>Display Units</h4>' +
-      '<p style="font-size:0.82rem;color:var(--color-text-secondary);margin-bottom:1rem">' +
-        'Hardware-sensor temperatures are always collected, stored, and alerted on in Celsius. ' +
-        'This changes only how they are <strong>displayed</strong> — the asset Hardware Sensors table and ' +
-        'sensor charts, the mobile app, the Highest Temperature widget, and the Dash wallboard. ' +
-        'Automation thresholds are unaffected and stay in °C.' +
-      '</p>' +
-      '<div class="form-group"><label>Temperature</label>' +
-        '<select id="f-brand-tempunit">' +
-          '<option value="c"' + (tempUnit === "c" ? ' selected' : '') + '>Celsius (°C)</option>' +
-          '<option value="f"' + (tempUnit === "f" ? ' selected' : '') + '>Fahrenheit (°F)</option>' +
-        '</select>' +
-        '<p class="hint">Applies to every operator and to the unauthenticated wallboard.</p>' +
-      '</div>' +
-      '<button class="btn btn-primary" id="btn-tempunit-save">Save</button>' +
-    '</div>' +
+    // Charon: polaris's Display Units (hardware-sensor temperature) card is
+    // omitted — Charon collects no sensor data.
     _rebootSettingsCardHtml(_rebootSettingsData) +
     '</div>';
 
   // Wire save buttons — every card PUTs the whole branding payload, so any one
   // of them persists whatever the operator changed on this tab.
   document.getElementById("btn-brand-save").addEventListener("click", function () { saveBranding(false); });
-  document.getElementById("btn-tempunit-save").addEventListener("click", function () { saveBranding(false); });
   var placementBtn = document.getElementById("btn-logo-placement-save");
   // Re-render after this one: the preview swaps to (or away from) the
   // server-composited accent version.
@@ -240,10 +217,8 @@ async function saveBranding(rerender) {
     if (sidebarEl) data.logoOnSidebar = sidebarEl.checked;
     if (accentEl)  data.logoAccent    = accentEl.checked;
     _brandingData = await api.serverSettings.updateBranding(data);
+    // Charon: applyBranding() also repaints the live sidebar (app.js).
     applyBranding(_brandingData);
-    // Same URL, new bytes when the accent flipped — force the live sidebar to
-    // re-fetch so the operator sees the change without a reload.
-    PolarisBrandLogo.applyTo(document.querySelector(".sidebar-logo"), _brandingData, "sidebar", { bust: true });
     showToast("Branding saved");
     if (rerender) renderCustomizationTab();
   } catch (err) {
@@ -263,9 +238,8 @@ async function uploadLogo(files) {
   try {
     _brandingData = await api.serverSettings.uploadLogo(file);
     applyBranding(_brandingData);
-    // The upload route reuses one filename, so the sidebar's <img> URL didn't
-    // change even though the image did — force it to re-fetch.
-    PolarisBrandLogo.applyTo(document.querySelector(".sidebar-logo"), _brandingData, "sidebar", { bust: true });
+    // Charon: applyBranding() repaints the sidebar; the payload's logoVersion
+    // changes with every upload, so the <img> URL changes and re-fetches.
     renderCustomizationTab();
     showToast("Logo uploaded");
   } catch (err) {
@@ -279,9 +253,8 @@ async function resetLogo() {
   try {
     _brandingData = await api.serverSettings.deleteLogo();
     applyBranding(_brandingData);
-    // The upload route reuses one filename, so the sidebar's <img> URL didn't
-    // change even though the image did — force it to re-fetch.
-    PolarisBrandLogo.applyTo(document.querySelector(".sidebar-logo"), _brandingData, "sidebar", { bust: true });
+    // Charon: applyBranding() repaints the sidebar; the payload's logoVersion
+    // changes with every upload, so the <img> URL changes and re-fetches.
     renderCustomizationTab();
     showToast("Logo reset to default");
   } catch (err) {

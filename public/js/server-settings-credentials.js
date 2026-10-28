@@ -184,7 +184,8 @@ function mibCardHTML() {
         '<td class="actions" style="white-space:nowrap;flex-wrap:nowrap">' +
           '<button class="btn btn-sm btn-primary mib-browse" data-id="' + escapeHtml(m.id) + '" data-name="' + escapeHtml(m.moduleName) + '">Browse</button> ' +
           '<a class="btn btn-sm btn-secondary" href="' + api.serverSettings.downloadMibUrl(m.id) + '" download="' + escapeHtml(m.filename) + '">Download</a> ' +
-          (isAdmin()
+          // Charon: MIB writes ride serverSettingsSystem:write (polaris: admin).
+          (permAtLeast("serverSettingsSystem", "write")
             ? '<button class="btn btn-sm btn-danger mib-del" data-id="' + escapeHtml(m.id) + '" data-name="' + escapeHtml(m.moduleName) + '">Del</button>'
             : '') +
         '</td>' +
@@ -198,7 +199,8 @@ function mibCardHTML() {
   }
 
   // Upload form (admin only — assets-admin can browse + walk but not edit)
-  if (!isAdmin()) {
+  // Charon: gated on serverSettingsSystem:write, the key the upload route checks.
+  if (!permAtLeast("serverSettingsSystem", "write")) {
     html += '</div>';
     return html;
   }
@@ -599,7 +601,7 @@ function _mibBrowseScalarDetail(sym) {
 
   var canWalk = sym.fullOid && (sym.access === "read-only" || sym.access === "read-write" || sym.access === "read-create");
   var walkBtn = canWalk
-    ? '<button class="btn btn-primary" id="btn-mib-walk-open" style="margin-top:1rem">Walk on asset…</button>'
+    ? '<button class="btn btn-primary" id="btn-mib-walk-open" style="margin-top:1rem">Walk on device…</button>'
     : '<p style="font-size:0.78rem;color:var(--color-text-tertiary);margin-top:1rem">' +
         (sym.fullOid ? 'Not a readable object — only read-only / read-write / read-create symbols can be walked.' : 'Cannot walk — OID is unresolved.') +
       '</p>';
@@ -637,7 +639,7 @@ function _mibBrowseTableDetail(table, st) {
   var walkBtn = "";
   if (firstReadable) {
     walkBtn =
-      '<button class="btn btn-primary" id="btn-mib-walk-open" data-target="' + escapeHtml(firstReadable.name) + '" style="margin-top:1rem">Walk this table on asset…</button>' +
+      '<button class="btn btn-primary" id="btn-mib-walk-open" data-target="' + escapeHtml(firstReadable.name) + '" style="margin-top:1rem">Walk this table on device…</button>' +
       '<p style="font-size:0.78rem;color:var(--color-text-tertiary);margin:0.5rem 0 0">Walks <b>' + escapeHtml(firstReadable.name) + '</b> as the table entry — results are grouped into a 2D table by the SMI <code>INDEX</code>.</p>';
   } else {
     walkBtn = '<p style="font-size:0.78rem;color:var(--color-text-tertiary);margin-top:1rem">No readable columns — table cannot be walked.</p>';
@@ -680,12 +682,12 @@ function _mibBrowseOpenWalk(ev) {
   panel.style.display = "block";
   panel.innerHTML =
     '<h5 style="margin:0 0 0.5rem">Walk <span class="mono">' + escapeHtml(symbolName) + '</span></h5>' +
+    // Charon: no Asset inventory — the walk targets a typed host instead of
+    // a searched asset (the server validates it like Test Connection does).
     '<div class="form-group" style="margin-bottom:0.5rem">' +
-      '<label style="font-size:0.78rem;font-weight:500">Search asset</label>' +
-      '<input type="search" id="f-mib-walk-search" autocomplete="off" spellcheck="false" placeholder="hostname, IP, or MAC (min 2 chars)">' +
-      '<div id="f-mib-walk-results" style="margin-top:0.25rem;max-height:200px;overflow:auto;border:1px solid var(--color-border);border-radius:4px;display:none"></div>' +
+      '<label style="font-size:0.78rem;font-weight:500">IP address or hostname</label>' +
+      '<input type="text" id="f-mib-walk-host" autocomplete="off" spellcheck="false" placeholder="10.20.30.40">' +
     '</div>' +
-    '<div id="f-mib-walk-selected" style="display:none;padding:0.5rem 0.6rem;border:1px solid var(--color-border);border-radius:4px;margin-bottom:0.5rem;background:var(--color-surface-alt,rgba(127,127,127,0.05))"></div>' +
     '<div class="form-group" style="margin-bottom:0.5rem">' +
       '<label style="font-size:0.78rem;font-weight:500">SNMP credential</label>' +
       '<select id="f-mib-walk-cred" disabled><option value="">Loading credentials…</option></select>' +
@@ -703,13 +705,10 @@ function _mibBrowseOpenWalk(ev) {
 }
 
 function _wireMibWalkPanel(symbolName) {
-  var selectedAsset = null;
-  var searchTimer = null;
-  var lastQuery = "";
-
-  var searchInput = document.getElementById("f-mib-walk-search");
-  var resultsBox  = document.getElementById("f-mib-walk-results");
-  var selectedBox = document.getElementById("f-mib-walk-selected");
+  // Charon adaptation: polaris searches assets (api.assets.list) and posts an
+  // assetId; Charon has no inventory, so the operator types the host and the
+  // walk posts { host }. Everything after the target is polaris verbatim.
+  var hostInput   = document.getElementById("f-mib-walk-host");
   var credSelect  = document.getElementById("f-mib-walk-cred");
   var runBtn      = document.getElementById("btn-mib-walk-run");
   var statusEl    = document.getElementById("mib-walk-status");
@@ -733,89 +732,24 @@ function _wireMibWalkPanel(symbolName) {
     credSelect.innerHTML = '<option value="">Failed to load credentials</option>';
   });
 
+  function typedHost() { return (hostInput.value || "").trim(); }
   function refreshRunState() {
-    runBtn.disabled = !(selectedAsset && credSelect.value);
+    runBtn.disabled = !(typedHost() && credSelect.value);
   }
   credSelect.addEventListener("change", refreshRunState);
-
-  function setSelected(hit) {
-    selectedAsset = hit;
-    if (!hit) {
-      selectedBox.style.display = "none";
-      runBtn.disabled = true;
-      return;
-    }
-    selectedBox.innerHTML =
-      '<div style="font-weight:600">' + escapeHtml(hit.title || "asset") + '</div>' +
-      (hit.subtitle ? '<div style="font-size:0.8rem;color:var(--color-text-secondary)">' + escapeHtml(hit.subtitle) + '</div>' : '');
-    selectedBox.style.display = "block";
-    resultsBox.style.display = "none";
-    resultsBox.innerHTML = "";
-    searchInput.value = hit.title || "";
-    refreshRunState();
-  }
-
-  function renderHits(hits) {
-    if (!hits.length) {
-      resultsBox.innerHTML = '<div style="padding:0.5rem;color:var(--color-text-secondary);font-size:0.85rem">No asset matches.</div>';
-      resultsBox.style.display = "block";
-      return;
-    }
-    resultsBox.innerHTML = hits.map(function (h, idx) {
-      return '<div class="mib-walk-hit" data-idx="' + idx + '" style="padding:0.4rem 0.6rem;cursor:pointer;border-bottom:1px solid var(--color-border)">' +
-        '<div style="font-weight:600">' + escapeHtml(h.title || "asset") + '</div>' +
-        (h.subtitle ? '<div style="font-size:0.78rem;color:var(--color-text-secondary)">' + escapeHtml(h.subtitle) + '</div>' : '') +
-      '</div>';
-    }).join("");
-    resultsBox.style.display = "block";
-    resultsBox.querySelectorAll(".mib-walk-hit").forEach(function (el) {
-      el.addEventListener("click", function () {
-        var idx = Number(el.getAttribute("data-idx"));
-        setSelected(hits[idx]);
-      });
-    });
-  }
-
-  searchInput.addEventListener("input", function () {
-    var q = searchInput.value.trim();
-    if (selectedAsset && q !== (selectedAsset.title || "")) {
-      selectedAsset = null;
-      selectedBox.style.display = "none";
-      refreshRunState();
-    }
-    clearTimeout(searchTimer);
-    if (q.length < 2) {
-      resultsBox.style.display = "none";
-      resultsBox.innerHTML = "";
-      lastQuery = "";
-      return;
-    }
-    searchTimer = setTimeout(async function () {
-      lastQuery = q;
-      try {
-        var results = await api.assets.list({ search: q, limit: 25 });
-        if (q !== lastQuery) return;
-        var hits = (results.assets || []).map(function (a) {
-          var vendorModel = [a.manufacturer, a.model].filter(Boolean).join(" ");
-          var bits = [a.ipAddress, a.macAddress, vendorModel].filter(Boolean);
-          return { id: a.id, title: a.hostname || a.assetTag || "asset", subtitle: bits.join(" — ") || a.assetType };
-        });
-        renderHits(hits);
-      } catch (err) {
-        resultsBox.innerHTML = '<div style="padding:0.5rem;color:var(--color-danger);font-size:0.85rem">Search failed: ' + escapeHtml(err.message || "") + '</div>';
-        resultsBox.style.display = "block";
-      }
-    }, 180);
+  hostInput.addEventListener("input", refreshRunState);
+  hostInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !runBtn.disabled) { e.preventDefault(); runBtn.click(); }
   });
 
   runBtn.addEventListener("click", async function () {
-    if (!selectedAsset || !credSelect.value) return;
+    if (!typedHost() || !credSelect.value) return;
     runBtn.disabled = true;
     statusEl.textContent = "Walking…";
     resultBox.innerHTML = "";
     try {
       var result = await api.serverSettings.walkMib(_mibBrowseState.mibId, {
-        assetId: selectedAsset.id,
+        host: typedHost(),
         credentialId: credSelect.value,
         objectName: symbolName,
       });
@@ -833,7 +767,7 @@ function _wireMibWalkPanel(symbolName) {
     }
   });
 
-  setTimeout(function () { searchInput.focus(); }, 50);
+  setTimeout(function () { hostInput.focus(); }, 50);
 }
 
 function _renderProfileMibWalkResult(result) {
@@ -953,11 +887,14 @@ async function loadCredentialsTab() {
     // it manages can't be admin-gated any more. The MIB / profile calls in
     // the same batch already swallow their own 403s, and both those cards
     // still render for admin only.
-    var adminUser = !(typeof isAdmin === "function" && !isAdmin());
+    // Charon: "admin" here = serverSettingsSystem:read (the MIB / profile
+    // routes' gate), and the credential list tolerates a 403 — a role can hold
+    // serverSettingsSystem without the credentials key.
+    var adminUser = permAtLeast("serverSettingsSystem", "read");
     var mayWriteCreds = _credsWritable();
     if (adminUser || mayWriteCreds) {
       var results = await Promise.all([
-        api.credentials.list(),
+        api.credentials.list().catch(function () { return []; }),
         api.serverSettings.listMibs().catch(function () { return []; }),
         api.serverSettings.getMibFacets().catch(function () { return { manufacturers: [], modelsByManufacturer: {} }; }),
         api.serverSettings.listManufacturerProfiles().catch(function () { return { profiles: [], transforms: [] }; }),
@@ -1053,7 +990,9 @@ function _credEditable(c) {
 
 function renderCredentialsTab() {
   var container = document.getElementById("tab-credentials");
-  var adminUser = !(typeof isAdmin === "function" && !isAdmin());
+  // Charon: the Manufacturer Profiles card (polaris: admin-only) renders for
+  // serverSettingsSystem:write, the key its write routes check.
+  var adminUser = permAtLeast("serverSettingsSystem", "write");
   var mayWriteCreds = _credsWritable();
 
   var html = "";
@@ -1437,7 +1376,7 @@ async function openCredUsagePanel(credId, credName) {
       bodyEl.innerHTML =
         '<div style="padding:1rem 1.25rem">' +
           '<p style="font-size:0.82rem;color:var(--color-text-secondary);margin:0 0 0.75rem">' +
-            'This shows where the credential is configured across the monitor-settings tiers, the Firmware Repository and Polaris Agent installs — not a live probe trace.' +
+            'This shows where the credential is configured across the monitor-settings tiers, the Firmware Repository and agent installs — not a live probe trace.' +
           '</p>' +
           '<p class="empty-state" style="padding:1rem 0">No assets use this credential, and it is not referenced by any class or integration setting.</p>' +
         '</div>';
@@ -1486,7 +1425,7 @@ async function openCredUsagePanel(credId, credName) {
     // binding, and Polaris Agent install / upgrade / reboot opt-in.
     if (u.operationLevel && u.operationLevel.length) {
       var opCount = u.operationLevel.reduce(function (n, g) { return n + g.assets.length; }, 0);
-      html += _credUsageSectionHeader("Operations", opCount, "Used to act on the asset rather than poll it — firmware upgrades, reboots and Polaris Agent installs. An asset can also appear under a monitoring tier above.");
+      html += _credUsageSectionHeader("Operations", opCount, "Used to act on the asset rather than poll it — firmware upgrades, reboots and agent installs. An asset can also appear under a monitoring tier above.");
       html += u.operationLevel.map(function (g) {
         return '<div style="margin:0.25rem 0 0.6rem">' +
           '<div style="font-size:0.82rem;font-weight:500;margin-bottom:0.3rem">' + escapeHtml(g.label) + '</div>' +
@@ -1809,29 +1748,26 @@ function openCredentialTestModal(state) {
   var title = "Test Credential" + (state.name ? " — " + state.name : "");
   var body =
     '<p style="font-size:0.85rem;color:var(--color-text-secondary);margin:0 0 0.75rem">' +
-      'Pick an asset to test this ' + escapeHtml(typeLabel) + ' credential against, or type an address directly — ' +
-      'useful for a device that isn\'t onboarded yet. Either way the host is all that is borrowed; ' +
-      'monitor settings are ignored — the form values you entered are what gets exercised.' +
+      // Charon: no Asset inventory, so the "Choose an existing asset" mode is
+      // left out and the typed-host mode is the only (pre-selected) target.
+      'Type the address to test this ' + escapeHtml(typeLabel) + ' credential against. ' +
+      'Only the host is used; the form values you entered are what gets exercised.' +
       (state.type === 'http'
-        ? ' The response body comes back below, so you can pick your <strong>Expected content</strong> string out of what the device actually returns. A per-asset path override is not applied here — this tests the credential.'
+        ? ' The response body comes back below, so you can pick your <strong>Expected content</strong> string out of what the device actually returns.'
         : '') +
     '</p>' +
-    '<div class="form-group">' +
-      '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:normal">' +
-        '<input type="radio" name="cred-test-mode" value="asset" checked>' +
-        '<span>Choose an existing asset</span>' +
-      '</label>' +
+    '<div class="form-group" style="display:none">' +
       '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:normal;margin-top:0.25rem">' +
-        '<input type="radio" name="cred-test-mode" value="manual">' +
+        '<input type="radio" name="cred-test-mode" value="manual" checked>' +
         '<span>Enter an IP or hostname</span>' +
       '</label>' +
     '</div>' +
-    '<div class="form-group" data-test-mode="asset"><label>Search asset</label>' +
+    '<div class="form-group" data-test-mode="asset" style="display:none"><label>Search asset</label>' +
       '<input type="search" id="f-cred-test-search" autocomplete="off" spellcheck="false" placeholder="hostname, IP, or MAC (min 2 chars)">' +
       '<div id="f-cred-test-results" style="margin-top:0.25rem;max-height:240px;overflow:auto;border:1px solid var(--color-border);border-radius:4px;display:none"></div>' +
     '</div>' +
     '<div id="f-cred-test-selected" data-test-mode="asset" style="display:none;padding:0.6rem 0.75rem;border:1px solid var(--color-border);border-radius:4px;margin-bottom:0.75rem;background:var(--color-surface-alt,rgba(127,127,127,0.05))"></div>' +
-    '<div class="form-group" data-test-mode="manual" style="display:none"><label>IP address or hostname</label>' +
+    '<div class="form-group" data-test-mode="manual"><label>IP address or hostname</label>' +
       '<input type="text" id="f-cred-test-host" autocomplete="off" spellcheck="false" placeholder="10.20.30.40">' +
       '<p class="hint">Just the host — no scheme, port or path. Those are part of the check below, so a pasted URL is refused rather than silently trimmed down to something that dials differently from what you typed. Nothing is saved; this only picks the target for one probe.</p>' +
     '</div>' +
@@ -1997,7 +1933,7 @@ function openCredentialTestModal(state) {
       }
     }, 180);
   });
-  setTimeout(function () { searchInput.focus(); }, 0);
+  setTimeout(function () { hostInput.focus(); }, 0); // Charon: typed host is the only mode
 
   runBtn.addEventListener("click", async function () {
     var mode = testMode();
@@ -2152,7 +2088,7 @@ function credWinrmForm(cfg) {
         '<input type="checkbox" id="f-winrm-verifytls"' + (cfg.verifyTls === true ? " checked" : "") + '>' +
         '<span>Verify TLS certificate</span>' +
       '</label>' +
-      '<p class="hint">Applies when Use HTTPS is on. WinRM sends the username and password as Basic auth. When checked, the certificate must chain to a trusted CA. When unchecked (a self-signed listener), Polaris pins the certificate it sees on the first connection and refuses to send the password if it ever changes; when a certificate is legitimately re-issued, compare it and choose Trust new certificate under Web Server → Pinned server identities.</p>' +
+      '<p class="hint">Applies when Use HTTPS is on. WinRM sends the username and password as Basic auth. When checked, the certificate must chain to a trusted CA. When unchecked (a self-signed listener), Charon pins the certificate it sees on the first connection and refuses to send the password if it ever changes; when a certificate is legitimately re-issued, the refusal is logged on the Events page with the setting to clear to trust the new one.</p>' +
     '</div>'
   );
 }
@@ -2171,7 +2107,8 @@ function credSshForm(cfg) {
     '</div>' +
     '<div class="form-group"><label>Private Key Passphrase <span style="font-weight:normal;color:var(--color-text-tertiary)">(only if the key is encrypted)</span></label>' +
       '<input type="password" id="f-ssh-passphrase" value="' + escapeHtml(cfg.passphrase || "") + '" autocomplete="new-password">' +
-      '<p class="hint">Leave blank for an unencrypted key. Keys generated by Polaris (Integrations &rarr; Polaris Agent &rarr; SSH Deployment) are never encrypted &mdash; they are already sealed at rest and never exported, so a passphrase would only sit beside the key it protects.</p>' +
+      // Charon: polaris's note about its generated SSH-deployment keys dropped (no such feature here).
+      '<p class="hint">Leave blank for an unencrypted key.</p>' +
     '</div>' +
     '<div class="form-group"><label>Port</label>' +
       '<input type="number" id="f-ssh-port" value="' + escapeHtml(String(cfg.port || "")) + '" placeholder="22" min="1" max="65535">' +
@@ -2181,7 +2118,7 @@ function credSshForm(cfg) {
         '<input type="checkbox" id="f-ssh-verifyhostkey"' + (cfg.verifyHostKey !== false ? " checked" : "") + '>' +
         '<span>Verify the server\'s host key</span>' +
       '</label>' +
-      '<p class="hint">Recommended. When off, Polaris accepts whatever host key is presented, so anything answering on the target\'s address can impersonate it &mdash; and on an agent install it is handed a script to run as root. On first connection Polaris pins the key it sees and refuses later connections if it changes; if a host is legitimately rebuilt or re-keyed, delete its pin under Integrations &rarr; Polaris Agent &rarr; Windows SSH Deployment (Pinned server identities).</p>' +
+      '<p class="hint">Recommended. When off, Charon accepts whatever host key is presented, so anything answering on the target\'s address can impersonate it and receive this login. On first connection Charon pins the key it sees and refuses later connections if it changes; if a host is legitimately rebuilt or re-keyed, the refusal is logged on the Events page with the setting to clear to trust the new key.</p>' +
     '</div>' +
     credAllowRebootHTML(cfg, "",
       "Lets this login run <code>execute reboot</code> on a FortiGate it is set on, restart the FortiSwitches and FortiAPs that FortiGate manages, or reboot a standalone FortiSwitch / FortiAP over its own CLI.")
@@ -2476,10 +2413,10 @@ function manufacturerProfilesCardHTML() {
   var html = '<div class="settings-card">' +
     '<h4>Manufacturer Profiles</h4>' +
     '<p style="font-size:0.82rem;color:var(--color-text-secondary);margin-bottom:0.75rem">' +
-      'Per-manufacturer SNMP telemetry profile — pick which MIB symbol Polaris walks ' +
-      'for each System-tab metric, with optional per-model exceptions. Seeded from the ' +
-      'built-in vendor profiles on first boot. Each row’s MIB cell says where its symbol ' +
-      'resolves from — or what to upload when it does not: Polaris ships the standard MIBs, ' +
+      // Charon: rebranded; no "seeded from the built-in vendor profiles on first boot" (Charon does not seed them).
+      'Per-manufacturer SNMP telemetry profile — pick which MIB symbol Charon walks ' +
+      'for each System-tab metric, with optional per-model exceptions. Each row’s MIB cell says where its symbol ' +
+      'resolves from — or what to upload when it does not: Charon ships the standard MIBs, ' +
       'a vendor’s MIBs come from you.' +
     '</p>';
 
@@ -2503,7 +2440,7 @@ function manufacturerProfilesCardHTML() {
       '<div class="aw-suggest" id="mfg-profile-add-suggest"></div>' +
     '</span>' +
     '<button class="btn btn-primary" id="btn-add-mfg-profile">+ Add Manufacturer</button>' +
-    '<button class="btn btn-secondary" id="btn-import-mfg-profile" title="Import a profile exported from Polaris, choosing which parts to bring in">Import…</button>' +
+    '<button class="btn btn-secondary" id="btn-import-mfg-profile" title="Import a profile exported from Charon or Polaris, choosing which parts to bring in">Import…</button>' +
     '<input type="file" id="f-import-mfg-profile" accept=".json,application/json" style="display:none">' +
   '</div>';
 
@@ -2537,7 +2474,7 @@ function renderProfileRow(p) {
 function renderProfileDetail(detail) {
   var html = '<div style="padding:8px 12px 12px;border-top:1px solid var(--color-border)">';
   html += '<div style="font-size:0.78rem;color:var(--color-text-secondary);margin-bottom:6px">' +
-    'Each row is one System-tab metric. The <b>Default</b> column is what Polaris walks for ' +
+    'Each row is one System-tab metric. The <b>Default</b> column is what Charon walks for ' +
     'every asset under this profile; a device type narrows that, and a model regex narrows it again.' +
   '</div>';
   html += _mfgMatchPatternHTML(detail);
@@ -2732,6 +2669,7 @@ function renderWidgetCard(profileId, w, manufacturer) {
       '<span style="flex:1"></span>' +
       // Which assets poll this widget (business rule 130). Needs assets write
       // on top of the profile key, like the server route.
+      // Charon has no `assets` key (no inventory), so the Devices… picker never renders.
       (permAtLeast("assets", "write") ? '<button class="btn btn-sm mfg-widget-devices" title="Choose which devices poll this widget">Devices…</button> ' : '') +
       '<button class="btn btn-sm mfg-widget-edit">Edit</button>' +
       ' <button class="btn btn-sm btn-danger mfg-widget-del">Del</button>' +
@@ -4684,7 +4622,7 @@ async function openProfileCodeModal(id) {
     showToast(err.message || "Could not load the profile", "error");
     return;
   }
-  var canSave = permAtLeast("manufacturerProfiles", "write");
+  var canSave = permAtLeast("serverSettingsSystem", "write"); // Charon key (polaris: manufacturerProfiles)
   var text = JSON.stringify(code, null, 2);
   var note =
     '<p style="font-size:0.85rem;color:var(--color-text-tertiary);margin:0 0 0.5rem">' +

@@ -29,6 +29,13 @@
  * write = upload / delete / make-primary / purge / bind. Flashing a device is
  * the asset slide-over's verb, gated at assets:write — not this page's, and
  * not this key's.
+ *
+ * Charon adaptations (marked "Charon:" below): the gate is serverSettingsSystem
+ * (read to look, fullwrite to change — Charon has no `firmware` key). Charon
+ * has no asset inventory and no upgrade executor, so asset counts, the
+ * orphaned flag and the "no upgrade engine" pill are not drawn, any model
+ * node with images may be purged, and "Add model…" files a node by hand —
+ * polaris grows its model nodes from the inventory, which Charon lacks.
  */
 (function () {
   "use strict";
@@ -42,11 +49,16 @@
   var _credentials = null;   // the form-mode http credentials, fetched when an editor opens
   var _newCredentialFor = null; // nodeKey whose "Add a device admin login…" opened the credential modal
   var _uploading = {};       // nodeKey → true while an upload is in flight
+  // Charon: model nodes added by hand ("Add model…") that hold no image yet —
+  // { manufacturer, assetType, model }; dropped once the server tree has them.
+  var _pendingModels = [];
 
   // ─── helpers ───────────────────────────────────────────────────────────────
 
   function esc(s) { return typeof escapeHtml === "function" ? escapeHtml(s == null ? "" : String(s)) : String(s == null ? "" : s); }
-  function can(level) { return typeof permAtLeast === "function" && permAtLeast("firmware", level); }
+  // Charon: serverSettingsSystem stands in for polaris's `firmware` key; every
+  // Repository change is fullwrite there (the server gates the same way).
+  function can(level) { return typeof permAtLeast === "function" && permAtLeast("serverSettingsSystem", level === "write" ? "fullwrite" : level); }
   function toast(msg, kind) { if (typeof showToast === "function") showToast(msg, kind || "info"); }
   function ago(iso) { return typeof timeAgo === "function" ? timeAgo(iso) : String(iso); }
   function bytes(n) {
@@ -153,6 +165,8 @@
 
   /** "12 assets" — a button that opens the device list when the viewer may see assets. */
   function assetCountHTML(n, scopeLabel) {
+    // Charon: no asset inventory — every count would read "0 assets".
+    if (!(n > 0)) return "";
     var text = n + " asset" + (n === 1 ? "" : "s");
     var mayList = n > 0 && typeof permAtLeast === "function" && permAtLeast("assets", "read");
     if (!mayList) return text;
@@ -315,7 +329,8 @@
     var orphanPill = mdl.orphaned
       ? '<span class="fw-pill fw-orphan-pill" title="Images for this model are still on disk, but no asset carries the model any more. Delete them if the hardware is gone.">No assets carry this model any more</span>'
       : "";
-    var purge = (mdl.orphaned && can("write"))
+    // Charon: no inventory decides "orphaned", so any node holding images may be purged.
+    var purge = ((mdl.orphaned || (mdl.images || []).length > 0) && can("write"))
       ? '<button type="button" class="btn btn-sm btn-danger fw-model-purge" title="Delete every image under this model">Delete firmware for this model</button> '
       : "";
     var body =
@@ -326,7 +341,8 @@
       key: key, depth: 2, orphaned: mdl.orphaned,
       attrs: ' data-fw-mfr="' + esc(m.name) + '" data-fw-type="' + esc(t.assetType) + '" data-fw-model="' + esc(mdl.model) + '"',
       title: esc(mdl.model || "(no model)"),
-      metaHTML: assetCountHTML(mdl.assetCount, m.name + " › " + t.label + " › " + (mdl.model || "(no model)")) + " · " + (mdl.images || []).length + " image" + ((mdl.images || []).length === 1 ? "" : "s"),
+      // Charon: the asset count is empty without an inventory — no dangling separator.
+      metaHTML: [assetCountHTML(mdl.assetCount, m.name + " › " + t.label + " › " + (mdl.model || "(no model)")), (mdl.images || []).length + " image" + ((mdl.images || []).length === 1 ? "" : "s")].filter(Boolean).join(" · "),
       pillsHTML: orphanPill + bindingPillHTML(mdl, ctx),
       verbsHTML: purge + bindVerbHTML(mdl),
       bodyHTML: body,
@@ -337,15 +353,15 @@
     var key = nodeKey(m.name, t.assetType);
     var ctx = { mfrName: m.name, typeLabel: t.label, assetType: t.assetType };
     var editing = !!_bindingEdit[key];
-    var enginePill = t.engine
-      ? ""
-      : '<span class="fw-pill fw-engine-pill" title="Images can be stored, but Polaris has no engine to apply them to this manufacturer’s ' + esc(typeWord(t.assetType, true)) + '">No upgrade engine</span>';
+    // Charon: no upgrade engines at all (the callout says so) — the per-type
+    // "No upgrade engine" pill would sit on every node and say nothing.
+    var enginePill = "";
     var body = (editing ? bindingEditorHTML(t, ctx) : "") + t.models.map(function (mdl) { return modelNodeHTML(m, t, mdl); }).join("");
     return nodeHTML({
       key: key, depth: 1,
       attrs: ' data-fw-mfr="' + esc(m.name) + '" data-fw-type="' + esc(t.assetType) + '"',
       title: esc(t.label),
-      metaHTML: t.models.length + " model" + (t.models.length === 1 ? "" : "s") + " · " + assetCountHTML(t.assetCount, m.name + " › " + t.label),
+      metaHTML: [t.models.length + " model" + (t.models.length === 1 ? "" : "s"), assetCountHTML(t.assetCount, m.name + " › " + t.label)].filter(Boolean).join(" · "),
       pillsHTML: enginePill + bindingPillHTML(t, ctx),
       verbsHTML: bindVerbHTML(t),
       bodyHTML: body,
@@ -368,26 +384,73 @@
     });
   }
 
-  function cardHTML() {
+  /**
+   * Charon: the server tree plus the hand-added model nodes that hold nothing
+   * yet. A pending node inherits the nearest login the server reported for its
+   * type or manufacturer (a manufacturer-wide binding is always a form login,
+   * which fits every type) — display only; the server decides once it exists.
+   */
+  function treeWithPending() {
     var tree = _tree || { manufacturers: [] };
+    if (_pendingModels.length === 0) return tree;
+    var mfrs = (tree.manufacturers || []).map(function (m) {
+      return Object.assign({}, m, { assetTypes: (m.assetTypes || []).map(function (t) { return Object.assign({}, t, { models: (t.models || []).slice() }); }) });
+    });
+    var ORDER = ["switch", "access_point", "firewall"];
+    var LABELS = { switch: "Switch", access_point: "Access Point", firewall: "Firewall" };
+    _pendingModels.forEach(function (p) {
+      var m = mfrs.filter(function (x) { return x.name === p.manufacturer; })[0];
+      if (!m) {
+        m = { name: p.manufacturer, assetCount: 0, binding: null, effectiveBinding: null, assetTypes: [] };
+        mfrs.push(m);
+        mfrs.sort(function (a, b) { return a.name.localeCompare(b.name); });
+      }
+      var t = m.assetTypes.filter(function (x) { return x.assetType === p.assetType; })[0];
+      if (!t) {
+        t = { assetType: p.assetType, label: LABELS[p.assetType] || p.assetType, engine: null, assetCount: 0, binding: null, effectiveBinding: m.effectiveBinding, models: [] };
+        m.assetTypes.push(t);
+        m.assetTypes.sort(function (a, b) { return ORDER.indexOf(a.assetType) - ORDER.indexOf(b.assetType); });
+      }
+      if (t.models.some(function (x) { return x.model === p.model; })) return;
+      t.models.push({ model: p.model, assetCount: 0, orphaned: false, images: [], binding: null, effectiveBinding: t.effectiveBinding || m.effectiveBinding || null });
+      t.models.sort(function (a, b) { return a.model.localeCompare(b.model); });
+    });
+    return { manufacturers: mfrs };
+  }
+
+  /** Charon: drop pending nodes the server tree now carries. */
+  function prunePending() {
+    var tree = _tree || { manufacturers: [] };
+    _pendingModels = _pendingModels.filter(function (p) {
+      return !(tree.manufacturers || []).some(function (m) {
+        return m.name === p.manufacturer && (m.assetTypes || []).some(function (t) {
+          return t.assetType === p.assetType && (t.models || []).some(function (x) { return x.model === p.model; });
+        });
+      });
+    });
+  }
+
+  function cardHTML() {
+    var tree = treeWithPending();
+    // Charon: "Add model…" — polaris grows model nodes from its asset inventory.
+    var addModel = can("write")
+      ? '<button type="button" class="btn btn-sm btn-primary fw-add-model" style="float:right">Add model…</button>'
+      : "";
     var html = '<div class="settings-card">' +
+      addModel +
       '<h4>Firmware Repository</h4>' +
       '<p style="font-size:0.82rem;color:var(--color-text-secondary);margin-bottom:0.75rem">' +
-        'Firmware images for the switches, access points and firewalls in the inventory, filed by manufacturer, device type and model. ' +
-        'Bind a device admin login at a manufacturer, a device type or a model — the most specific one wins — and a device ' +
-        'whose firmware is older than its model’s primary image offers an upgrade on its asset details.' +
+        'Firmware images for switches, access points and firewalls, filed by manufacturer, device type and model. ' +
+        'Bind a device admin login at a manufacturer, a device type or a model — the most specific one wins.' +
       '</p>' +
       (typeof calloutHTML === "function"
-        ? calloutHTML("info", "Fortinet only, over HTTPS",
-            "Upgrades run for Fortinet FortiSwitch and FortiAP devices by signing in to the device’s own web UI over HTTPS, " +
-            "and for standalone FortiGates over the FortiOS REST API — with a device admin login, a REST API token credential, " +
-            "or the API token of the integration that discovered the gate. HA clusters are not upgraded. " +
-            "A FortiGate-managed FortiAP usually has its local UI disabled and will report the device as unreachable. " +
-            "Images for other manufacturers can be stored; their assets show no upgrade action. " +
+        ? calloutHTML("info", "Storage only in Charon",
+            "Charon keeps the images and the device-login bindings; it has no device inventory and does not flash devices itself. " +
+            "Each image’s platform and version are read from its Fortinet header (or, failing that, its file name). " +
             "Switch and access-point images may be up to 100 MiB, FortiGate images up to 300 MiB.")
         : "");
     if (tree.manufacturers.length === 0) {
-      html += '<p class="empty-state">No switches, access points or firewalls in the inventory yet — the tree is built from assets’ manufacturer, device type and model.</p>';
+      html += '<p class="empty-state">No firmware yet — use Add model… to file a manufacturer, device type and model, then upload its image.</p>';
     } else {
       html += '<div id="fw-tree" style="margin-top:0.75rem">' + tree.manufacturers.map(manufacturerNodeHTML).join("") + '</div>';
     }
@@ -434,6 +497,7 @@
     ]);
     _tree = results[0];
     _runs = (results[1] && results[1].runs) || [];
+    prunePending();
     render();
   }
 
@@ -473,6 +537,7 @@
       if (!(target instanceof Element)) return;
       var btn;
       if ((btn = target.closest(".fw-run-view"))) return viewRun(btn.getAttribute("data-id"));
+      if ((btn = target.closest(".fw-add-model"))) return openAddModel(); // Charon
       var node = nodeOf(target);
       if (!node) return;
       // Before the header toggle: the count sits in the header, and a click on
@@ -500,6 +565,45 @@
         status.className = "fw-upload-status";
         status.textContent = f ? f.name + " · " + bytes(f.size) : "";
       }
+    });
+  }
+
+  /**
+   * Charon: file a model node by hand. Polaris's nodes come from its asset
+   * inventory; here the operator names manufacturer › device type › model,
+   * the node is drawn open with its upload row, and it becomes real (server
+   * side) with its first image.
+   */
+  function openAddModel() {
+    if (typeof openModal !== "function") return;
+    var mfrs = ((_tree && _tree.manufacturers) || []).map(function (m) { return m.name; });
+    if (mfrs.indexOf("Fortinet") === -1) mfrs.unshift("Fortinet");
+    openModal("Add firmware model",
+      '<div class="form-group"><label for="fw-add-mfr">Manufacturer</label>' +
+        '<input type="text" id="fw-add-mfr" list="fw-add-mfr-list" maxlength="200" value="Fortinet">' +
+        '<datalist id="fw-add-mfr-list">' + mfrs.map(function (n) { return '<option value="' + esc(n) + '">'; }).join("") + '</datalist></div>' +
+      '<div class="form-group"><label for="fw-add-type">Device type</label>' +
+        '<select id="fw-add-type"><option value="switch">Switch</option><option value="access_point">Access Point</option><option value="firewall">Firewall</option></select></div>' +
+      '<div class="form-group"><label for="fw-add-model-name">Model</label>' +
+        '<input type="text" id="fw-add-model-name" maxlength="200" placeholder="e.g. FortiSwitch 108F-FPOE"></div>',
+      '<button type="button" class="btn btn-secondary" id="fw-add-cancel">Cancel</button>' +
+      '<button type="button" class="btn btn-primary" id="fw-add-ok">Add</button>');
+    document.getElementById("fw-add-cancel").addEventListener("click", function () { closeModal(); });
+    document.getElementById("fw-add-ok").addEventListener("click", function () {
+      var manufacturer = document.getElementById("fw-add-mfr").value.trim();
+      var assetType = document.getElementById("fw-add-type").value;
+      var model = document.getElementById("fw-add-model-name").value.trim();
+      if (!manufacturer || !model) { toast("Manufacturer and model are required", "error"); return; }
+      var exists = _pendingModels.some(function (p) { return p.manufacturer === manufacturer && p.assetType === assetType && p.model === model; });
+      if (!exists) _pendingModels.push({ manufacturer: manufacturer, assetType: assetType, model: model });
+      prunePending();
+      var ex = readExpanded();
+      ex[nodeKey(manufacturer)] = true;
+      ex[nodeKey(manufacturer, assetType)] = true;
+      ex[nodeKey(manufacturer, assetType, model)] = true;
+      writeExpanded();
+      closeModal();
+      render();
     });
   }
 
@@ -636,8 +740,10 @@
       var msg = err && err.message ? err.message : "Upload failed";
       // The proxy's 413, on an image the app itself would take: nginx in front
       // still carries the pre-FortiGate 100m ceiling.
-      if (/rejected the request body as too large/.test(msg) && file.size > 104857600) {
-        msg += " nginx in front of Polaris still has the old 100 MB limit for firmware uploads — re-apply Server Settings → Web Server, or raise client_max_body_size to 300m in its firmware location.";
+      // Charon: its server-wide ceiling is 12m, so any image above that trips
+      // a missing firmware location — not only one above 100 MB.
+      if (/rejected the request body as too large/.test(msg) && file.size > 12582912) {
+        msg += " nginx in front of Charon still has a smaller limit for firmware uploads — re-apply Server Settings → Web Server, or raise client_max_body_size to 300m in its firmware location.";
       }
       if (status) { status.style.display = ""; status.className = "fw-upload-status is-error"; status.textContent = msg; }
       toast(msg, "error");
@@ -678,7 +784,7 @@
   async function purgeModel(node) {
     var versions = Array.prototype.map.call(node.el.querySelectorAll(".fw-images td:nth-child(2) strong"), function (el) { return el.textContent; });
     var text = "Delete all firmware for " + node.manufacturer + " › " + typeWord(node.assetType) + " › " + node.model +
-      (versions.length ? " (" + versions.join(", ") + ")" : "") + "? No asset carries this model any more.";
+      (versions.length ? " (" + versions.join(", ") + ")" : "") + "?"; // Charon: no inventory to say the model is gone
     var ok = typeof showConfirm === "function" ? await showConfirm(text) : window.confirm(text);
     if (!ok) return;
     try {

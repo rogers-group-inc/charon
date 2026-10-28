@@ -1185,7 +1185,7 @@ function deviceTypesCardHTML() {
         '<td><strong>' + escapeHtml(t.label) + '</strong>' +
           (t.isBuiltIn
             ? ' <span style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.04em;color:var(--color-text-tertiary);border:1px solid var(--color-border);border-radius:var(--radius-sm);padding:1px 5px;margin-left:4px;vertical-align:middle"' +
-              ' title="Shipped with Polaris; name and label are fixed">built-in</span>'
+              ' title="Shipped with Charon; name and label are fixed">built-in</span>'
             : '') +
           (t.description ? '<div style="font-size:0.76rem;color:var(--color-text-tertiary);margin-top:2px">' + escapeHtml(t.description) + '</div>' : '') +
         '</td>' +
@@ -1211,7 +1211,7 @@ function deviceTypesCardHTML() {
     html += '<details style="margin-top:1.25rem">' +
       '<summary style="cursor:pointer;font-size:0.85rem;font-weight:600">How a device gets its type</summary>' +
       '<div style="font-size:0.82rem;color:var(--color-text-secondary);margin-top:0.75rem;line-height:1.55">' +
-        '<p style="margin:0 0 0.75rem">Polaris takes the first answer it can get, in this order:</p>' +
+        '<p style="margin:0 0 0.75rem">Charon takes the first answer it can get, in this order:</p>' +
         '<ol style="margin:0 0 1rem;padding-left:1.25rem">';
     sources.forEach(function (s) {
       html += '<li style="margin-bottom:0.5rem"><strong>' + escapeHtml(s.source) + '</strong>' +
@@ -1389,7 +1389,7 @@ function openDeviceTypeModal(id) {
   if (locked) {
     body += infoBox(
       'This is a <strong>built-in</strong> type, so its name and label are fixed — but the matching below is ' +
-      'yours. Editing it changes which devices Polaris files here.',
+      'yours. Editing it changes which devices Charon files here.',
     );
   }
 
@@ -1940,7 +1940,11 @@ function _loadTagFilterSchema() {
 /** The category the Device Map owns. Server-authoritative; this is the fallback
  *  for a schema payload that predates the field. */
 function _regionCategoryOf(schema) {
-  return (schema && schema.regionCategory) || "Map Regions";
+  // Charon adaptation: charon has no Device Map, so the server publishes
+  // regionCategory: null — honour that rather than falling back, or a tag an
+  // operator files under "Map Regions" would lose its filter builder.
+  if (schema && Object.prototype.hasOwnProperty.call(schema, "regionCategory")) return schema.regionCategory;
+  return "Map Regions";
 }
 
 /** Suggestion source for one field, mirroring the address book's mapping. */

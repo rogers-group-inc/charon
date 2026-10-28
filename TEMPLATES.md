@@ -88,7 +88,10 @@ with a human-review confirm.
 
 ### Cert pin rotation (dual-pin)
 **Ref:** `src/services/certPinService.ts` — `stageNewPin` (agents accept old+new)
-→ rotate cert → `promoteStagedPin`. Pin = leaf SHA-256 from `certInfo.leafPin`.
+→ `webServerService.rotateCertAndKey` (refuses an unstaged pin; swaps the pair,
+nginx `-t` + reload, `swapCanonicalPin` keeps the old pin accepted) → `retirePin`
+(never the last pin, never the served cert's). Pin = leaf SHA-256 (bare hex).
+UI: Server Settings → Web Server → Rotate certificate (`routes/settings/webServer.ts`).
 
 ### Leader-gated scheduler / role consumer
 **Ref:** `src/app.ts startSchedulers/startConsumers` + `jobs/*.ts`. Schedulers

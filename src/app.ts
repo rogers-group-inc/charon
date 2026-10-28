@@ -251,12 +251,18 @@ function startSchedulers(cfg: RoleConfig): void {
   void import("./jobs/integrationHealthCheck.js").then((m) => m.scheduleHealthChecks());
   // Retention pruning: trim the audit log + stale verification sessions.
   void import("./jobs/retentionPrune.js").then((m) => m.scheduleRetentionPrune());
+  // Weekly IEEE OUI (MAC vendor) database refresh (Server Settings → Identification).
+  void import("./jobs/ouiRefresh.js").then((m) => m.scheduleOuiRefresh());
+  // Scheduled database backups (Server Settings → Maintenance; default off).
+  void import("./jobs/scheduledBackup.js").then((m) => m.scheduleScheduledBackups());
 }
 
 function stopSchedulers(): void {
   logger.info("Schedulers paused (lost leadership)");
   void import("./jobs/integrationHealthCheck.js").then((m) => m.stopHealthChecks());
   void import("./jobs/retentionPrune.js").then((m) => m.stopRetentionPrune());
+  void import("./jobs/ouiRefresh.js").then((m) => m.stopOuiRefresh());
+  void import("./jobs/scheduledBackup.js").then((m) => m.stopScheduledBackups());
 }
 
 async function startConsumers(cfg: RoleConfig): Promise<void> {

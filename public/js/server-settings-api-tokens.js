@@ -52,7 +52,7 @@ function renderApiTokensTab(tokens, roles, quarantineIntegrations, apiBaseUrl, d
   if (!container) return;
   docsAccess = docsAccess || { apiDocs: null, callerIp: "", error: null };
 
-  // Base URL for external callers: POLARIS_PUBLIC_URL's origin + /api/v1 when
+  // Base URL for external callers: CHARON_PUBLIC_URL's origin + /api/v1 when
   // the server knows it, else this browser's own origin as a best-effort hint.
   var baseUrlIsFallback = !apiBaseUrl;
   var effectiveBaseUrl = apiBaseUrl || (window.location.origin + "/api/v1");
@@ -152,7 +152,7 @@ function renderApiTokensTab(tokens, roles, quarantineIntegrations, apiBaseUrl, d
   container.innerHTML =
     '<div class="settings-section">' +
       '<h3 class="settings-section-title">API Tokens</h3>' +
-      '<p style="color:var(--color-text-secondary);margin:0 0 1rem">Bearer tokens for external systems (e.g. SIEM) to call the Polaris API. ' +
+      '<p style="color:var(--color-text-secondary);margin:0 0 1rem">Bearer tokens for external systems (e.g. SIEM) to call the Charon API. ' +
         'Each token acts with the permissions of the role it is bound to. ' +
         'The raw token value is shown <strong>once</strong> at creation and cannot be recovered.</p>' +
       '<div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin:0 0 0.35rem">' +
@@ -161,13 +161,15 @@ function renderApiTokensTab(tokens, roles, quarantineIntegrations, apiBaseUrl, d
         '<button class="btn btn-sm btn-secondary" id="btn-copy-api-base-url">Copy</button>' +
       '</div>' +
       '<p style="color:var(--color-text-secondary);font-size:0.82rem;margin:0 0 1rem">' +
-        'Callers send <code class="mono">Authorization: Bearer &lt;token&gt;</code> against this base, e.g. <code class="mono">' + escapeHtml(effectiveBaseUrl) + '/assets</code>.' +
+        'Callers send <code class="mono">Authorization: Bearer &lt;token&gt;</code> against this base, e.g. <code class="mono">' + escapeHtml(effectiveBaseUrl) + '/endpoints</code>.' +
         (baseUrlIsFallback
-          ? ' Derived from this browser’s address — <code class="mono">POLARIS_PUBLIC_URL</code> is not set on the server.'
+          ? ' Derived from this browser’s address — <code class="mono">CHARON_PUBLIC_URL</code> is not set on the server.'
           : '') +
       '</p>' +
-      '<p style="margin:0 0 1rem"><a href="/api" target="_blank" rel="noopener">View API documentation →</a> ' +
-        '<span style="color:var(--color-text-secondary);font-size:0.82rem">No login required — reachable only from the networks configured under API Documentation Access below.</span></p>' +
+      // Charon adaptation: no /api documentation page is served yet, so no link
+      // — the access scope below is saved now and applies once one exists.
+      '<p style="margin:0 0 1rem;color:var(--color-text-secondary);font-size:0.82rem">Charon does not serve an API documentation page yet. ' +
+        'The API Documentation Access scope below is saved now and will apply once it does.</p>' +
       tableHtml +
     '</div>' +
     '<div class="settings-cards-row" style="margin-top:1.5rem">' +
@@ -181,9 +183,9 @@ function renderApiTokensTab(tokens, roles, quarantineIntegrations, apiBaseUrl, d
         '<div>' +
           '<label class="form-label" for="f-token-role">Acts as role <span style="color:var(--color-danger,#c0392b)">*</span></label>' +
           '<select id="f-token-role" class="form-input">' + roleOpts + '</select>' +
-          '<div style="font-size:0.82rem;color:var(--color-text-secondary);margin-top:0.3rem">The token can do exactly what this role can. For least privilege, create a purpose-built role under Users → Manage Roles (e.g. assets read-only).</div>' +
+          '<div style="font-size:0.82rem;color:var(--color-text-secondary);margin-top:0.3rem">The token can do exactly what this role can. For least privilege, create a purpose-built role under Users → Manage Roles (e.g. endpoints read-only).</div>' +
           '<div id="f-token-role-warning" class="alert alert-warning" style="display:none;margin-top:0.4rem;padding:0.6rem 0.75rem;border-radius:6px;background:rgba(192,57,43,0.12);border:1px solid var(--color-danger,#c0392b);color:var(--color-text-primary)">' +
-            'This role is <strong>admin-equivalent</strong> — anyone holding this token has full control of Polaris. Prefer a minimal role.' +
+            'This role is <strong>admin-equivalent</strong> — anyone holding this token has full control of Charon. Prefer a minimal role.' +
           '</div>' +
         '</div>' +
         '<div id="f-token-integrations-block" style="display:none">' +
@@ -196,7 +198,7 @@ function renderApiTokensTab(tokens, roles, quarantineIntegrations, apiBaseUrl, d
           '<textarea id="f-token-trusted-hosts" class="form-input" rows="3" spellcheck="false" style="font-family:monospace" placeholder="10.20.5.14&#10;10.20.0.0/16"></textarea>' +
           '<div style="font-size:0.82rem;color:var(--color-text-secondary);margin-top:0.3rem">' +
             'One IP address or CIDR per line (commas also work). The token is refused from any other address. Leave blank to accept it from anywhere.' +
-            (docsAccess.callerIp ? ' Polaris sees your address as <code class="mono">' + escapeHtml(docsAccess.callerIp) + '</code>.' : '') +
+            (docsAccess.callerIp ? ' Charon sees your address as <code class="mono">' + escapeHtml(docsAccess.callerIp) + '</code>.' : '') +
           '</div>' +
         '</div>' +
         '<div>' +
@@ -265,7 +267,7 @@ function editApiTokenTrustedHosts(id) {
       escapeHtml((t.trustedHosts || []).join("\n")) + '</textarea>' +
     '<div style="font-size:0.82rem;color:var(--color-text-secondary);margin-top:0.3rem">' +
       'One IP address or CIDR per line. Leave blank to accept the token from anywhere.' +
-      (_apiTokenCallerIp ? ' Polaris sees your address as <code class="mono">' + escapeHtml(_apiTokenCallerIp) + '</code>.' : '') +
+      (_apiTokenCallerIp ? ' Charon sees your address as <code class="mono">' + escapeHtml(_apiTokenCallerIp) + '</code>.' : '') +
     '</div>';
   openModal("Trusted Hosts — " + t.name, body,
     '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>' +
@@ -303,7 +305,7 @@ function _apiDocsCardHtml(docsAccess) {
       '<h4>API Documentation Access</h4>' +
       '<p style="color:var(--color-text-secondary);font-size:0.82rem;margin:0 0 0.75rem">' +
         'The documentation at <code class="mono">/api</code> is readable without a login, so which networks can reach it is the whole access control. ' +
-        'Loopback (the Polaris host itself) is always allowed while the page is enabled; only private (RFC1918) networks can be added.</p>';
+        'Loopback (the Charon host itself) is always allowed while the page is enabled; only private (RFC1918) networks can be added.</p>';
   if (docsAccess.error || !docsAccess.apiDocs) {
     return head +
       '<p class="empty-state" style="color:var(--color-danger,#c0392b);padding:0.5rem 0">' +
@@ -326,7 +328,7 @@ function _apiDocsCardHtml(docsAccess) {
       '</label>' +
       '<div id="docs-scope-block"' + (s.enabled ? '' : ' style="opacity:0.55"') + '>' +
         '<label class="form-label">Allowed source networks</label>' +
-        scopeRadio("loopback", "Loopback only", "Only the Polaris host itself (127.0.0.0/8, ::1).") +
+        scopeRadio("loopback", "Loopback only", "Only the Charon host itself (127.0.0.0/8, ::1).") +
         scopeRadio("rfc1918", "RFC1918 private networks + loopback (default)", "Any private source — 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16.") +
         scopeRadio("custom", "Specified private subnets", "Only the networks listed below (plus loopback, always).") +
         '<div id="docs-cidrs-block" style="margin-top:0.4rem' + (s.ipScope === "custom" ? '' : ';display:none') + '">' +
@@ -336,8 +338,8 @@ function _apiDocsCardHtml(docsAccess) {
             '<strong>Must be inside RFC1918 private space</strong> — a public network is refused. Loopback needs no entry.</div>' +
         '</div>' +
       '</div>' +
-      '<div style="font-size:0.8rem;color:var(--color-text-secondary)">Polaris sees your address as <code class="mono">' + escapeHtml(docsAccess.callerIp || "unknown") + '</code>. ' +
-        'This is Express’ <code class="mono">req.ip</code> under the configured <code class="mono">TRUST_PROXY</code> — if it shows a proxy’s address rather than yours, fix TRUST_PROXY before relying on this scope.</div>' +
+      '<div style="font-size:0.8rem;color:var(--color-text-secondary)">Charon sees your address as <code class="mono">' + escapeHtml(docsAccess.callerIp || "unknown") + '</code>. ' +
+        'This is Express’ <code class="mono">req.ip</code> under the app’s <code class="mono">trust proxy</code> setting (one hop: nginx) — if it shows a proxy’s address rather than yours, check the proxy chain before relying on this scope.</div>' +
       '<div><button class="btn btn-primary" id="btn-save-api-docs">Save Documentation Access</button></div>' +
     '</div>' +
   '</div>';

@@ -1,0 +1,1651 @@
+/**
+ * src/services/manufacturerProfileService.ts
+ *
+ * CRUD + cached resolver for the editable `ManufacturerProfile` data model.
+ * Replaces the hardcoded VENDOR_TELEMETRY_PROFILES constant at runtime in a
+ * follow-up commit; this commit only owns the persistence + read paths.
+ *
+ * The cache is module-local and refreshed on every write. The hot probe
+ * path (Slice 6c) will call `getProfileFor(manufacturer)` which is sync
+ * after the boot warm-up — same shape as oidRegistry's API.
+ */
+
+import { prisma } from "../../db.js";
+import { Prisma } from "../../generated/prisma/client.js";
+import { normalizeManufacturer } from "./manufacturerNormalize.js";
+import {
+  isTransformKind,
+  isCombinerKind,
+  metricRowTransforms,
+  type TransformKind,
+  type CombinerKind,
+} from "./symbolTransforms.js";
+import { AppError } from "../../utils/errors.js";
+import { symbolReadiness, ensureRegistryLoaded, type SymbolReadiness } from "./oidRegistry.js";
+import { logEvent } from "../eventService.js";
+import { isKnownAssetType, normalizeAssetTypeName } from "./assetTypes.js";
+import { validateModelParse } from "./modelParse.js";
+import { safeRegexProblem } from "./safeRegex.js";
+import { validateHttpCheckDefinition } from "./credentialService.js";
+import { isDeviceLoginCredential, type HttpAuthConfig } from "./httpCheck.js";
+import { logger } from "../../utils/logger.js";
+import { isHardwareSensorClass, type SensorColumns } from "./hardwareSensors.js";
+import {
+  normalizeStateMap,
+  validateStateMap,
+  type StateMap,
+} from "./stateProbes.js";
+
+export type MetricKey =
+  | "model"
+  | "cpu"
+  | "memory"
+  | "temperature"
+  | "interfaces"
+  | "storage"
+  | "lldp"
+  | "wirelessStations";
+
+// ORDER IS THE PROFILE PAGE'S ROW ORDER, and it mirrors the order the same
+// streams appear in the asset details slide-over: `model` first (identity, on
+// the General tab), then the System tab's sections top to bottom (CPU &
+// Memory · Hardware Sensors · Interfaces · Storage · LLDP), then the tabs.
+// `shapeProfile` sorts every read by this list, so a row a migration appends
+// still renders in sequence. The client mirror is METRIC_KEY_LABELS in
+// public/js/server-settings.js — reorder both together.
+//
+// `model` is the identity query (Phase 4): which vendor scalar carries the
+// hardware model and how to parse it (`defaultParsePattern` /
+// `defaultParseTemplate`, src/utils/modelParse.ts). It replaces the
+// `ModelQuery.parse` FUNCTION the hardcoded FortiSwitch profile carried —
+// the last profile fact that could not be a row.
+export const METRIC_KEYS: MetricKey[] = [
+  "model", "cpu", "memory", "temperature", "interfaces", "storage", "lldp", "wirelessStations",
+];
+
+/** How a walked subtree collapses to one reading. Replaces the hardcoded `walkSubtree`. */
+export type Aggregate = "none" | "avg" | "sum";
+export const AGGREGATES: Aggregate[] = ["none", "avg", "sum"];
+
+// Allowed display-only standard-MIB hints an operator can pin on a profile
+// metric or override. Must stay in sync with the frontend `_SNMP_STANDARD_MIBS`
+// table in `public/js/assets.js` (the SNMP Walk dropdown) — the keys are
+// shared so the same labels render in both surfaces.
+export const STD_MIB_KEYS = new Set<string>([
+  "std:system",
+  "std:interfaces",
+  "std:if-ext",
+  "std:host-resources",
+  "std:entity",
+  "std:entity-sensor",
+  "std:lldp",
+  "std:poe",
+  "std:bridge",
+  "std:q-bridge",
+  "std:rstp",
+  // IP-MIB: ipNetToPhysicalTable / ipNetToMediaTable — the neighbour cache
+  // behind the ARP table stream. Was browsable and walkable but not pinnable
+  // on a profile row until 2026-09.
+  "std:ip",
+]);
+
+function asStdMibKeyOrNull(value: unknown): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value !== "string") {
+    throw new AppError(400, "MIB std key must be a string");
+  }
+  if (!STD_MIB_KEYS.has(value)) {
+    throw new AppError(400, `Unknown standard MIB key: ${value}`);
+  }
+  return value;
+}
+
+// Metric-row Type values. `scalar` is the original single-OID shape; `table`
+// is a single OID returning multiple rows; `double_scalar` is the
+// generalized multi-OID shape that replaced the memory-only `composition`
+// blob — the resolver fetches `symbol` AND `symbolB` and combines them via
+// the `transform` field (which carries a CombinerKind in this case rather
+// than the usual unary TransformKind).
+export type MetricRowType = "scalar" | "double_scalar" | "table";
+
+/**
+ * Per-row provenance the profile page renders in the MIB cell: does this
+ * row's symbol resolve at the manufacturer's scope, via which module and
+ * layer — and when it does not, what to upload. `b` is the second symbol of a
+ * double_scalar row. Filled by `annotateReadiness` on every read; absent on
+ * the cached row the probe path uses (the probe resolves for itself).
+ */
+export interface RowReadiness {
+  a: SymbolReadiness;
+  b: SymbolReadiness | null;
+  /** A sensor table row's name / alarm columns (business rule 132); absent on every other row. */
+  columns?: SymbolReadiness[];
+}
+
+export interface MetricOverrideRow {
+  id:           string;
+  /**
+   * The row's scope, half one: an `AssetTypeDef.name` this row applies to, or
+   * null for "any device type". With `modelPattern` null this row IS the
+   * device-type default (every Fortinet switch walks fsSysCpuUsage);
+   * alongside a `modelPattern` it is a per-model exception under that type.
+   */
+  assetType:    string | null;
+  /**
+   * The row's scope, half two: a regex tested against `Asset.model` (and the
+   * pinned MIB's module name), or null on a device-type default. At least one
+   * half is always set (DB CHECK constraint + `assertOverrideScope`).
+   */
+  modelPattern: string | null;
+  symbol:       string;
+  symbolB:      string | null;
+  mibId:        string | null;
+  mibStdKey:    string | null;
+  type:         MetricRowType;
+  transform:    TransformKind | CombinerKind | null;
+  /** How a walked subtree collapses (none | avg | sum); see `Aggregate`. */
+  aggregate:    Aggregate;
+  /** Sample-row label: storage mountPath / sensor name. Null → collector default. */
+  label:        string | null;
+  /** `model` metric only — see src/utils/modelParse.ts. */
+  parsePattern:  string | null;
+  parseTemplate: string | null;
+  /** Hardware Sensors `table` rows only — the sibling columns (business rule 132). */
+  sensorColumns: SensorColumns | null;
+  order:        number;
+  readiness?:   RowReadiness;
+}
+
+export interface MetricRow {
+  id:               string;
+  metricKey:        MetricKey;
+  defaultSymbol:    string | null;
+  defaultSymbolB:   string | null;
+  defaultMibId:     string | null;
+  defaultMibStdKey: string | null;
+  defaultType:      MetricRowType;
+  defaultTransform: TransformKind | CombinerKind | null;
+  defaultAggregate: Aggregate;
+  defaultLabel:     string | null;
+  defaultParsePattern:  string | null;
+  defaultParseTemplate: string | null;
+  /** Hardware Sensors `table` rows only — the sibling columns (business rule 132). */
+  defaultSensorColumns: SensorColumns | null;
+  overrides:        MetricOverrideRow[];
+  /** Null when the row is unconfigured (built-in seed answers); see RowReadiness. */
+  readiness?:       RowReadiness | null;
+}
+
+export interface CustomWidgetRow {
+  id:             string;
+  name:           string;
+  /** NULL on an "http" widget, which names a request rather than an OID. */
+  symbol:         string | null;
+  /** NULL on an "http" widget — there is no MIB behind a URL. */
+  mibId:          string | null;
+  type:           "scalar" | "table";
+  widgetType:     "gauge" | "line" | "value" | "table" | "state" | "http";
+  transform:      TransformKind | null;
+  displayOptions: Record<string, unknown>;
+  order:          number;
+  modelPattern:   string | null;
+  /** Normalized state-probe mapping; null on gauge/line/table widgets. */
+  stateMap:       StateMap | null;
+  /** Sibling symbol supplying table-row names (state probes only). */
+  labelSymbol:    string | null;
+  /** The check definition; null on every non-http widget. */
+  httpCheck:      Record<string, unknown> | null;
+  /** `http`-typed Credential supplying auth; null = unauthenticated check. */
+  credentialId:   string | null;
+}
+
+export interface ProfileSummary {
+  id:                 string;
+  manufacturer:       string;
+  metricCount:        number;
+  overrideCount:      number;
+  widgetCount:        number;
+  scopedMibCount:     number;
+  createdAt:          string;
+  updatedAt:          string;
+  /** Every configured symbol resolves at this manufacturer's scope. */
+  ready:              boolean;
+  /** Some resolve, some do not. */
+  partial:            boolean;
+  unresolvedCount:    number;
+  /** The unresolved symbols, deduplicated, for the collapsed header's tooltip. */
+  unresolvedSymbols:  string[];
+}
+
+export interface ProfileFull {
+  id:           string;
+  manufacturer: string;
+  /** "Also applies when" regex over `manufacturer os mibModuleName`, used only when no profile is keyed by the canonical manufacturer. */
+  matchPattern: string | null;
+  /** The Custom MIB tab's arrangement of `widgets`; null = default grid. */
+  widgetLayout: WidgetLayout | null;
+  createdBy:    string | null;
+  createdAt:    string;
+  updatedAt:    string;
+  metrics:      MetricRow[];
+  widgets:      CustomWidgetRow[];
+}
+
+// ─── Custom MIB tab layout ────────────────────────────────────────────────
+// The dashboard's column model (public/js/dashboard.js), per profile: an
+// ordered list of columns on a 12-wide grid, each a vertical stack of widgets.
+// Edited with the Custom MIB tab's pencil button and shared by every asset
+// under the profile.
+
+export const LAYOUT_WIDTHS = [3, 4, 6, 12] as const;
+export const LAYOUT_HEIGHTS = [1, 2, 3] as const;
+const LAYOUT_MAX_COLUMNS = 48;
+
+export interface WidgetLayout {
+  version: 1;
+  columns: Array<{
+    id: string;
+    width: (typeof LAYOUT_WIDTHS)[number];
+    widgets: Array<{ id: string; height: (typeof LAYOUT_HEIGHTS)[number] }>;
+  }>;
+}
+
+/**
+ * Coerce a stored or submitted layout into a valid one for THIS profile's
+ * widgets: unknown and repeated widget ids are dropped, an off-grid width or
+ * height falls back to the default, empty columns go, and the column count is
+ * capped. Returns null when nothing usable is left — the tab then shows its
+ * default grid. A widget the layout does not mention is not added here; the
+ * tab appends it after the laid-out ones, so a newly created widget appears
+ * without anyone re-saving the layout.
+ */
+export function sanitizeWidgetLayout(raw: unknown, widgetIds: Set<string>): WidgetLayout | null {
+  if (!raw || typeof raw !== "object") return null;
+  const cols = (raw as { columns?: unknown }).columns;
+  if (!Array.isArray(cols)) return null;
+  const seen = new Set<string>();
+  const columns: WidgetLayout["columns"] = [];
+  for (const c of cols.slice(0, LAYOUT_MAX_COLUMNS)) {
+    if (!c || typeof c !== "object") continue;
+    const col = c as { id?: unknown; width?: unknown; widgets?: unknown };
+    const width = (LAYOUT_WIDTHS as readonly number[]).includes(Number(col.width))
+      ? (Number(col.width) as WidgetLayout["columns"][number]["width"]) : 3;
+    const widgets: WidgetLayout["columns"][number]["widgets"] = [];
+    for (const w of Array.isArray(col.widgets) ? col.widgets : []) {
+      const id = w && typeof w === "object" ? String((w as { id?: unknown }).id ?? "") : "";
+      if (!id || !widgetIds.has(id) || seen.has(id)) continue;
+      seen.add(id);
+      const h = Number((w as { height?: unknown }).height);
+      widgets.push({ id, height: (LAYOUT_HEIGHTS as readonly number[]).includes(h) ? (h as 1 | 2 | 3) : 1 });
+    }
+    if (widgets.length === 0) continue;
+    const colId = typeof col.id === "string" && col.id && col.id.length <= 64 ? col.id : `col-${columns.length + 1}`;
+    columns.push({ id: colId, width, widgets });
+  }
+  return columns.length ? { version: 1, columns } : null;
+}
+
+const profileCache = new Map<string, ProfileFull>();
+let cacheLoaded = false;
+/** Lazily built by `listCachedProfiles`; dropped whenever the cache refills. */
+let sortedCache: ProfileFull[] | null = null;
+/** When the cache was last filled, for `refreshProfileCacheIfStale`. */
+let cacheFilledAt = 0;
+/**
+ * How stale a monitor process's copy of the profiles may get. An operator
+ * edits a profile on the WEB process, whose write paths refresh their own
+ * cache synchronously; nothing tells the monitor process. A minute is the
+ * longest an operator should watch a corrected OID not take effect, and it is
+ * two heavy ticks — so the DB sees one small read per minute per monitor
+ * process rather than one per tick.
+ */
+const PROFILE_CACHE_TTL_MS = 60_000;
+
+function asMetricKey(value: unknown): MetricKey {
+  if (typeof value !== "string" || !(METRIC_KEYS as string[]).includes(value)) {
+    throw new AppError(400, "Invalid metricKey");
+  }
+  return value as MetricKey;
+}
+
+function asMetricRowType(value: unknown): MetricRowType {
+  if (value === "scalar" || value === "double_scalar" || value === "table") return value;
+  throw new AppError(400, "Invalid type — expected 'scalar' | 'double_scalar' | 'table'");
+}
+
+// Custom widgets still only support scalar/table — double_scalar applies to
+// metric rows where the resolver knows how to combine the two readings; the
+// widget renderer doesn't.
+//
+// "state" is the 0/1 probe (see src/utils/stateProbes.ts): same walk, but the
+// reading is mapped to a boolean at scrape time and lands in AssetStateSample
+// instead of AssetCustomWidgetSample, which is what makes it alertable per row.
+function asWidgetType(value: unknown): "gauge" | "line" | "value" | "table" | "state" | "http" {
+  if (value === "gauge" || value === "line" || value === "value" || value === "table" || value === "state" || value === "http") return value;
+  throw new AppError(400, "Invalid widgetType — expected gauge | line | value | table | state | http");
+}
+
+/**
+ * An "http" widget is the odd one out: it carries a check definition instead of
+ * an OID, so `symbol` and `mibId` are null on it and required on everything
+ * else. That asymmetry is enforced here rather than by a column constraint,
+ * because the requirement is per-widgetType and the DB cannot express it.
+ *
+ * The check itself is validated by the SAME function the credential Test
+ * Connection flow uses, which is what stops a check passing a live test and
+ * then being rejected when the operator tries to save it.
+ */
+async function httpFieldsForWrite(
+  widgetType: string,
+  httpCheck: unknown,
+  credentialId: string | null | undefined,
+): Promise<{ httpCheck: Record<string, unknown> | null; credentialId: string | null }> {
+  if (widgetType !== "http") return { httpCheck: null, credentialId: null };
+
+  const check: Record<string, unknown> =
+    httpCheck && typeof httpCheck === "object" && !Array.isArray(httpCheck)
+      ? { ...(httpCheck as Record<string, unknown>) }
+      : {};
+  validateHttpCheckDefinition(check);
+
+  const credId = credentialId ? String(credentialId) : null;
+  if (credId) {
+    // Verified at save so a mistyped or deleted id fails in the form rather
+    // than once per asset per interval, which is the same reasoning behind
+    // compiling the regex here.
+    const cred = await prisma.credential.findUnique({ where: { id: credId }, select: { id: true, type: true, config: true } });
+    if (!cred) throw new AppError(400, "The selected HTTP credential no longer exists");
+    if (cred.type !== "http") {
+      throw new AppError(400, "An HTTP check widget needs an HTTP-typed credential");
+    }
+    // A device admin login (authMode "form") is a switch or AP's web-UI
+    // password, held for the firmware repository (business rule 87). It is not
+    // an HTTP auth scheme: a check has no login form to post it to, and the
+    // only thing the probe could do with it is guess Basic and send the
+    // device's admin password in a header to whatever answered.
+    if (isDeviceLoginCredential((cred.config ?? {}) as HttpAuthConfig)) {
+      throw new AppError(400, "A device admin login (form) credential cannot authenticate an HTTP check — pick a bearer, basic or digest credential");
+    }
+  }
+  return { httpCheck: check, credentialId: credId };
+}
+
+function asWidgetSymbolType(value: unknown): "scalar" | "table" {
+  if (value === "scalar" || value === "table") return value;
+  throw new AppError(400, "Invalid widget symbol type — expected 'scalar' or 'table'");
+}
+
+/**
+ * State-probe fields for a write. Only meaningful on `widgetType === "state"`;
+ * the mapping is REQUIRED there, since a state probe with no mapping has no
+ * definition of true and would silently record nothing. Non-state widgets are
+ * normalized to nulls so flipping a widget's type can't leave a stale mapping
+ * behind that a later type flip would resurrect.
+ */
+function stateFieldsForWrite(
+  widgetType: "gauge" | "line" | "value" | "table" | "state" | "http",
+  stateMap: unknown,
+  labelSymbol: unknown,
+): { stateMap: StateMap | null; labelSymbol: string | null } {
+  if (widgetType !== "state") return { stateMap: null, labelSymbol: null };
+  const reason = validateStateMap(stateMap ?? {});
+  if (reason) throw new AppError(400, reason);
+  const label = typeof labelSymbol === "string" ? labelSymbol.trim() : "";
+  return { stateMap: normalizeStateMap(stateMap ?? {}), labelSymbol: label || null };
+}
+
+// For scalar / table types `transform` is a unary TransformKind (or null).
+// For double_scalar `transform` is a binary CombinerKind. The validator is
+// type-aware so a typo (combiner on a scalar row, transform on a double row)
+// errors at write time instead of silently being persisted.
+//
+// `metricKey` is passed for METRIC rows and overrides, never for widgets: a
+// metric row's unary transform must be one a collector applies for that
+// metric (`metricRowTransforms`), because anything else is stored, displayed
+// and silently ignored. Widgets apply the whole registry.
+function asTransformForType(value: unknown, type: MetricRowType, metricKey?: string): TransformKind | CombinerKind | null {
+  if (value === null || value === undefined || value === "") {
+    // double_scalar requires a combiner to be useful, but we accept null at
+    // write time so the operator can save a partially-configured row and
+    // come back to it. The resolver treats double_scalar with no combiner
+    // as a no-op.
+    return null;
+  }
+  if (type === "double_scalar") {
+    if (isCombinerKind(value)) return value;
+    throw new AppError(400, `Invalid combiner for double_scalar type: ${String(value)}`);
+  }
+  // scalar / table
+  if (!isTransformKind(value)) throw new AppError(400, `Invalid transform: ${String(value)}`);
+  if (metricKey !== undefined && !metricRowTransforms(metricKey, type).includes(value)) {
+    throw new AppError(400, `Transform ${value} is not applied to a ${type} ${metricKey} row`);
+  }
+  return value;
+}
+
+// Reads a stored transform from the DB without knowing the row's type — used
+// only in the shapeProfile path. Tries both registries; returns null if the
+// value matches neither. The DB always stores values written through
+// asTransformForType, so this only sees legitimate values.
+function readStoredTransform(value: unknown): TransformKind | CombinerKind | null {
+  if (value === null || value === undefined || value === "") return null;
+  if (isTransformKind(value)) return value;
+  if (isCombinerKind(value)) return value;
+  return null;
+}
+
+// modelPattern is an operator-authored regex by design (matched against
+// device model strings). Validate it compiles and cap its length so a
+// pathological pattern can't be stored — the 2026-06-11 CodeQL sweep
+// dismissed the js/regex-injection alerts on these sites as intended
+// behavior (admin-gated feature) with this cap as hardening.
+function assertValidModelPattern(pattern: string): void {
+  if (pattern.length > 512) {
+    throw new AppError(400, "modelPattern is too long (max 512 characters)");
+  }
+  // Guards both fields that reach here — a per-model exception's
+  // `modelPattern` and a profile's `matchPattern`. `profileResolver` runs them
+  // per asset per poll on RE2 (business rule 116), which cannot backtrack, so
+  // the only thing to refuse is a pattern RE2 cannot compile (lookaround,
+  // backreferences, a syntax error) — named in the 400.
+  const problem = safeRegexProblem(pattern, { ignoreCase: true });
+  if (problem) throw new AppError(400, `modelPattern: ${problem}`);
+}
+
+function trimOrNull(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const t = value.trim();
+  return t ? t : null;
+}
+
+function asAggregate(value: unknown): Aggregate {
+  if (value === null || value === undefined || value === "") return "none";
+  if (value === "none" || value === "avg" || value === "sum") return value;
+  throw new AppError(400, "Invalid aggregate — expected 'none' | 'avg' | 'sum'");
+}
+
+// The (assetType, modelPattern) scope pair every override row carries. The
+// three legal shapes are spelled out on `MetricOverrideRow`; this is the one
+// place that admits or rejects a pair, so both write paths resolve the
+// EFFECTIVE pair (input merged over the stored row) and hand it here.
+//
+// `assetType` is checked against the asset-type REGISTRY rather than the
+// built-ins, so an operator who added a custom type (camera, pdu) can give it
+// a default too. `isKnownAssetType` falls back to the built-ins before the
+// registry cache warms — the safe direction: an early write naming a custom
+// type is rejected rather than stored unvalidated.
+function assertOverrideScope(assetType: string | null, modelPattern: string | null): void {
+  if (!assetType && !modelPattern) {
+    throw new AppError(400, "An override needs a device type, a model pattern, or both");
+  }
+  if (assetType && !isKnownAssetType(assetType)) {
+    throw new AppError(400, `Unknown device type: ${assetType}`);
+  }
+  if (modelPattern) assertValidModelPattern(modelPattern);
+}
+
+// The `model` metric row turns a vendor scalar into Asset.model, so a symbol
+// with no parse would stamp raw firmware strings onto assets; and a parse on
+// any other row is a typo the resolver would ignore silently.
+function assertParseFieldsFor(metricKey: MetricKey, symbol: string | null, parsePattern: string | null, parseTemplate: string | null): void {
+  if (metricKey !== "model") {
+    if (parsePattern || parseTemplate) throw new AppError(400, "parsePattern / parseTemplate apply to the model metric only");
+    return;
+  }
+  if (!symbol) return; // an unconfigured model row is fine
+  const err = validateModelParse(parsePattern, parseTemplate);
+  if (err) throw new AppError(400, err);
+}
+
+// ─── Sensor table columns (business rule 132) ──────────────────────────────
+//
+// A Hardware Sensors `table` row's own symbol is the table's VALUE column; the
+// siblings it is joined with live in one JSON field. The two functions below are
+// the read and write halves, and they mirror the state-probe pair: the read side
+// never throws (a hand-edited or pre-rule row must still yield a usable shape on
+// the probe path), the write side refuses an authoring mistake with a 400.
+
+const SENSOR_COLUMN_SYMBOL_MAX = 200;
+
+function columnSymbol(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  return t ? t.slice(0, SENSOR_COLUMN_SYMBOL_MAX) : null;
+}
+
+/** Stored → shaped. Never throws; returns null when nothing usable is there. */
+export function readSensorColumns(raw: unknown): SensorColumns | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  const nameSymbol  = columnSymbol(o.nameSymbol);
+  const alarmSymbol = columnSymbol(o.alarmSymbol);
+  const sensorClass = isHardwareSensorClass(o.sensorClass) ? o.sensorClass : null;
+  const transform   = o.transform === "tenths_to_units" ? "tenths_to_units" : null;
+  if (!nameSymbol && !alarmSymbol && !sensorClass && !transform) return null;
+  return {
+    nameSymbol,
+    alarmSymbol,
+    alarmMap: alarmSymbol ? normalizeStateMap(o.alarmMap ?? {}) : null,
+    sensorClass,
+    transform,
+  };
+}
+
+/**
+ * Posted → stored, for a row whose EFFECTIVE metric and type are known.
+ *
+ * Columns belong to a `temperature` row of type `table` only. On any other
+ * metric they are a typo the resolver would ignore, so they are refused, as a
+ * parse on a non-model row is. On a temperature row whose type is not (or no
+ * longer) `table` they are CLEARED rather than refused, following the state
+ * probe precedent: flipping a row to scalar must not leave columns behind for
+ * a later flip back to resurrect.
+ *
+ * An alarm column with no mapping takes the default `nonzero` (0 = ok, any
+ * other value = alarm), the commonest alarm-bit meaning and Fortinet's.
+ */
+export function sensorColumnsForWrite(metricKey: MetricKey, type: MetricRowType, raw: unknown): SensorColumns | null {
+  if (raw === null || raw === undefined || raw === "") return null;
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw new AppError(400, "sensorColumns must be an object");
+  }
+  const o = raw as Record<string, unknown>;
+  // Value checks come before the emptiness test, so a bad class or transform
+  // posted on its own is refused rather than read as "nothing set".
+  if (o.sensorClass != null && o.sensorClass !== "" && !isHardwareSensorClass(o.sensorClass)) {
+    throw new AppError(400, `Unknown sensor class: ${String(o.sensorClass)}`);
+  }
+  if (o.transform != null && o.transform !== "" && o.transform !== "tenths_to_units") {
+    throw new AppError(400, `Transform ${String(o.transform)} is not applied to a sensor table — only tenths_to_units`);
+  }
+  for (const k of ["nameSymbol", "alarmSymbol"] as const) {
+    if (typeof o[k] === "string" && (o[k] as string).trim().length > SENSOR_COLUMN_SYMBOL_MAX) {
+      throw new AppError(400, `${k} is too long (max ${SENSOR_COLUMN_SYMBOL_MAX} characters)`);
+    }
+  }
+  if (readSensorColumns(raw) === null) return null;
+  if (metricKey !== "temperature") {
+    throw new AppError(400, "sensorColumns apply to the Hardware Sensors (temperature) metric only");
+  }
+  if (type !== "table") return null;
+  if (columnSymbol(o.alarmSymbol) && o.alarmMap != null) {
+    const reason = validateStateMap(o.alarmMap);
+    if (reason) throw new AppError(400, `alarmMap: ${reason}`);
+  }
+  return readSensorColumns(raw);
+}
+
+function asTypeNameOrNull(value: unknown): string | null {
+  const t = trimOrNull(value);
+  return t ? normalizeAssetTypeName(t) : null;
+}
+
+// Validate that the per-row shape is internally consistent:
+//   scalar:        symbol required, symbolB must be null
+//   double_scalar: symbol + symbolB both required
+//   table:         symbol required, symbolB must be null, transform must be null
+// Caller passes the EFFECTIVE values (after merging input with the stored
+// row for update paths) so partial updates that leave a row invalid are
+// rejected before the DB write lands.
+//
+// Empty-row exception: a metric row with symbol+symbolB+transform all null
+// is the legitimate "use built-in seed for this metric" state. It passes
+// validation regardless of type (which defaults to "scalar"). Override
+// rows always require a symbol because their whole purpose is to override
+// the parent metric row's defaults.
+function validateMetricRowShape(args: {
+  type:      MetricRowType;
+  symbol:    string | null;
+  symbolB:   string | null;
+  transform: TransformKind | CombinerKind | null;
+  // "metric" or "override" — used in error messages AND to gate the
+  // empty-row exception (only metric rows can be unconfigured).
+  label:     "metric" | "override";
+}): void {
+  const { type, symbol, symbolB, transform, label } = args;
+  if (label === "metric" && !symbol && !symbolB && !transform) {
+    return; // unconfigured metric row = "use built-in seed"
+  }
+  if (type === "table") {
+    if (!symbol) throw new AppError(400, `${label}: symbol is required`);
+    if (symbolB) throw new AppError(400, `${label}: symbolB must be null on type="table"`);
+    if (transform) throw new AppError(400, `${label}: transform must be null on type="table"`);
+    return;
+  }
+  if (type === "scalar") {
+    if (!symbol) throw new AppError(400, `${label}: symbol is required`);
+    if (symbolB) throw new AppError(400, `${label}: symbolB must be null on type="scalar"`);
+    return;
+  }
+  // double_scalar
+  if (!symbol)  throw new AppError(400, `${label}: symbol (A) is required for type="double_scalar"`);
+  if (!symbolB) throw new AppError(400, `${label}: symbolB (B) is required for type="double_scalar"`);
+}
+
+// One shaping seam for override rows — the cached read path, both write paths
+// and updateMetricRow's echo all return through it, so a just-written row and
+// the cache can't disagree about a row's scope (the same reason `shapeWidget`
+// exists).
+function shapeOverride(o: any): MetricOverrideRow {
+  return {
+    id:            o.id,
+    assetType:     o.assetType ?? null,
+    modelPattern:  o.modelPattern ?? null,
+    symbol:        o.symbol,
+    symbolB:       o.symbolB ?? null,
+    mibId:         o.mibId ?? null,
+    mibStdKey:     o.mibStdKey ?? null,
+    type:          asMetricRowType(o.type),
+    transform:     readStoredTransform(o.transform),
+    aggregate:     asAggregate(o.aggregate),
+    label:         o.label ?? null,
+    parsePattern:  o.parsePattern ?? null,
+    parseTemplate: o.parseTemplate ?? null,
+    sensorColumns: readSensorColumns(o.sensorColumns),
+    order:         o.order,
+  };
+}
+
+function shapeMetricRow(m: any): MetricRow {
+  return {
+    id:                   m.id,
+    metricKey:            asMetricKey(m.metricKey),
+    defaultSymbol:        m.defaultSymbol ?? null,
+    defaultSymbolB:       m.defaultSymbolB ?? null,
+    defaultMibId:         m.defaultMibId ?? null,
+    defaultMibStdKey:     m.defaultMibStdKey ?? null,
+    defaultType:          asMetricRowType(m.defaultType),
+    defaultTransform:     readStoredTransform(m.defaultTransform),
+    defaultAggregate:     asAggregate(m.defaultAggregate),
+    defaultLabel:         m.defaultLabel ?? null,
+    defaultParsePattern:  m.defaultParsePattern ?? null,
+    defaultParseTemplate: m.defaultParseTemplate ?? null,
+    defaultSensorColumns: readSensorColumns(m.defaultSensorColumns),
+    overrides:            (m.overrides || []).map(shapeOverride),
+  };
+}
+
+function shapeProfile(row: any): ProfileFull {
+  const metrics: MetricRow[] = (row.metrics || []).map(shapeMetricRow);
+  // METRIC_KEYS order, not DB order. The rows come back in whatever order
+  // Postgres hands them over, which matched METRIC_KEYS only for as long as
+  // nothing was ever inserted afterwards — the `model` row a migration added
+  // would land at the end of the heap. Sorting here means every consumer sees
+  // the one order the page documents.
+  metrics.sort((a, b) => METRIC_KEYS.indexOf(a.metricKey) - METRIC_KEYS.indexOf(b.metricKey));
+  // Same shaping as the write paths return (state fields included) — one
+  // function so the cached read and a just-written row can't disagree.
+  const widgets: CustomWidgetRow[] = (row.widgets || []).map((w: any) => shapeWidget(w));
+  return {
+    id:           row.id,
+    manufacturer: row.manufacturer,
+    matchPattern: row.matchPattern ?? null,
+    widgetLayout: sanitizeWidgetLayout(row.widgetLayout, new Set(widgets.map((w) => w.id))),
+    createdBy:    row.createdBy ?? null,
+    createdAt:    row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
+    updatedAt:    row.updatedAt instanceof Date ? row.updatedAt.toISOString() : String(row.updatedAt),
+    metrics,
+    widgets,
+  };
+}
+
+export async function refreshProfileCache(): Promise<void> {
+  const rows = await (prisma as any).manufacturerProfile.findMany({
+    include: {
+      metrics: { include: { overrides: { orderBy: { order: "asc" } } } },
+      widgets: { orderBy: { order: "asc" } },
+    },
+  });
+  profileCache.clear();
+  sortedCache = null;
+  for (const row of rows) {
+    const shaped = shapeProfile(row);
+    profileCache.set(shaped.manufacturer.toLowerCase(), shaped);
+  }
+  cacheLoaded = true;
+  cacheFilledAt = Date.now();
+}
+
+/**
+ * Refresh only if this process's copy is older than PROFILE_CACHE_TTL_MS.
+ *
+ * For the MONITOR role, which has no other way to learn that a profile
+ * changed: the write paths refresh the cache of the process that served the
+ * write, and that is the web process. Cheap enough to call on every heavy
+ * tick — the common path is one clock comparison — and the read it does make
+ * is the whole profile table, which is one row per manufacturer.
+ *
+ * Never throws: a monitor pass must not fail because a refresh could not
+ * reach the database. The previous cache stays in place, which is the right
+ * answer anyway — stale vendor OIDs collect, an empty cache collects nothing.
+ */
+export async function refreshProfileCacheIfStale(now = Date.now()): Promise<boolean> {
+  if (cacheLoaded && now - cacheFilledAt < PROFILE_CACHE_TTL_MS) return false;
+  try {
+    await refreshProfileCache();
+    return true;
+  } catch (err: any) {
+    logger.warn({ err: err?.message }, "manufacturer profile cache refresh failed; keeping the previous copy");
+    return false;
+  }
+}
+
+/**
+ * Sync getter for the hot probe path. Returns null when the cache hasn't
+ * loaded yet OR no profile exists for the given manufacturer. The Slice 6c
+ * resolver swap will call this; for now it's exposed for future use and
+ * unit-test convenience.
+ */
+export function getProfileFor(manufacturer: string | null | undefined): ProfileFull | null {
+  if (!cacheLoaded || !manufacturer) return null;
+  const canonical = normalizeManufacturer(manufacturer);
+  if (!canonical) return null;
+  return profileCache.get(canonical.toLowerCase()) ?? null;
+}
+
+/**
+ * Every cached profile, for the resolver's `matchPattern` fallback — the scan
+ * it runs only when `getProfileFor` misses. Sorted by manufacturer so two
+ * profiles whose patterns both match an asset resolve the same way on every
+ * process and every restart; `refreshProfileCache` fills the Map in whatever
+ * order `findMany` returns, which is not a guarantee.
+ *
+ * Empty before the cache warms — the same "no opinion" the keyed getter
+ * reports, so a caller needs no extra branch.
+ *
+ * The array is built ONCE per cache refresh, not per call. A miss on the
+ * keyed lookup is the COMMON case on a fleet whose vendors mostly have no
+ * profile, and this sits on the per-asset probe path: at 2000 monitored
+ * assets a copy-and-sort per asset per pass is real work to do for an answer
+ * that changes only when an operator edits a profile. Callers must treat it
+ * as read-only — it is the cached array itself, not a defensive copy.
+ */
+export function listCachedProfiles(): ProfileFull[] {
+  if (!cacheLoaded) return [];
+  if (!sortedCache) {
+    sortedCache = [...profileCache.values()].sort((a, b) => a.manufacturer.localeCompare(b.manufacturer));
+  }
+  return sortedCache;
+}
+
+/** One state probe, flattened out of its profile. */
+export interface StateProbeSummary {
+  id:           string;
+  name:         string;
+  manufacturer: string;
+  /** "table" = one boolean per walked row; "scalar" = one per device. */
+  type:         "scalar" | "table";
+  modelPattern: string | null;
+  stateMap:     StateMap;
+}
+
+/**
+ * Every state probe defined across all manufacturer profiles, for the
+ * automation builder. Reads the in-memory profile cache — a probe id is an
+ * opaque UUID on a sample row, so the builder needs this to offer NAMES, and
+ * the stored automation needs it to render "…is Alarm" rather than "…== 1".
+ *
+ * Returns [] before the cache warms (the boot order that leaves it cold also
+ * means no probe has produced a sample yet). Sorted for a stable picker.
+ */
+export function listStateProbes(): StateProbeSummary[] {
+  const out: StateProbeSummary[] = [];
+  for (const profile of profileCache.values()) {
+    for (const w of profile.widgets) {
+      if (w.widgetType !== "state" || !w.stateMap) continue;
+      out.push({
+        id:           w.id,
+        name:         w.name,
+        manufacturer: profile.manufacturer,
+        type:         w.type,
+        modelPattern: w.modelPattern,
+        stateMap:     w.stateMap,
+      });
+    }
+  }
+  return out.sort((a, b) =>
+    a.manufacturer.localeCompare(b.manufacturer) || a.name.localeCompare(b.name));
+}
+
+export async function listProfiles(): Promise<ProfileSummary[]> {
+  const rows = await (prisma as any).manufacturerProfile.findMany({
+    include: {
+      metrics: { include: { overrides: true } },
+      widgets: true,
+    },
+    orderBy: { manufacturer: "asc" },
+  });
+  // Scoped MIB counts — joined separately so the count matches the
+  // operator's mental model: "MIBs uploaded under this manufacturer."
+  const mibCounts = new Map<string, number>();
+  for (const row of rows) {
+    const cnt = await (prisma as any).mibFile.count({ where: { manufacturer: row.manufacturer } });
+    mibCounts.set(row.id, cnt);
+  }
+  await ensureRegistryLoaded();
+  return rows.map((row: any): ProfileSummary => {
+    const overrideCount = (row.metrics || []).reduce(
+      (acc: number, m: any) => acc + ((m.overrides || []).length || 0),
+      0,
+    );
+    return {
+      id:             row.id,
+      manufacturer:   row.manufacturer,
+      metricCount:    row.metrics?.length ?? 0,
+      overrideCount,
+      widgetCount:    row.widgets?.length ?? 0,
+      scopedMibCount: mibCounts.get(row.id) ?? 0,
+      createdAt:      row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
+      updatedAt:      row.updatedAt instanceof Date ? row.updatedAt.toISOString() : String(row.updatedAt),
+      ...readinessSummary(shapeProfile(row)),
+    };
+  });
+}
+
+/**
+ * `symbolWarnings` keyed by profile id — what the write routes have in hand.
+ * Reads the cache (every write path refreshes it before returning), so the
+ * lookup is a scan over tens of profiles at most.
+ */
+export function symbolWarningsForProfile(profileId: string, symbols: Array<{ symbol: string | null; mibId: string | null }>): string[] {
+  for (const p of profileCache.values()) {
+    if (p.id === profileId) return symbolWarnings(p.manufacturer, symbols);
+  }
+  return [];
+}
+
+/**
+ * Typeahead source for the "+ Add Manufacturer" box: every manufacturer name
+ * Polaris already knows about, so the operator picks the spelling the rest of
+ * the system uses instead of minting a near-duplicate ("Aruba Networks" vs
+ * "Aruba") that `getProfileFor` would then never resolve.
+ *
+ * Three contributors, merged case-insensitively and each value run through
+ * `normalizeManufacturer` so what's offered is exactly what `createProfile`
+ * would store:
+ *   - `asset`  — distinct `Asset.manufacturer` (carries a device count).
+ *   - `alias`  — `ManufacturerAlias.canonical`, the operator's own canonical
+ *                spellings from MAC & Vendor Identification.
+ *   - `oui`    — the `manufacturer` on each static OUI override, same card.
+ * The raw IEEE OUI database is deliberately NOT a contributor: ~35k legal
+ * names ("Cisco Systems, Inc.") is neither shippable to the browser nor the
+ * canonical form profiles key on.
+ *
+ * Manufacturers that already have a profile are dropped — creating one 409s,
+ * so offering it is noise. Distinct/groupBy queries only; cheap at 2000 assets.
+ */
+export async function listManufacturerSuggestions(): Promise<ManufacturerSuggestion[]> {
+  // Charon adaptation: no Asset inventory, so the `asset` contributor is
+  // empty; the OUI overrides come from the Identification tab's ouiService
+  // (dynamic, and tolerated missing, as in polaris).
+  const getOuiOverrides = async (): Promise<Array<{ manufacturer: string }>> => {
+    try {
+      const mod = (await import("../ouiService.js")) as { getOuiOverrides?: () => Promise<Array<{ manufacturer: string }>> };
+      return mod.getOuiOverrides ? await mod.getOuiOverrides() : [];
+    } catch {
+      return [];
+    }
+  };
+  const [aliasRows, overrides, profiles] = await Promise.all([
+    prisma.manufacturerAlias.findMany({
+      select: { canonical: true },
+      distinct: ["canonical"],
+    }),
+    getOuiOverrides(),
+    prisma.manufacturerProfile.findMany({ select: { manufacturer: true } }),
+  ]);
+
+  return mergeManufacturerSuggestions({
+    assets:   [],
+    aliases:  aliasRows.map((r) => r.canonical),
+    oui:      overrides.map((o) => o.manufacturer),
+    existing: profiles.map((p) => p.manufacturer),
+  });
+}
+
+export type ManufacturerSuggestionSource = "asset" | "alias" | "oui";
+
+export interface ManufacturerSuggestion {
+  value:      string;
+  sources:    ManufacturerSuggestionSource[];
+  assetCount: number;
+}
+
+/**
+ * Pure merge behind `listManufacturerSuggestions` — separated so the dedupe,
+ * exclusion and ordering rules are unit-testable without a database.
+ *
+ * Every value is canonicalized through `normalizeManufacturer` (so "Aruba
+ * Networks" and "Aruba" collapse to one row rather than offering both), keyed
+ * case-insensitively, and dropped if a profile already claims it. Ordering is
+ * device-count desc then alphabetical.
+ */
+export function mergeManufacturerSuggestions(input: {
+  assets:   { manufacturer: string | null; count: number }[];
+  aliases:  string[];
+  oui:      string[];
+  existing: string[];
+}): ManufacturerSuggestion[] {
+  const taken = new Set<string>(
+    input.existing
+      .map((m) => normalizeManufacturer(m ?? null)?.toLowerCase())
+      .filter((m): m is string => !!m),
+  );
+
+  // key = lowercased canonical; first spelling seen wins as the display value.
+  const merged = new Map<
+    string,
+    { value: string; sources: Set<ManufacturerSuggestionSource>; assetCount: number }
+  >();
+  const add = (raw: string | null, source: ManufacturerSuggestionSource, count = 0): void => {
+    const canonical = normalizeManufacturer(raw ?? null);
+    if (!canonical) return;
+    const key = canonical.toLowerCase();
+    if (taken.has(key)) return;
+    const entry = merged.get(key)
+      ?? { value: canonical, sources: new Set<ManufacturerSuggestionSource>(), assetCount: 0 };
+    entry.sources.add(source);
+    entry.assetCount += count;
+    merged.set(key, entry);
+  };
+
+  for (const r of input.assets) add(r.manufacturer, "asset", r.count);
+  for (const a of input.aliases) add(a, "alias");
+  for (const o of input.oui) add(o, "oui");
+
+  return Array.from(merged.values())
+    .map((e) => ({ value: e.value, sources: Array.from(e.sources), assetCount: e.assetCount }))
+    // Most-used first, then alphabetical — the vendor with 400 devices is far
+    // likelier to be what the operator is typing than an alias-only entry.
+    .sort((a, b) => b.assetCount - a.assetCount || a.value.localeCompare(b.value));
+}
+
+export async function getProfile(id: string): Promise<ProfileFull | null> {
+  const row = await (prisma as any).manufacturerProfile.findUnique({
+    where: { id },
+    include: {
+      metrics: { include: { overrides: { orderBy: { order: "asc" } } } },
+      widgets: { orderBy: { order: "asc" } },
+    },
+  });
+  if (!row) return null;
+  await ensureRegistryLoaded();
+  return annotateReadiness(shapeProfile(row));
+}
+
+// ─── Readiness ─────────────────────────────────────────────────────────────
+//
+// A profile row names a SYMBOL; whether that symbol resolves to an OID at the
+// manufacturer's scope depends on which MIBs are loaded. Until 2026-09 the page
+// could not tell the operator either way, so a row that saved cleanly and
+// collected nothing looked identical to one that worked. These helpers read
+// the registry (synchronously, after the boot warm-up) and stamp each
+// configured symbol with where it came from or what to upload.
+
+/** A sensor table's name / alarm column symbols, in that order. */
+export function sensorColumnSymbols(cols: SensorColumns | null | undefined): string[] {
+  return [cols?.nameSymbol, cols?.alarmSymbol].filter((s): s is string => !!s);
+}
+
+function rowReadiness(
+  manufacturer: string,
+  symbol: string | null,
+  symbolB: string | null,
+  mibId: string | null,
+  cols?: SensorColumns | null,
+): RowReadiness | null {
+  if (!symbol && !symbolB) return null;
+  const extra = sensorColumnSymbols(cols);
+  return {
+    a: symbolReadiness(manufacturer, symbol ?? "", mibId),
+    b: symbolB ? symbolReadiness(manufacturer, symbolB, mibId) : null,
+    ...(extra.length ? { columns: extra.map((s) => symbolReadiness(manufacturer, s, mibId)) } : {}),
+  };
+}
+
+/** Every symbol readiness a row carries — a, b and a sensor table's columns. */
+function readinessParts(r: RowReadiness | null | undefined): SymbolReadiness[] {
+  if (!r) return [];
+  return [r.a, ...(r.b ? [r.b] : []), ...(r.columns ?? [])];
+}
+
+/** Return a copy of `profile` with `readiness` filled on every configured metric row and override. */
+export function annotateReadiness(profile: ProfileFull): ProfileFull {
+  return {
+    ...profile,
+    metrics: profile.metrics.map((m) => ({
+      ...m,
+      readiness: rowReadiness(profile.manufacturer, m.defaultSymbol, m.defaultSymbolB, m.defaultMibId, m.defaultSensorColumns),
+      overrides: m.overrides.map((o) => ({
+        ...o,
+        readiness: rowReadiness(profile.manufacturer, o.symbol, o.symbolB, o.mibId, o.sensorColumns) ?? undefined,
+      })),
+    })),
+  };
+}
+
+/** The collapsed-header rollup: ready / partial / how many symbols are unresolved, and which. */
+export function readinessSummary(profile: ProfileFull): Pick<ProfileSummary, "ready" | "partial" | "unresolvedCount" | "unresolvedSymbols"> {
+  const annotated = annotateReadiness(profile);
+  const all: SymbolReadiness[] = [];
+  for (const m of annotated.metrics) {
+    all.push(...readinessParts(m.readiness));
+    for (const o of m.overrides) all.push(...readinessParts(o.readiness));
+  }
+  const unresolved = all.filter((r) => !r.resolved);
+  const unresolvedSymbols = [...new Set(unresolved.map((r) => r.symbol))].sort();
+  const resolvedCount = all.length - unresolved.length;
+  return {
+    ready:             all.length > 0 && unresolved.length === 0,
+    partial:           resolvedCount > 0 && unresolved.length > 0,
+    unresolvedCount:   unresolved.length,
+    unresolvedSymbols,
+  };
+}
+
+/**
+ * Human-readable warnings for a write that just landed — the route returns
+ * them beside the row and the UI toasts them. A warning, not a refusal: the
+ * natural order is "type the symbol, then upload the MIB", and blocking the
+ * first step would make the page unusable for exactly the operator it is
+ * meant to help.
+ */
+export function symbolWarnings(manufacturer: string, symbols: Array<{ symbol: string | null; mibId: string | null }>): string[] {
+  const out: string[] = [];
+  for (const { symbol, mibId } of symbols) {
+    if (!symbol) continue;
+    const r = symbolReadiness(manufacturer, symbol, mibId);
+    if (r.resolved) continue;
+    out.push(describeUnresolved(manufacturer, r));
+  }
+  return out;
+}
+
+function describeUnresolved(manufacturer: string, r: SymbolReadiness): string {
+  if (r.hint?.kind === "imports") {
+    const mods = [...new Set(r.hint.roots.map((x) => x.module ?? x.symbol))];
+    return `${r.symbol} does not resolve for ${manufacturer}: ${r.hint.mibModuleName} is missing ${mods.join(", ")} — upload it too`;
+  }
+  return `${r.symbol} does not resolve for ${manufacturer}: no uploaded MIB defines it — upload the vendor's MIB`;
+}
+
+/**
+ * One warning-level Event per profile with unresolved symbols, emitted after
+ * the boot warm-up. This is what puts "your Fortinet rows stopped resolving"
+ * in the Events log the moment an upgrade removes a seed, instead of leaving
+ * it to be discovered as a chart that quietly stopped.
+ */
+export async function emitProfileReadinessEvents(): Promise<number> {
+  await ensureRegistryLoaded();
+  let emitted = 0;
+  for (const profile of profileCache.values()) {
+    const s = readinessSummary(profile);
+    if (s.unresolvedCount === 0) continue;
+    const annotated = annotateReadiness(profile);
+    const reasons = new Map<string, string>();
+    for (const m of annotated.metrics) {
+      for (const r of [...readinessParts(m.readiness), ...m.overrides.flatMap((o) => readinessParts(o.readiness))]) {
+        if (r && !r.resolved && !reasons.has(r.symbol)) reasons.set(r.symbol, describeUnresolved(profile.manufacturer, r));
+      }
+    }
+    await logEvent({
+      action:       "manufacturer_profile.unresolved",
+      level:        "warning",
+      resourceType: "manufacturer_profile",
+      resourceId:   profile.id,
+      resourceName: profile.manufacturer,
+      message:      `${profile.manufacturer}: ${s.unresolvedCount} profile symbol${s.unresolvedCount === 1 ? "" : "s"} do not resolve — ${s.unresolvedSymbols.join(", ")}. Telemetry using them is not being collected.`,
+      details:      { unresolved: [...reasons.values()] },
+    });
+    emitted += 1;
+  }
+  return emitted;
+}
+
+export async function createProfile(input: {
+  manufacturer: string;
+  createdBy?:   string | null;
+}): Promise<ProfileFull> {
+  const canonical = normalizeManufacturer(input.manufacturer);
+  if (!canonical) throw new AppError(400, "Manufacturer is required");
+
+  // Pre-populate one empty metric row per metric key so the operator's
+  // first encounter with the modal shows the full canvas. defaultSymbol
+  // null = "use built-in seed for this metric" — i.e. no change yet.
+  const id = (await import("crypto")).randomUUID();
+  await prisma.$transaction([
+    (prisma as any).manufacturerProfile.create({
+      data: {
+        id,
+        manufacturer: canonical,
+        createdBy:    input.createdBy ?? null,
+      },
+    }),
+    ...METRIC_KEYS.map((mk) =>
+      (prisma as any).manufacturerProfileMetric.create({
+        data: {
+          profileId:   id,
+          metricKey:   mk,
+          defaultType: "scalar",
+        },
+      }),
+    ),
+  ]).catch((err: any) => {
+    if (err && err.code === "P2002") {
+      throw new AppError(409, `A profile for "${canonical}" already exists`);
+    }
+    throw err;
+  });
+
+  await refreshProfileCache();
+  const created = await getProfile(id);
+  if (!created) throw new AppError(500, "Profile creation failed");
+  return created;
+}
+
+export async function updateMetricRow(
+  profileId: string,
+  metricKey: string,
+  input: {
+    defaultSymbol?:    string | null;
+    defaultSymbolB?:   string | null;
+    defaultMibId?:     string | null;
+    defaultMibStdKey?: string | null;
+    defaultType?:      string;
+    defaultTransform?: string | null;
+    defaultAggregate?: string | null;
+    defaultLabel?:     string | null;
+    defaultParsePattern?:  string | null;
+    defaultParseTemplate?: string | null;
+    defaultSensorColumns?: unknown;
+  },
+): Promise<MetricRow> {
+  const mk = asMetricKey(metricKey);
+  const row = await (prisma as any).manufacturerProfileMetric.findUnique({
+    where: { profileId_metricKey: { profileId, metricKey: mk } },
+  });
+  if (!row) throw new AppError(404, "Metric row not found for this profile");
+
+  const nextAggregate     = input.defaultAggregate     === undefined ? asAggregate(row.defaultAggregate) : asAggregate(input.defaultAggregate);
+  const nextLabel         = input.defaultLabel         === undefined ? (row.defaultLabel ?? null)        : trimOrNull(input.defaultLabel);
+  const nextParsePattern  = input.defaultParsePattern  === undefined ? (row.defaultParsePattern ?? null) : trimOrNull(input.defaultParsePattern);
+  const nextParseTemplate = input.defaultParseTemplate === undefined ? (row.defaultParseTemplate ?? null) : trimOrNull(input.defaultParseTemplate);
+
+  // Mutual exclusion: a metric row points at AT MOST one MIB source —
+  // either an uploaded MibFile (defaultMibId) or a built-in standard MIB
+  // hint (defaultMibStdKey). The UI surfaces both via a single dropdown so
+  // selecting one clears the other; reject on the wire if a caller sends
+  // both as non-null in the same request.
+  const nextMibId  = input.defaultMibId     === undefined ? row.defaultMibId     : (input.defaultMibId  ?? null);
+  const nextStdKey = input.defaultMibStdKey === undefined
+    ? row.defaultMibStdKey
+    : asStdMibKeyOrNull(input.defaultMibStdKey);
+  if (nextMibId && nextStdKey) {
+    throw new AppError(400, "defaultMibId and defaultMibStdKey are mutually exclusive");
+  }
+
+  // Resolve effective values (merge input with existing row) so the shape
+  // validator sees the post-write state and can reject invalid combos
+  // (e.g. flipping to double_scalar without supplying symbolB).
+  const nextType      = input.defaultType      === undefined ? asMetricRowType(row.defaultType) : asMetricRowType(input.defaultType);
+  const nextSymbol    = input.defaultSymbol    === undefined ? (row.defaultSymbol ?? null)      : trimOrNull(input.defaultSymbol);
+  const nextSymbolB   = input.defaultSymbolB   === undefined ? (row.defaultSymbolB ?? null)     : trimOrNull(input.defaultSymbolB);
+  const nextTransform = input.defaultTransform === undefined
+    ? readStoredTransform(row.defaultTransform)
+    : asTransformForType(input.defaultTransform, nextType, mk);
+
+  validateMetricRowShape({
+    type:      nextType,
+    symbol:    nextSymbol,
+    symbolB:   nextSymbolB,
+    transform: nextTransform,
+    label:     "metric",
+  });
+  assertParseFieldsFor(mk, nextSymbol, nextParsePattern, nextParseTemplate);
+  // Decided from the EFFECTIVE type every time, so a row flipped away from
+  // `table` loses its columns even when the edit did not mention them.
+  const nextColumns = sensorColumnsForWrite(
+    mk, nextType, input.defaultSensorColumns === undefined ? row.defaultSensorColumns : input.defaultSensorColumns,
+  );
+
+  const updated = await (prisma as any).manufacturerProfileMetric.update({
+    where: { id: row.id },
+    data: {
+      defaultSymbol:    input.defaultSymbol    === undefined ? undefined : (nextSymbol ?? null),
+      // When type is not double_scalar, force symbolB null at write time
+      // so accidental leftovers from an earlier double_scalar config don't
+      // get re-promoted later.
+      defaultSymbolB:   nextType === "double_scalar" ? (nextSymbolB ?? null) : null,
+      defaultMibId:     input.defaultMibId     === undefined ? undefined : (input.defaultMibId ?? null),
+      defaultMibStdKey: input.defaultMibStdKey === undefined ? undefined : nextStdKey,
+      defaultType:      input.defaultType      === undefined ? undefined : nextType,
+      defaultTransform: input.defaultTransform === undefined ? undefined : (nextTransform ?? null),
+      defaultAggregate:     input.defaultAggregate     === undefined ? undefined : nextAggregate,
+      defaultLabel:         input.defaultLabel         === undefined ? undefined : nextLabel,
+      defaultParsePattern:  input.defaultParsePattern  === undefined ? undefined : nextParsePattern,
+      defaultParseTemplate: input.defaultParseTemplate === undefined ? undefined : nextParseTemplate,
+      defaultSensorColumns: nextColumns ? (nextColumns as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+    },
+    include: { overrides: { orderBy: { order: "asc" } } },
+  });
+  await touchProfile(profileId);
+  await refreshProfileCache();
+  return shapeMetricRow(updated);
+}
+
+/**
+ * Profile-level fields: today only `matchPattern`, the "also applies when"
+ * regex consulted when no profile is keyed by an asset's canonical
+ * manufacturer. Null clears it.
+ */
+/**
+ * Save (or clear, with null) the Custom MIB tab's layout for a profile. The
+ * layout is sanitized against the profile's own widgets, so a stale editor
+ * can neither smuggle in another profile's widget nor keep a deleted one.
+ */
+export async function setWidgetLayout(profileId: string, layout: unknown): Promise<WidgetLayout | null> {
+  const row = await (prisma as any).manufacturerProfile.findUnique({
+    where:  { id: profileId },
+    select: { id: true, widgets: { select: { id: true } } },
+  });
+  if (!row) throw new AppError(404, "Profile not found");
+  const clean = layout === null
+    ? null
+    : sanitizeWidgetLayout(layout, new Set((row.widgets as Array<{ id: string }>).map((w) => w.id)));
+  await (prisma as any).manufacturerProfile.update({
+    where: { id: profileId },
+    data:  { widgetLayout: clean ? (clean as unknown as Prisma.InputJsonValue) : Prisma.DbNull },
+  });
+  await refreshProfileCache();
+  return clean;
+}
+
+export async function updateProfile(profileId: string, input: { matchPattern?: string | null }): Promise<ProfileFull> {
+  const existing = await (prisma as any).manufacturerProfile.findUnique({ where: { id: profileId }, select: { id: true } });
+  if (!existing) throw new AppError(404, "Profile not found");
+  if (input.matchPattern !== undefined) {
+    const next = trimOrNull(input.matchPattern);
+    if (next) assertValidModelPattern(next);
+    await (prisma as any).manufacturerProfile.update({ where: { id: profileId }, data: { matchPattern: next } });
+  }
+  await refreshProfileCache();
+  const updated = await getProfile(profileId);
+  if (!updated) throw new AppError(500, "Profile update failed");
+  return updated;
+}
+
+export async function createOverride(
+  profileId: string,
+  metricKey: string,
+  input: {
+    assetType?:     string | null;
+    modelPattern?:  string | null;
+    symbol?:        string;
+    symbolB?:       string | null;
+    mibId?:         string | null;
+    mibStdKey?:     string | null;
+    type?:          string;
+    transform?:     string | null;
+    aggregate?:     string | null;
+    label?:         string | null;
+    parsePattern?:  string | null;
+    parseTemplate?: string | null;
+    sensorColumns?: unknown;
+    order?:         number;
+  },
+): Promise<MetricOverrideRow> {
+  const mk = asMetricKey(metricKey);
+  const row = await (prisma as any).manufacturerProfileMetric.findUnique({
+    where: { profileId_metricKey: { profileId, metricKey: mk } },
+  });
+  if (!row) throw new AppError(404, "Metric row not found for this profile");
+  const assetType    = asTypeNameOrNull(input.assetType);
+  const modelPattern = trimOrNull(input.modelPattern);
+  assertOverrideScope(assetType, modelPattern);
+  const stdKey = asStdMibKeyOrNull(input.mibStdKey ?? null);
+  if (input.mibId && stdKey) {
+    throw new AppError(400, "mibId and mibStdKey are mutually exclusive");
+  }
+
+  const type          = asMetricRowType(input.type ?? "scalar");
+  const symbol        = trimOrNull(input.symbol);
+  const symbolB       = trimOrNull(input.symbolB);
+  const transform     = asTransformForType(input.transform ?? null, type, mk);
+  const aggregate     = asAggregate(input.aggregate);
+  const label         = trimOrNull(input.label);
+  const parsePattern  = trimOrNull(input.parsePattern);
+  const parseTemplate = trimOrNull(input.parseTemplate);
+  validateMetricRowShape({ type, symbol, symbolB, transform, label: "override" });
+  assertParseFieldsFor(mk, symbol, parsePattern, parseTemplate);
+  const sensorColumns = sensorColumnsForWrite(mk, type, input.sensorColumns);
+
+  const created = await (prisma as any).manufacturerProfileMetricOverride.create({
+    data: {
+      metricRowId:  row.id,
+      assetType,
+      modelPattern,
+      symbol:       symbol ?? "",
+      symbolB:      type === "double_scalar" ? (symbolB ?? null) : null,
+      mibId:        input.mibId ?? null,
+      mibStdKey:    stdKey,
+      type,
+      transform:    transform ?? null,
+      aggregate,
+      label,
+      parsePattern,
+      parseTemplate,
+      sensorColumns: sensorColumns ? (sensorColumns as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+      order:        Number.isFinite(input.order) ? Number(input.order) : 0,
+    },
+  }).catch((err: any) => {
+    // The PARTIAL unique index on (metricRowId, assetType) WHERE modelPattern
+    // IS NULL — a second default for a device type that already has one.
+    // Editing the existing row is what the operator wants; say so rather
+    // than surfacing a constraint name.
+    if (err?.code === "P2002") {
+      throw new AppError(409, `This metric already has a default for device type "${assetType}" — edit that row instead`);
+    }
+    throw err;
+  });
+  await touchProfile(profileId);
+  await refreshProfileCache();
+  return shapeOverride(created);
+}
+
+export async function updateOverride(
+  overrideId: string,
+  input: {
+    assetType?:     string | null;
+    modelPattern?:  string | null;
+    symbol?:        string;
+    symbolB?:       string | null;
+    mibId?:         string | null;
+    mibStdKey?:     string | null;
+    type?:          string;
+    transform?:     string | null;
+    aggregate?:     string | null;
+    label?:         string | null;
+    parsePattern?:  string | null;
+    parseTemplate?: string | null;
+    sensorColumns?: unknown;
+    order?:         number;
+  },
+): Promise<MetricOverrideRow> {
+  const existing = await (prisma as any).manufacturerProfileMetricOverride.findUnique({
+    where: { id: overrideId },
+    include: { metricRow: true },
+  });
+  if (!existing) throw new AppError(404, "Override not found");
+  const mk = asMetricKey(existing.metricRow.metricKey);
+
+  // Mutual exclusion: an override row points at AT MOST one MIB source.
+  const nextMibId  = input.mibId     === undefined ? existing.mibId     : (input.mibId  ?? null);
+  const nextStdKey = input.mibStdKey === undefined
+    ? existing.mibStdKey
+    : asStdMibKeyOrNull(input.mibStdKey);
+  if (nextMibId && nextStdKey) {
+    throw new AppError(400, "mibId and mibStdKey are mutually exclusive");
+  }
+  // Scope is validated on the EFFECTIVE pair, so clearing one half is only
+  // allowed while the other still carries the row: blanking the model
+  // pattern on a type-scoped row promotes it to that type's default, and
+  // blanking it on a row with no device type would leave a row matching
+  // nothing — rejected.
+  const nextAssetType    = input.assetType    === undefined ? (existing.assetType ?? null)    : asTypeNameOrNull(input.assetType);
+  const nextModelPattern = input.modelPattern === undefined ? (existing.modelPattern ?? null) : trimOrNull(input.modelPattern);
+  assertOverrideScope(nextAssetType, nextModelPattern);
+
+  const nextType      = input.type      === undefined ? asMetricRowType(existing.type) : asMetricRowType(input.type);
+  const nextSymbol    = input.symbol    === undefined ? (existing.symbol ?? null)     : trimOrNull(input.symbol);
+  const nextSymbolB   = input.symbolB   === undefined ? (existing.symbolB ?? null)    : trimOrNull(input.symbolB);
+  const nextTransform = input.transform === undefined
+    ? readStoredTransform(existing.transform)
+    : asTransformForType(input.transform, nextType, mk);
+  const nextAggregate     = input.aggregate     === undefined ? asAggregate(existing.aggregate) : asAggregate(input.aggregate);
+  const nextLabel         = input.label         === undefined ? (existing.label ?? null)         : trimOrNull(input.label);
+  const nextParsePattern  = input.parsePattern  === undefined ? (existing.parsePattern ?? null)  : trimOrNull(input.parsePattern);
+  const nextParseTemplate = input.parseTemplate === undefined ? (existing.parseTemplate ?? null) : trimOrNull(input.parseTemplate);
+
+  validateMetricRowShape({
+    type:      nextType,
+    symbol:    nextSymbol,
+    symbolB:   nextSymbolB,
+    transform: nextTransform,
+    label:     "override",
+  });
+  assertParseFieldsFor(mk, nextSymbol, nextParsePattern, nextParseTemplate);
+  // From the EFFECTIVE type, as on the metric row.
+  const nextColumns = sensorColumnsForWrite(
+    mk, nextType, input.sensorColumns === undefined ? existing.sensorColumns : input.sensorColumns,
+  );
+
+  const updated = await (prisma as any).manufacturerProfileMetricOverride.update({
+    where: { id: overrideId },
+    data: {
+      assetType:     input.assetType     === undefined ? undefined : nextAssetType,
+      modelPattern:  input.modelPattern  === undefined ? undefined : nextModelPattern,
+      symbol:        input.symbol        === undefined ? undefined : (nextSymbol ?? ""),
+      symbolB:       nextType === "double_scalar" ? (nextSymbolB ?? null) : null,
+      mibId:         input.mibId         === undefined ? undefined : (input.mibId ?? null),
+      mibStdKey:     input.mibStdKey     === undefined ? undefined : nextStdKey,
+      type:          input.type          === undefined ? undefined : nextType,
+      transform:     input.transform     === undefined ? undefined : (nextTransform ?? null),
+      aggregate:     input.aggregate     === undefined ? undefined : nextAggregate,
+      label:         input.label         === undefined ? undefined : nextLabel,
+      parsePattern:  input.parsePattern  === undefined ? undefined : nextParsePattern,
+      parseTemplate: input.parseTemplate === undefined ? undefined : nextParseTemplate,
+      sensorColumns: nextColumns ? (nextColumns as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+      order:         input.order         === undefined ? undefined : Number(input.order),
+    },
+  }).catch((err: any) => {
+    // Same partial unique index as createOverride — reached here by editing
+    // a row INTO a device-type default that already exists.
+    if (err?.code === "P2002") {
+      throw new AppError(409, `This metric already has a default for device type "${nextAssetType}" — edit that row instead`);
+    }
+    throw err;
+  });
+  await touchProfile(existing.metricRow.profileId);
+  await refreshProfileCache();
+  return shapeOverride(updated);
+}
+
+export async function deleteOverride(overrideId: string): Promise<void> {
+  const existing = await (prisma as any).manufacturerProfileMetricOverride.findUnique({
+    where: { id: overrideId },
+    include: { metricRow: true },
+  });
+  if (!existing) return;
+  await (prisma as any).manufacturerProfileMetricOverride.delete({ where: { id: overrideId } });
+  await touchProfile(existing.metricRow.profileId);
+  await refreshProfileCache();
+}
+
+export async function createWidget(
+  profileId: string,
+  input: {
+    name:           string;
+    symbol:         string;
+    mibId:          string;
+    type?:          string;
+    widgetType:     string;
+    transform?:     string | null;
+    displayOptions?: Record<string, unknown>;
+    order?:         number;
+    modelPattern?:  string | null;
+    stateMap?:      unknown;
+    labelSymbol?:   string | null;
+    httpCheck?:     unknown;
+    credentialId?:  string | null;
+    createdBy?:     string | null;
+  },
+): Promise<CustomWidgetRow> {
+  if (!input.name || !input.name.trim()) throw new AppError(400, "Widget name is required");
+  const widgetType = asWidgetType(input.widgetType);
+  // An http widget names a request, not an OID, so the SNMP pair is required
+  // for every OTHER type rather than universally.
+  if (widgetType !== "http") {
+    if (!input.symbol || !input.symbol.trim()) throw new AppError(400, "symbol is required");
+    if (!input.mibId) throw new AppError(400, "mibId is required for custom widgets");
+  }
+  if (input.modelPattern) {
+    assertValidModelPattern(input.modelPattern);
+  }
+  const state = stateFieldsForWrite(widgetType, input.stateMap, input.labelSymbol);
+  const http = await httpFieldsForWrite(widgetType, input.httpCheck, input.credentialId);
+  const created = await (prisma as any).manufacturerCustomWidget.create({
+    data: {
+      profileId,
+      name:           input.name.trim(),
+      symbol:         widgetType === "http" ? null : (input.symbol as string).trim(),
+      mibId:          widgetType === "http" ? null : input.mibId,
+      type:           asWidgetSymbolType(input.type ?? "scalar"),
+      widgetType,
+      transform:      asTransformForType(input.transform ?? null, "scalar") as TransformKind | null,
+      displayOptions: input.displayOptions ?? {},
+      order:          Number.isFinite(input.order) ? Number(input.order) : 0,
+      modelPattern:   input.modelPattern ?? null,
+      stateMap:       state.stateMap as any,
+      labelSymbol:    state.labelSymbol,
+      httpCheck:      http.httpCheck as any,
+      credentialId:   http.credentialId,
+      createdBy:      input.createdBy ?? null,
+    },
+  });
+  await touchProfile(profileId);
+  await refreshProfileCache();
+  return shapeWidget(created);
+}
+
+export async function updateWidget(
+  widgetId: string,
+  input: {
+    name?:          string;
+    symbol?:        string;
+    mibId?:         string;
+    type?:          string;
+    widgetType?:    string;
+    transform?:     string | null;
+    displayOptions?: Record<string, unknown>;
+    order?:         number;
+    modelPattern?:  string | null;
+    stateMap?:      unknown;
+    labelSymbol?:   string | null;
+    httpCheck?:     unknown;
+    credentialId?:  string | null;
+  },
+): Promise<CustomWidgetRow> {
+  const existing = await (prisma as any).manufacturerCustomWidget.findUnique({ where: { id: widgetId } });
+  if (!existing) throw new AppError(404, "Widget not found");
+  if (input.modelPattern) {
+    assertValidModelPattern(input.modelPattern);
+  }
+  // The state fields are decided from the EFFECTIVE type (posted, else stored),
+  // so a partial edit that doesn't mention widgetType keeps a probe's mapping,
+  // and one that flips a probe to a gauge clears it rather than leaving a stale
+  // mapping for a later flip back to resurrect.
+  const effectiveType = asWidgetType(input.widgetType ?? existing.widgetType);
+  let stateWrite: { stateMap?: any; labelSymbol?: string | null };
+  if (effectiveType !== "state") {
+    stateWrite = { stateMap: null, labelSymbol: null };
+  } else if (input.stateMap !== undefined || !existing.stateMap) {
+    // Provided, or the widget is becoming a probe and needs a mapping to exist.
+    const state = stateFieldsForWrite(effectiveType, input.stateMap ?? existing.stateMap ?? {}, input.labelSymbol);
+    stateWrite = {
+      stateMap:    state.stateMap as any,
+      labelSymbol: input.labelSymbol === undefined ? undefined : state.labelSymbol,
+    };
+  } else {
+    stateWrite = {
+      labelSymbol: input.labelSymbol === undefined
+        ? undefined
+        : ((input.labelSymbol ?? "").trim() || null),
+    };
+  }
+  // Same EFFECTIVE-type reasoning as the state fields above: an edit that does
+  // not mention widgetType keeps the stored check, one that flips a widget away
+  // from http clears it, and one that flips a widget TO http must supply a
+  // check (an empty definition validates to "GET / expecting any 2xx", which is
+  // a legitimate check, so this cannot fail closed on a partial edit).
+  const httpWrite = effectiveType !== "http"
+    ? { httpCheck: null, credentialId: null }
+    : await httpFieldsForWrite(
+        effectiveType,
+        input.httpCheck === undefined ? (existing.httpCheck ?? {}) : input.httpCheck,
+        input.credentialId === undefined ? (existing.credentialId ?? null) : input.credentialId,
+      );
+
+  const updated = await (prisma as any).manufacturerCustomWidget.update({
+    where: { id: widgetId },
+    data: {
+      name:           input.name === undefined           ? undefined : input.name.trim(),
+      // An http widget has no OID; flipping a widget to http clears the pair
+      // rather than leaving a stale symbol that a later flip back would silently
+      // resurrect (the stateMap precedent directly above).
+      symbol:         effectiveType === "http" ? null : (input.symbol === undefined ? undefined : input.symbol.trim()),
+      mibId:          effectiveType === "http" ? null : (input.mibId === undefined ? undefined : input.mibId),
+      type:           input.type === undefined           ? undefined : asWidgetSymbolType(input.type),
+      widgetType:     input.widgetType === undefined     ? undefined : asWidgetType(input.widgetType),
+      transform:      input.transform === undefined      ? undefined : (asTransformForType(input.transform, "scalar") as TransformKind | null ?? null),
+      displayOptions: input.displayOptions === undefined ? undefined : (input.displayOptions ?? {}),
+      order:          input.order === undefined          ? undefined : Number(input.order),
+      modelPattern:   input.modelPattern === undefined   ? undefined : (input.modelPattern ?? null),
+      ...stateWrite,
+      httpCheck:      httpWrite.httpCheck as any,
+      credentialId:   httpWrite.credentialId,
+    },
+  });
+  await touchProfile(existing.profileId);
+  await refreshProfileCache();
+  return shapeWidget(updated);
+}
+
+export async function deleteWidget(widgetId: string): Promise<void> {
+  const existing = await (prisma as any).manufacturerCustomWidget.findUnique({ where: { id: widgetId } });
+  if (!existing) return;
+  await (prisma as any).manufacturerCustomWidget.delete({ where: { id: widgetId } });
+  await touchProfile(existing.profileId);
+  await refreshProfileCache();
+}
+
+export async function deleteProfile(profileId: string): Promise<void> {
+  // No usage-count refusal here yet — the resolver swap (Slice 6c) is the
+  // commit that introduces dependency. Today deleting a profile is purely
+  // additive removal since monitoring still consults the hardcoded constant.
+  await (prisma as any).manufacturerProfile.delete({ where: { id: profileId } });
+  await refreshProfileCache();
+}
+
+function shapeWidget(w: any): CustomWidgetRow {
+  const widgetType = asWidgetType(w.widgetType);
+  return {
+    id:             w.id,
+    name:           w.name,
+    symbol:         w.symbol,
+    mibId:          w.mibId,
+    type:           asWidgetSymbolType(w.type),
+    widgetType,
+    transform:      w.transform && isTransformKind(w.transform) ? (w.transform as TransformKind) : null,
+    displayOptions: (w.displayOptions ?? {}) as Record<string, unknown>,
+    order:          w.order,
+    modelPattern:   w.modelPattern ?? null,
+    // Read through normalizeStateMap rather than trusted verbatim: a probe row
+    // written before a mode was added (or hand-edited in SQL) still yields a
+    // usable mapping instead of throwing on the telemetry hot path.
+    stateMap:       widgetType === "state" ? normalizeStateMap(w.stateMap ?? {}) : null,
+    labelSymbol:    widgetType === "state" ? (w.labelSymbol ?? null) : null,
+    httpCheck:      widgetType === "http" ? ((w.httpCheck ?? {}) as Record<string, unknown>) : null,
+    credentialId:   widgetType === "http" ? (w.credentialId ?? null) : null,
+  };
+}
+
+async function touchProfile(profileId: string): Promise<void> {
+  try {
+    await (prisma as any).manufacturerProfile.update({
+      where: { id: profileId },
+      data:  { updatedAt: new Date() },
+    });
+  } catch (err) {
+    logger.debug({ err, profileId }, "Failed to bump manufacturer profile updatedAt");
+  }
+}

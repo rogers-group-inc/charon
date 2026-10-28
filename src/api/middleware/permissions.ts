@@ -145,7 +145,20 @@ export function snapshotFromRole(role: {
   };
 }
 
+/**
+ * A bearer API token acts with its bound role's matrix (polaris port). Read
+ * fresh per request — tokens carry no session to cache a snapshot in. A legacy
+ * token with no role bound resolves to null (403 on every role gate).
+ */
+async function resolveTokenSnapshot(roleId: string | null): Promise<SessionRoleSnapshot | null> {
+  if (!roleId) return null;
+  const role = await prisma.role.findUnique({ where: { id: roleId } });
+  return role ? snapshotFromRole(role) : null;
+}
+
 async function resolveSnapshot(req: Request): Promise<SessionRoleSnapshot | null> {
+  // A presented, verified API token wins over any ambient session.
+  if (req.apiToken) return resolveTokenSnapshot(req.apiToken.roleId);
   if (!req.session?.userId) return null;
   if (!req.session.roleId) {
     const u = await prisma.user.findUnique({
@@ -232,7 +245,9 @@ export function requireSessionOrTokenPermission(
   }
   return async (req: Request, _res: Response, next: NextFunction) => {
     try {
-      if (req.apiToken) {
+      // Role-bound tokens fall through to the role check below; only legacy
+      // role-less tokens still use the fixed scope list.
+      if (req.apiToken && !req.apiToken.roleId) {
         if (req.apiToken.scopes.includes(requiredScope)) return next();
         return next(new AppError(403, `Forbidden — token "${req.apiToken.name}" lacks scope "${requiredScope}"`));
       }

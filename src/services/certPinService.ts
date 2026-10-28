@@ -18,7 +18,7 @@ import { prisma } from "../db.js";
 
 const KEY = "agent.cert_pins";
 
-interface PinStore {
+export interface PinStore {
   canonical: string | null;
   staged: string[];
 }
@@ -55,11 +55,113 @@ export async function setCanonicalPin(sha256hexLower: string): Promise<void> {
 /** Stage a new pin ahead of a cert rotation (agents start accepting old+new). */
 export async function stageNewPin(sha256hexLower: string): Promise<void> {
   const s = await read();
-  if (!s.staged.includes(sha256hexLower)) s.staged.push(sha256hexLower);
+  if (s.canonical === sha256hexLower || s.staged.includes(sha256hexLower)) return;
+  s.staged.push(sha256hexLower);
   await write(s);
 }
 
 /** Promote a staged pin to canonical and retire the rest. */
 export async function promoteStagedPin(sha256hexLower: string): Promise<void> {
   await write({ canonical: sha256hexLower, staged: [] });
+}
+
+// ─── Server Settings → Web Server: rotate-certificate support ────────────────
+//
+// Ported from polaris's per-agent dual-pin routes (/agents/cert-pins/*) onto
+// charon's GLOBAL pin store: bulk-add = stage the new pin (every agent picks
+// it up on its next /agents/config poll), the cert swap = make the new pin
+// canonical while KEEPING the old one staged, bulk-remove = retire the old pin.
+// The per-Endpoint serverCertFingerprint / additionalCertFingerprints columns
+// record the pin set each agent was last HANDED (enrollment + /agents/config),
+// which is what the uptake summary tallies.
+
+/** Lowercase 64-hex SHA-256 from "sha256:<hex>", colon-separated, or bare hex; null if invalid. */
+export function normalizePin(raw: string): string | null {
+  if (typeof raw !== "string") return null;
+  const hex = raw.trim().replace(/^sha256:/i, "").replace(/:/g, "").toLowerCase();
+  return /^[0-9a-f]{64}$/.test(hex) ? hex : null;
+}
+
+/** Pure: the store after the served cert becomes `newPin` (old pins stay accepted). */
+export function computeSwap(store: PinStore, newPin: string): PinStore {
+  const keep = [store.canonical, ...store.staged].filter((p): p is string => !!p && p !== newPin);
+  return { canonical: newPin, staged: Array.from(new Set(keep)) };
+}
+
+export type RetireOutcome = "retired" | "not_present" | "last_pin";
+
+/**
+ * Pure: the store after `pin` is retired. Retiring the canonical pin promotes
+ * the first staged pin; retiring the LAST pin is refused (agents would lose
+ * their only trust anchor).
+ */
+export function computeRetire(store: PinStore, pin: string): { outcome: RetireOutcome; store: PinStore } {
+  const all = [store.canonical, ...store.staged].filter((p): p is string => !!p);
+  if (!all.includes(pin)) return { outcome: "not_present", store };
+  const remaining = all.filter((p) => p !== pin);
+  if (remaining.length === 0) return { outcome: "last_pin", store };
+  return { outcome: "retired", store: { canonical: remaining[0], staged: remaining.slice(1) } };
+}
+
+/** After a cert swap: new pin canonical, previous pins remain accepted until retired. */
+export async function swapCanonicalPin(newPin: string): Promise<PinStore> {
+  const next = computeSwap(await read(), newPin);
+  await write(next);
+  return next;
+}
+
+export async function retirePin(pin: string): Promise<RetireOutcome> {
+  const { outcome, store } = computeRetire(await read(), pin);
+  if (outcome === "retired") await write(store);
+  return outcome;
+}
+
+/** Record the pin set an agent was just handed (drives the uptake summary). */
+export async function recordDeliveredPins(endpointId: string, pins: string[]): Promise<void> {
+  const cur = await prisma.endpoint.findUnique({
+    where: { id: endpointId },
+    select: { serverCertFingerprint: true, additionalCertFingerprints: true },
+  });
+  if (!cur) return;
+  const same =
+    cur.serverCertFingerprint === (pins[0] ?? null) &&
+    cur.additionalCertFingerprints.join(",") === pins.slice(1).join(",");
+  if (same) return; // the common case — no write per config poll
+  await prisma.endpoint.update({
+    where: { id: endpointId },
+    data: { serverCertFingerprint: pins[0] ?? null, additionalCertFingerprints: pins.slice(1) },
+  });
+}
+
+export interface DeliveredPinRow {
+  serverCertFingerprint: string | null;
+  additionalCertFingerprints: string[];
+}
+
+/** Endpoints holding a live bearer (enrolled/online/offline) — polaris's installStatus "active". */
+export async function listActiveDeliveredPins(): Promise<DeliveredPinRow[]> {
+  return prisma.endpoint.findMany({
+    where: { status: { in: ["enrolled", "online", "offline"] } },
+    select: { serverCertFingerprint: true, additionalCertFingerprints: true },
+  });
+}
+
+/** Pure: polaris's summary tally — per pin, how many agents hold it canonical vs staged. */
+export function tallyPins(rows: DeliveredPinRow[]): Array<{ pin: string; canonical: number; staged: number }> {
+  const tally = new Map<string, { canonical: number; staged: number }>();
+  const bump = (pin: string, field: "canonical" | "staged") => {
+    const k = pin.toLowerCase();
+    const e = tally.get(k) ?? { canonical: 0, staged: 0 };
+    e[field] += 1;
+    tally.set(k, e);
+  };
+  for (const r of rows) {
+    if (r.serverCertFingerprint) bump(r.serverCertFingerprint, "canonical");
+    for (const p of r.additionalCertFingerprints) bump(p, "staged");
+  }
+  return Array.from(tally.entries()).map(([pin, c]) => ({ pin, ...c }));
+}
+
+export function rowHasPin(r: DeliveredPinRow, pin: string): boolean {
+  return [r.serverCertFingerprint, ...r.additionalCertFingerprints].some((p) => !!p && p.toLowerCase() === pin);
 }

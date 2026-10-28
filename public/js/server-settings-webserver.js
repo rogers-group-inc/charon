@@ -26,7 +26,7 @@ var _loginAccess = null;  // { settings, callerIp } | null while loading/failed
 // policies; this card states the current scope and points there), and Trusted CAs.
 // A drift banner appears above the deck, full width, when proxyConfig.managedMode
 // is false (the refuse-and-banner UX for existing installs that haven't opted
-// into Polaris-managed nginx config yet). See src/api/routes/proxySettings.ts.
+// into Charon-managed nginx config yet). See src/api/routes/settings/webServer.ts.
 function renderCertsTab(container) {
   var s = _httpsSettings || {};
   var p = (_proxyData && _proxyData.config) || {};
@@ -65,11 +65,11 @@ function renderCertsTab(container) {
       : '';
     bannerHtml =
       '<div class="settings-card" style="border-color:#f59e0b;background:rgba(245,158,11,0.08);margin-bottom:1rem">' +
-        '<h4 style="color:#f59e0b;margin-bottom:0.5rem">nginx config not Polaris-managed yet</h4>' +
+        '<h4 style="color:#f59e0b;margin-bottom:0.5rem">nginx config not Charon-managed yet</h4>' +
         '<p style="font-size:0.85rem;margin-bottom:0.6rem">' +
           'The Save &amp; Apply button below is disabled until you click <strong>Adopt managed mode</strong>. ' +
-          'Until then, the controls show what Polaris parsed from <code>/etc/nginx/conf.d/polaris.conf</code> and ' +
-          'are read-only. Adopting will overwrite any hand-edits beyond the six controls Polaris manages on the ' +
+          'Until then, the controls show the values Charon would render into <code>/etc/nginx/conf.d/charon.conf</code> and ' +
+          'are read-only. Adopting will overwrite any hand-edits beyond the six controls Charon manages on the ' +
           'next Apply.' +
         '</p>' +
         markerLine +
@@ -90,8 +90,8 @@ function renderCertsTab(container) {
       '<p style="font-size:0.82rem;color:var(--color-text-secondary);margin-bottom:1rem">' +
         'TLS is terminated by nginx reading the cert at <code>' + escapeHtml(certPath) + '</code>. ' +
         'Rotation walks through the dual-pin stage→swap→retire workflow so it\'s zero-downtime as long as ' +
-        'every agent is online to receive the new pin. The SHA-256 fingerprint Polaris Agents pin against ' +
-        'lives on Integrations → Polaris Agent.' +
+        'every agent is online to receive the new pin. This certificate&rsquo;s SHA-256 fingerprint is the pin every ' +
+        'Charon endpoint agent trusts (shown in the Rotate dialog).' +
       '</p>' +
       '<div class="form-group"><label>Cert path</label>' +
         '<input type="text" readonly value="' + escapeHtml(certPath) + '" style="font-family:monospace">' +
@@ -117,9 +117,9 @@ function renderCertsTab(container) {
     '<div class="settings-card">' +
       '<h4>nginx Proxy</h4>' +
       '<p style="font-size:0.82rem;color:var(--color-text-secondary);margin-bottom:1rem">' +
-        'Six operator-settable directives. Save &amp; Apply renders <code>/etc/nginx/conf.d/polaris.conf</code> ' +
+        'Six operator-settable directives. Save &amp; Apply renders <code>/etc/nginx/conf.d/charon.conf</code> ' +
         'from these values, runs <code>nginx -t</code>, and reloads nginx. server_name is derived from ' +
-        '<code>POLARIS_PUBLIC_URL</code>.' +
+        '<code>CHARON_PUBLIC_URL</code>. Charon serves TLS 1.3 only (PQC-hybrid key exchange).' +
       '</p>' +
       '<div class="form-group">' +
         '<label for="proxy-https-port">HTTPS listen port (TCP + UDP)</label>' +
@@ -223,9 +223,9 @@ function renderCertsTab(container) {
     '<div class="settings-card">' +
       '<h4>IPv6</h4>' +
       '<p style="font-size:0.82rem;color:var(--color-text-secondary);margin-bottom:1rem">' +
-        'When IPv6 is off, Polaris discovers, collects, stores and shows no IPv6 addresses, and every device is ' +
+        'When IPv6 is off, Charon discovers, collects, stores and shows no IPv6 addresses, and every device is ' +
         'monitored on its IPv4 address. When it is on, a device with no IPv4 address is monitored on its primary IPv6 address, ' +
-        'as long as this server can reach IPv6. Polaris sets this once at install, from whether this server has a ' +
+        'as long as this server can reach IPv6. Charon sets this once at install, from whether this server has a ' +
         'routable IPv6 address; after that only this switch changes it. In a container the server is the container: ' +
         'on Docker or podman compose, enable IPv6 on the compose network first (see the install guide).' +
       '</p>' +
@@ -255,7 +255,7 @@ function renderCertsTab(container) {
   var caCardHtml =
     '<div class="settings-card" style="display:flex;flex-direction:column">' +
       '<h4>Trusted Certificate Authorities</h4>' +
-      '<p style="font-size:0.82rem;color:var(--color-text-secondary);margin-bottom:1rem">CA certificates used to verify remote servers when Polaris connects to integrations, syslog, and archive targets. Still operator-editable in proxy mode.</p>' +
+      '<p style="font-size:0.82rem;color:var(--color-text-secondary);margin-bottom:1rem">CA certificates used to verify remote servers when Charon connects to integrations (FortiGate, FortiManager, Entra ID), in addition to the system trust store.</p>' +
       '<ul class="cert-list" id="ca-list"><li class="cert-empty">Loading...</li></ul>' +
       '<div style="margin-top:auto;padding-top:1rem">' +
         '<div class="upload-area" id="ca-upload-area">' +
@@ -281,7 +281,7 @@ function renderCertsTab(container) {
   if (la === null) {
     laSummary = 'Unavailable &mdash; could not load the login access settings.';
   } else if (!laS.enabled) {
-    laSummary = 'Not restricted &mdash; local login is reachable from any network that can reach Polaris.';
+    laSummary = 'Not restricted &mdash; local login is reachable from any network that can reach Charon.';
   } else if (laS.ipScope === "custom") {
     laSummary = 'Restricted to: <code>' + escapeHtml((laS.allowedCidrs || []).join(", ") || "(none)") + '</code>';
   } else if (laS.ipScope === "all") {
@@ -304,26 +304,15 @@ function renderCertsTab(container) {
       '</p>' +
     '</div>';
 
-  // Rule 113: every identity Polaris pinned on first use — the certificates
-  // it pinned instead of verifying a CA (WinRM listeners, devices it upgrades,
-  // FortiGates / FortiManagers with SSL verification off) with the changed
-  // ones first and "Trust new certificate", and the SSH host keys. Lives here,
-  // where certificate problems get looked for.
-  var pinnedCardHtml =
-    '<div class="settings-card" id="pinned-tls-card">' +
-      '<h3>Pinned server identities</h3>' +
-      '<p style="font-size:0.82rem;color:var(--color-text-secondary);margin:0 0 0.75rem 0">Polaris pins the TLS certificate of a server the first time it sends it a password or token ' +
-        'without verifying a CA, and the SSH host key of every host it reaches over SSH, and refuses to send anything if either later changes. In the list a changed certificate comes first: ' +
-        'compare it with the server and choose Trust new certificate. After a firmware upgrade Polaris runs itself, the device\'s new ' +
-        'certificate is re-pinned automatically.</p>' +
-      '<div id="pinned-tls-body"><p class="empty-state" style="padding:0.5rem 0;margin:0">Loading&hellip;</p></div>' +
-    '</div>';
+  // Polaris's "Pinned server identities" card (rule 113 — TOFU pins for outbound
+  // WinRM / SSH / FortiGate-with-verify-off) is not rendered: Charon keeps no
+  // such pin store, and an always-empty list would read as protection that
+  // does not exist. pinned-tls-certs.js stays loaded but is never mounted.
 
   container.innerHTML = bannerHtml +
     '<div class="settings-cards-flow">' +
-      certCardHtml + proxyCardHtml + dashCardHtml + ipv6CardHtml + loginCardHtml + caCardHtml + pinnedCardHtml +
+      certCardHtml + proxyCardHtml + dashCardHtml + ipv6CardHtml + loginCardHtml + caCardHtml +
     '</div>';
-  if (window.PolarisPinnedTlsCerts) window.PolarisPinnedTlsCerts.mount(document.getElementById("pinned-tls-body"));
 
   var adoptBtn = document.getElementById("proxy-adopt-btn");
   if (adoptBtn) adoptBtn.addEventListener("click", handleProxyAdopt);
@@ -375,7 +364,7 @@ function renderCertsTab(container) {
 async function handleIpv6Save(container) {
   var enabled = !!(document.getElementById("ipv6-enabled") || {}).checked;
   if (!enabled && _ipv6Settings && _ipv6Settings.enabled &&
-      !(await showConfirm("Turn IPv6 off? Polaris stops discovering and showing IPv6 addresses, and devices that only have an IPv6 address stop being polled."))) {
+      !(await showConfirm("Turn IPv6 off? Charon stops discovering and showing IPv6 addresses, and devices that only have an IPv6 address stop being polled."))) {
     return;
   }
   try {
@@ -418,7 +407,7 @@ async function handleDashSave() {
 }
 
 async function handleProxyAdopt() {
-  if (!(await showConfirm("Adopt Polaris-managed nginx config mode? Hand-edits beyond the six controls will be overwritten on the next Apply."))) return;
+  if (!(await showConfirm("Adopt Charon-managed nginx config mode? Hand-edits beyond the six controls will be overwritten on the next Apply."))) return;
   try {
     await api.serverSettings.proxyAdoptManagedMode();
     await loadCertificates();
@@ -567,7 +556,7 @@ function openRotateCertModal() {
         '<div style="color:#4ade80">✓ Staged on ' + escapeHtml(String(result.added)) +
         ' agent(s); ' + escapeHtml(String(result.alreadyPresent)) + ' already had the pin. ' +
         'Total active: ' + escapeHtml(String(result.totalActive)) + '. ' +
-        'Agents apply the new pin within seconds via WS push (offline agents pick it up on next /config poll). ' +
+        'Agents pick up the new pin on their next /config poll. ' +
         'Verify uptake at <a href="#" id="rotate-summary-link">cert-pins summary</a> or just wait ~30s, ' +
         'then click <strong>Swap cert</strong>.</div>',
       );
@@ -587,7 +576,7 @@ function openRotateCertModal() {
 
   document.getElementById("rotate-swap-btn").addEventListener("click", async function () {
     if (!state.preflight) return;
-    if (!(await showConfirm("Swap /etc/polaris-nginx/{cert,key}.pem and reload nginx? Make sure all active agents have heartbeated with the new pin staged."))) return;
+    if (!(await showConfirm("Swap the HTTPS certificate + key files and reload nginx? Make sure all active agents have heartbeated with the new pin staged."))) return;
     clearError();
     this.disabled = true;
     try {
@@ -598,6 +587,8 @@ function openRotateCertModal() {
       if (result.ok) {
         updatePreflightDisplay(
           '<div style="color:#4ade80">✓ Cert swapped + nginx reloaded. New fingerprint live. ' +
+          // Charon: Docker/dev has no apply wrapper — say so instead of claiming a reload.
+          (result.note ? '<div style="color:#f59e0b">' + escapeHtml(result.note) + '</div>' : '') +
           (state.oldFingerprint
             ? 'Click <strong>Retire old pin</strong> to remove <code>' + escapeHtml(state.oldFingerprint) + '</code> from every agent\'s accepted set.'
             : 'No previous pin recorded — nothing to retire.') +
@@ -695,7 +686,7 @@ function certIconSvg() {
 function renderCAList() {
   var list = document.getElementById("ca-list");
   if (!_certData.trustedCAs.length) {
-    list.innerHTML = '<li class="cert-empty">No trusted CAs uploaded. Polaris will use the system trust store.</li>';
+    list.innerHTML = '<li class="cert-empty">No trusted CAs uploaded. Charon will use the system trust store.</li>';
     return;
   }
   list.innerHTML = _certData.trustedCAs.map(function (cert) {

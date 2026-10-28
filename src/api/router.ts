@@ -30,7 +30,7 @@ import settingsMaintenanceRouter from "./routes/settings/maintenance.js";
 import settingsCustomizationRouter from "./routes/settings/customization.js";
 import settingsCredentialsRouter, { credentialsRouter } from "./routes/settings/credentials.js";
 import settingsApiTokensRouter, { apiTokensRouter } from "./routes/settings/apiTokens.js";
-import settingsHaRouter, { haRouter } from "./routes/settings/ha.js";
+import settingsHaRouter, { haRouter, haEnrollRouter } from "./routes/settings/ha.js";
 import settingsFirmwareRouter from "./routes/settings/firmware.js";
 import { agentsEnrollRouter, agentsRouter } from "./routes/agents.js";
 import { requireAuth, attachApiToken } from "./middleware/auth.js";
@@ -52,6 +52,13 @@ router.use("/agent", agentRouter);
 // app.ts on the HTTP server.
 router.use("/agents/enroll", agentsEnrollRouter);
 router.use("/agents", agentsRouter);
+
+// HA node enrollment (the node scripts the High Availability tab mints).
+// Public by design: the caller holds a single-use, SHA-384-hashed enrollment
+// token, then waits for an operator to approve it in the UI before it can
+// download its bundle (src/services/haEnrollmentService.ts). Rate-limited and
+// CSRF-exempt at exactly this path (middleware/csrf.ts).
+router.use("/ha/enroll", haEnrollRouter);
 
 // ─── Authenticated surfaces ────────────────────────────────────────────────
 router.use(requireAuth);

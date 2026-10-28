@@ -1,0 +1,114 @@
+---
+name: charon-worktree-workflow
+description: "Charon session workflow: start every task in its own git worktree under .claude/worktrees/, create WORKLOCK before the first edit and DEVLOCK when a dev environment is running, finish by deleting WORKLOCK and committing; spin up or tear down a per-worktree podman dev stack (-p charon-<slug>); on 'merge' list the unlocked worktrees as a numbered menu and merge the chosen ones to main; on 'push' push main and clean up the merged worktrees. Load at the start of any coding task, whenever the user says worktree, lock, WORKLOCK, DEVLOCK, dev environment, dev stack, podman, compose, merge, or push, and when the PreToolUse hook refuses an Edit/Write."
+---
+
+# Session workflow — worktrees, locks, dev stacks, merge, push
+
+## The six rules (also in CLAUDE.md, always in force)
+
+1. **Never edit the main checkout.** Before the first edit of a task, create a worktree
+   (`EnterWorktree` → `.claude/worktrees/<slug>` on branch `worktree-<slug>`) and write
+   `WORKLOCK` at its root. A PreToolUse hook refuses Edit/Write inside the repo otherwise.
+2. **Finishing = delete `WORKLOCK`, then commit everything in the worktree.** That
+   end-of-work commit does not wait for approval (run `/charon-docs-sync` first). Merging to
+   main and pushing happen only when the user says "merge" / "push" — or invokes
+   `/charon-deploy`, which is docs-sync → deploy audit → commit → merge → push as one pipeline
+   and is itself the go-ahead for the last two. It merges and cleans up only the chat's own
+   worktree — never a menu of the others.
+3. **A dev environment = `DEVLOCK` at the worktree root + one podman stack per worktree.**
+4. **"merge"** → the merge protocol below (numbered menu of unlocked worktrees).
+   **"push"** → the push protocol below (push main, clean up what was merged).
+5. **Lock files are gitignored and never committed.** Content: one line, ISO timestamp +
+   purpose. A lock older than the chat that made it is stale; the merge menu shows its age.
+6. **Record every error you hit** as one file in `error-log/` beside the memory directory
+   (`~/.claude/projects/<this project>/error-log/`, outside the repo, never committed; its
+   README has the shape). A recurring trap is logged each time — the count is the signal the
+   user reviews to change this workflow.
+
+## Which file
+
+| Step | Read |
+|---|---|
+| creating and preparing a worktree (own `npm install`, `prisma generate`, no junctions), committing safely beside other sessions | [references/worktree-setup.md](references/worktree-setup.md) |
+| bringing up / tearing down the per-worktree podman stack (`podman machine start`, `-p charon-<slug>`, port offsets, `.env`, seed) | [references/dev-environment.md](references/dev-environment.md) |
+| the merge menu, the merge steps, the post-merge skill review, the DEVLOCK variant | [references/merge-protocol.md](references/merge-protocol.md) |
+| the push and clean-up steps | [references/push-protocol.md](references/push-protocol.md) |
+| the enforcement hook and how it is registered | [scripts/require-worklock.mjs](scripts/require-worklock.mjs) |
+
+## Start of a task (short form)
+
+```
+EnterWorktree name=<slug>                     # branch worktree-<slug>, cwd switches
+printf '%s %s\n' "$(date -u +%FT%TZ)" "<purpose>" > WORKLOCK
+cp <main-checkout>/.env .env                  # gitignored; only needed for prisma generate / tests
+npm install --no-audit --no-fund              # own node_modules + generated Prisma client
+```
+
+**The Prisma client is not optional, even when you skip `npm install`.** Node finds the main
+checkout's `node_modules` up-tree, so a worktree runs vitest / tsc without its own install, but
+`src/generated/prisma` is resolved INSIDE the worktree and a fresh one has none. Skipping step 2
+is fine for a front-end-only change; skipping the client is not, so run this before the first
+test or typecheck:
+
+```
+DATABASE_URL=postgresql://x:x@localhost:5432/x npx prisma generate   # ~1 s; no DB contacted
+```
+
+A test that fails in a fresh worktree is the missing client until proved otherwise
+(worktree-setup.md step 5).
+
+## End of a task (short form)
+
+One-command form: `/charon-deploy` does everything below and carries on through merge and
+push. The steps stay here for a commit made outside that pipeline.
+
+```
+/charon-docs-sync                             # refresh the skill entries the change touched
+npm run check:docs && npm run typecheck && npx vitest run tests/unit
+rm WORKLOCK
+git add -A && git commit                      # one logical change per commit; last one closes the work
+```
+Report the branch name and say the worktree is ready to merge. Do not merge or push.
+
+## "merge" (short form; full steps in merge-protocol.md)
+
+1. `git worktree list --porcelain`; for each non-main worktree check for `WORKLOCK` / `DEVLOCK`.
+2. Print a **numbered list of the unlocked worktrees** (branch · commits ahead of main · last
+   subject · dirty?) and, un-numbered, the locked ones with each lock's age.
+3. The user picks numbers. For each pick, in order: commit anything pending in that worktree;
+   confirm the main checkout is clean (`git status --porcelain` empty, no `MERGE_HEAD`); from
+   the main checkout `git merge --no-ff worktree-<slug>`; on conflict stop and report.
+4. **Review what landed against the skills**: read each merged branch as one diff and ask what
+   a future session must now be told — a new invariant → a numbered business rule; a new
+   subsystem → an entry in the owning skill, or a new skill when nothing's `description:`
+   would ever reach it; drifted trigger phrases; prose the diff contradicts in a file no commit
+   touched; traps that cost this chat time. Report "skills current" or the concrete list; make
+   the edits in their own worktree, never on main.
+5. After the last merge: `npm run check:docs` + `npm run typecheck` on main. **Do not push.**
+6. If the chat's own worktree holds a `DEVLOCK` and the user asks to merge it: tear the stack
+   down (`podman compose -f compose.dev.yml -p charon-<slug> down -v`), delete `DEVLOCK`,
+   commit pending, then merge.
+
+## "push" (short form; full steps in push-protocol.md)
+
+1. Run `/charon-deploy`'s deployment-surface audit; stage fixes as their own commit (skipped
+   when this push is the last stage of `/charon-deploy` — its audit already ran in the worktree).
+2. `git push origin main`.
+3. For each worktree merged in this session (plus any `worktree-*` branch already fully merged,
+   `git branch --merged main` — but under `/charon-deploy` only the chat's own): refuse if a lock
+   file is present; check for directory junctions; `podman compose -p charon-<slug> down -v` if a
+   stack lingers; `git worktree remove <path>`; `git branch -d worktree-<slug>`. Report what was
+   removed.
+
+## Why it is shaped this way
+
+Several chats can work this repo at once. A worktree per chat keeps their indexes apart; the
+lock files let a merge session tell "finished" from "someone is still typing" without asking;
+the numbered menu keeps the merge decision human; the skill review happens at merge because
+that is the first time a unit of work is legible as one diff rather than a string of commits;
+and cleaning up on push, not on merge, leaves a merged worktree inspectable until the code has
+actually left the machine.
+
+Related: `charon-docs-sync` (the commit-time review), `charon-deploy` (the release pipeline),
+`charon-business-rules` (`npm run rules:next` before citing a new rule number).

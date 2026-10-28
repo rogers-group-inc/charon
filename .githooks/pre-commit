@@ -1,0 +1,55 @@
+#!/bin/sh
+# Charon pre-commit hook — version-controlled (activate with:
+#   git config core.hooksPath .githooks   — `npm install` does this via postinstall).
+#
+# Independent structural guards, each with its own staged-file filter so a
+# commit only pays for the checks it can actually break:
+#
+#   check-docs.mjs      the doc-drift guard over CLAUDE.md + .claude/skills/** —
+#                       a new model / service / job / route can't land
+#                       undocumented, and stale file:line refs, dead paths,
+#                       orphaned reference files or references to the retired
+#                       root docs can't creep back in.
+#   check-versions.mjs  the pin-consistency guard — a version bump can't land in
+#                       four declaration sites of six, leaving the fifth to keep
+#                       provisioning the old runtime.
+#
+# Neither guard judges prose accuracy — that is /charon-docs-sync.
+#
+# Bypass for one commit:  git commit --no-verify
+
+changed=$(git diff --cached --name-only)
+
+# --- doc drift ------------------------------------------------------------
+case "$changed" in
+  *.ts*|*src/*|*prisma/schema.prisma*|*CLAUDE.md*|*.claude/skills/*|*scripts/check-docs.mjs*)
+    node scripts/check-docs.mjs || {
+      echo ""
+      echo "pre-commit: doc-drift check failed (see above)."
+      echo "Update the docs (/charon-docs-sync), or bypass once with:  git commit --no-verify"
+      exit 1
+    }
+    ;;
+  *)
+    : # nothing relevant changed; skip the check
+    ;;
+esac
+
+# --- version pins ---------------------------------------------------------
+# Narrower filter than the docs check: a version check on a pure-UI commit is
+# only latency.
+case "$changed" in
+  *package.json*|*Dockerfile*|*deploy/*|*compose*.yml*|*.github/workflows/*|*Cargo.toml*|*scripts/data/platformEol.json*|*scripts/check-versions.mjs*)
+    node scripts/check-versions.mjs || {
+      echo ""
+      echo "pre-commit: version-pin check failed (see above)."
+      echo "Every site for a version must agree — the site list per family is"
+      echo ".claude/skills/charon-tech-lifecycle/references/version-pin-inventory.md."
+      echo "Bypass once with:  git commit --no-verify"
+      exit 1
+    }
+    ;;
+  *)
+    : # no pin-bearing file changed
+    ;;
+esac

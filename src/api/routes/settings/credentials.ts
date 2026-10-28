@@ -72,12 +72,12 @@ const CredentialTypeEnum = z.enum(["snmp", "winrm", "ssh", "restapi", "http"]);
 const CreateCredentialSchema = z.object({
   name:   z.string().min(1),
   type:   CredentialTypeEnum,
-  config: z.record(z.unknown()),
+  config: z.record(z.string(), z.unknown()),
 });
 
 const UpdateCredentialSchema = z.object({
   name:   z.string().min(1).optional(),
-  config: z.record(z.unknown()).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
 });
 
 // POST /credentials/test. polaris accepts an assetId OR a typed host; Charon has
@@ -86,9 +86,9 @@ const TestSchema = z.object({
   assetId: z.string().uuid("assetId must be a UUID").optional(),
   host:    z.string().min(1).max(300).optional(),
   type:    CredentialTypeEnum,
-  config:  z.record(z.unknown()),
+  config:  z.record(z.string(), z.unknown()),
   id:      z.string().uuid().optional(),
-  check:   z.record(z.unknown()).optional(),
+  check:   z.record(z.string(), z.unknown()).optional(),
 }).refine((v) => !!v.assetId || !!v.host || v.type === "restapi", {
   message: "Provide either an assetId or a host to test against",
 });
@@ -161,7 +161,7 @@ function zodMessage(err: z.ZodError): string {
   return err.issues.map((e) => e.message).join("; ");
 }
 
-function parseOr400<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, body: unknown): T {
+function parseOr400<T>(schema: z.ZodType<T>, body: unknown): T {
   const parsed = schema.safeParse(body);
   if (!parsed.success) throw new AppError(400, zodMessage(parsed.error));
   return parsed.data;
@@ -295,7 +295,7 @@ credentialsRouter.post("/test", credentialTestLimiter, requirePermission("creden
 
   // A restapi credential dials its own baseUrl — same rule 110 guard on it.
   if (input.type === "restapi" && typeof config.baseUrl === "string") {
-    let baseHost = "";
+    let baseHost: string;
     try { baseHost = new URL(String(config.baseUrl)).hostname; } catch { baseHost = ""; }
     if (baseHost) {
       try {
@@ -904,7 +904,7 @@ router.put(`${MP}/:id`, SYS_WRITE, handle(async (req, res) => {
 
 // Body shapes for metric / override / widget writes are validated field by
 // field in manufacturerProfileService (as in polaris), so only "an object" here.
-const BodyObject = z.record(z.unknown());
+const BodyObject = z.record(z.string(), z.unknown());
 
 router.put(`${MP}/:id/metrics/:metricKey`, SYS_WRITE, handle(async (req, res) => {
   const id = String(req.params.id);

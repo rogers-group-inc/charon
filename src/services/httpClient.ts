@@ -43,7 +43,7 @@ const TRUSTED_CA_TTL_MS = 60_000;
 let trustedCache: { at: number; key: string; dispatcher: Agent | undefined } | null = null;
 async function getTrustedDispatcher(): Promise<Agent | undefined> {
   if (trustedCache && Date.now() - trustedCache.at < TRUSTED_CA_TTL_MS) return trustedCache.dispatcher;
-  let pems: string[] = [];
+  let pems: string[];
   try {
     const { getTrustedCaPems } = await import("./trustedCaService.js");
     pems = await getTrustedCaPems();

@@ -41,3 +41,15 @@ Thumbs.db
 *.swp
 .vscode/*
 !.vscode/extensions.json
+
+# --- Claude Code ---
+# Per-developer settings (permissions, hook config) and scratch worktrees are
+# local; the project SKILLS under .claude/skills/ are tracked project memory and
+# must NOT be ignored (git cannot re-include a child of an excluded directory,
+# hence the `/*` + `!` pair).
+.claude/*
+!.claude/skills/
+
+# Session-workflow lock files (a worktree in use / a dev stack running) — never committed
+WORKLOCK
+DEVLOCK

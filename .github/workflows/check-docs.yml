@@ -1,0 +1,46 @@
+name: Check docs
+
+# Structural guards for the repo, all pure file reads — no DB, no npm install, no
+# prisma generate needed, which is why they share one fast job:
+#
+#   check-docs      doc-drift over the project memory (CLAUDE.md + every Markdown
+#                   file under .claude/skills/**): coverage and reference hygiene,
+#                   enforced even when a local clone hasn't activated the
+#                   pre-commit hook.
+#   check-versions  every version pin agrees across its declaration sites, so a
+#                   bump can't land in four of six and leave the fifth
+#                   provisioning the old runtime; warns on end-of-life pins.
+#
+# Each step runs even if an earlier one failed, so one push reports every problem
+# instead of hiding the second behind the first.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # Nothing here pushes, so the token has no business outliving the step.
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+
+      - name: Structural doc-drift check
+        run: node scripts/check-docs.mjs
+
+      - name: Version-pin consistency check
+        if: ${{ !cancelled() }}
+        run: node scripts/check-versions.mjs

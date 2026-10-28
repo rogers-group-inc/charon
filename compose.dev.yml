@@ -1,7 +1,12 @@
 # Charon — dev compose. Single-process app (CHARON_ROLE unset = "all") with a
 # bind-mounted source tree + a local Postgres. Bound to 127.0.0.1 only.
 #
-#   docker compose -f compose.dev.yml up
+#   podman compose -f compose.dev.yml -p charon-<slug> up -d --build
+#
+# One stack per worktree: -p isolates containers + volumes, and
+# CHARON_DEV_PG_PORT / CHARON_DEV_APP_PORT move the published ports off the
+# 5432 / 3000 defaults so stacks can run side by side
+# (.claude/skills/charon-worktree-workflow/references/dev-environment.md).
 
 services:
   postgres:
@@ -11,7 +16,7 @@ services:
       POSTGRES_PASSWORD: charon
       POSTGRES_DB: charon
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${CHARON_DEV_PG_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U charon"]
       interval: 5s
@@ -31,7 +36,7 @@ services:
       NODE_ENV: development
       CHARON_BIND: "0.0.0.0"
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${CHARON_DEV_APP_PORT:-3000}:3000"
     volumes:
       - ./src:/app/src
       - ./public:/app/public

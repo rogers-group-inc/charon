@@ -18,7 +18,7 @@ export function errorHandler(
   }
 
   if (err instanceof ZodError) {
-    const message = err.errors
+    const message = err.issues
       .map((e) => {
         const field = e.path.length ? e.path.join(".") : undefined;
         return field ? `${field}: ${e.message}` : e.message;

@@ -66,7 +66,7 @@ agentsRouter.post("/heartbeat", async (req, res, next) => {
 
 agentsRouter.post("/posture", async (req, res, next) => {
   try {
-    const body = z.object({ posture: z.record(z.unknown()) }).parse(req.body);
+    const body = z.object({ posture: z.record(z.string(), z.unknown()) }).parse(req.body);
     const { state, changed } = await ingestPosture(req.agent!.endpointId, body.posture);
     if (changed) await enqueueReconcile(req.agent!.endpointId);
     res.json({ ok: true, postureState: state });

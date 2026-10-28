@@ -83,7 +83,7 @@ const AgentEventLogBody = z.object({
   maxPerPush: z.number().optional(),
   perAssetHourlyCap: z.number().optional(),
 });
-const SampleRetentionBody = z.record(z.unknown());
+const SampleRetentionBody = z.record(z.string(), z.unknown());
 
 // Heavy endpoints (pg_dump, catalog scans): polaris's maintenanceLimiter.
 const maintenanceLimiter = makeRateLimiter({ windowMs: 60_000, max: 30, message: "Too many maintenance requests — slow down." });

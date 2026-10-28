@@ -34,6 +34,12 @@ jobs:
 
       - name: Install dependencies
         if: steps.detect.outputs.present == 'true'
+        # postinstall runs `prisma generate`, and prisma.config.ts refuses to load
+        # without DATABASE_URL. Generate never connects, so a placeholder is enough.
+        # Scoped to this step only: set job-wide it would make DB-gated tests try
+        # to connect instead of skipping.
+        env:
+          DATABASE_URL: postgresql://placeholder:placeholder@localhost:5432/placeholder
         run: npm ci
 
       - name: Lint

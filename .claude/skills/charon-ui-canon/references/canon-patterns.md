@@ -35,7 +35,8 @@ loads; each tab's body is its own `server-settings-<tab>.js` module (the HA and 
 expose `window.*Tab.load()` and guard their own once-per-page load). Internal keys outlived
 label changes: the Web Server tab is `data-tab="certificates"` and the Repository tab is
 `firmware`. Script order: `theme-init.js` (head) → `page-top-curtain.js` → `settings-api.js` →
-`folder-tabs.js` → `panel-lock.js` → `app.js` → `settings-ui.js` → shared widgets
+`folder-tabs.js` → `panel-lock.js` → `brand-logo.js` → `app.js` (+ the `#polaris-nav-ready`
+marker right after it) → `settings-ui.js` → shared widgets
 (`condition-builder.js`, `pinned-tls-certs.js`) → tab modules → `server-settings.js` last.
 A new tab = a button + panel in the HTML, a module, a `SETTINGS_TAB_PERMS` row naming the key
 its routes check, and a lazy-load line in `_activateSettingsTab()`.

@@ -1,6 +1,6 @@
 ---
 name: charon-ui-canon
-description: "Charon frontend (vanilla JS, no build step, public/): the shared Polaris UI design system (public/css/styles.css is a verbatim copy) plus the additive charon.css overlay, which file is the reference implementation of each UI pattern (table + modal + toast, cards + data-driven modal, tabs, the Server Settings folder tabs + folder card with per-tab modules (settings-api.js / settings-ui.js), the TableSF sortable / filterable / adjustable-column table), the page → permission-gate table, the shared modules never to re-derive (api.js, app.js window.Charon, table-sf.js, theme-init.js), and the agent's web GUI reusing the stylesheet. Load for any change under public/ or agent/ui/, any HTML/CSS/JS/theme work, a new page, table, modal, tab, badge or toast, nav or sidebar gating, Charon.can(), or a question about how the UI is built."
+description: "Charon frontend (vanilla JS, no build step, public/): the shared Polaris UI design system (public/css/styles.css is a verbatim copy) plus the additive charon.css overlay, which file is the reference implementation of each UI pattern (table + modal + toast, cards + data-driven modal, tabs, the Server Settings folder tabs + folder card with per-tab modules (settings-api.js / settings-ui.js), the TableSF sortable / filterable / adjustable-column table), the page → permission-gate table, the shared modules never to re-derive (api.js, app.js window.Charon, table-sf.js, theme-init.js), and the agent's web GUI reusing the stylesheet. Load for any change under public/ or agent/ui/, any HTML/CSS/JS/theme work (dark / light mode, the morning / noon / nightfall theme band, the page-change crossfade, the sidebar or login logo, favicon, brand-logo.js), a new page, table, modal, tab, badge or toast, nav or sidebar gating, Charon.can(), or a question about how the UI is built."
 ---
 
 # Charon UI canon
@@ -72,8 +72,10 @@ only `credentials` or `apiTokens` read gets no sidebar link (the nav checks the 
 - **Themes are polaris's** (`morning` / `noon` / `nightfall`, stepped by the sidebar band —
   frontend-shell.md → Theme system). Branch on `Charon.isLightTheme()`, never on a theme id;
   `dark` / `light` are retired.
-- **Script order** on an app page: `theme-init.js` (head) → `api.js` → `app.js` → `table-sf.js`
-  when used → the page script.
+- **Script order** on an app page: `theme-init.js` (head) → `api.js` → `brand-logo.js` →
+  `app.js` → the `#polaris-nav-ready` marker → `table-sf.js` when used → the page script. The
+  head also carries the render-blocking `#polaris-nav-ready` expect link and
+  `page-transitions.css` (frontend-shell.md → Page-change crossfade).
 - **The Server Settings page is a polaris port with its own client layer**: `settings-api.js`
   (polaris `api.<namespace>.*`) and `settings-ui.js` (polaris `openModal` / `showConfirm` /
   slide-overs / `permAtLeast`) are loaded ONLY by `public/server-settings.html`, where

@@ -27,7 +27,6 @@ import { isKnownAssetType, normalizeAssetTypeName } from "./assetTypes.js";
 import { validateModelParse } from "./modelParse.js";
 import { safeRegexProblem } from "./safeRegex.js";
 import { validateHttpCheckDefinition } from "./credentialService.js";
-import { isDeviceLoginCredential, type HttpAuthConfig } from "./httpCheck.js";
 import { logger } from "../../utils/logger.js";
 import { isHardwareSensorClass, type SensorColumns } from "./hardwareSensors.js";
 import {
@@ -357,14 +356,6 @@ async function httpFieldsForWrite(
     if (!cred) throw new AppError(400, "The selected HTTP credential no longer exists");
     if (cred.type !== "http") {
       throw new AppError(400, "An HTTP check widget needs an HTTP-typed credential");
-    }
-    // A device admin login (authMode "form") is a switch or AP's web-UI
-    // password, held for the firmware repository (business rule 87). It is not
-    // an HTTP auth scheme: a check has no login form to post it to, and the
-    // only thing the probe could do with it is guess Basic and send the
-    // device's admin password in a header to whatever answered.
-    if (isDeviceLoginCredential((cred.config ?? {}) as HttpAuthConfig)) {
-      throw new AppError(400, "A device admin login (form) credential cannot authenticate an HTTP check — pick a bearer, basic or digest credential");
     }
   }
   return { httpCheck: check, credentialId: credId };

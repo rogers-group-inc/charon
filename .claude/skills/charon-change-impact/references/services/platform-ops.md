@@ -69,7 +69,7 @@ with a scrypt key, `BACKUP_MAGIC` header; reverse for restore), version-stamped 
 `src/jobs/scheduledBackup.ts`, `src/services/updateService.ts` (pre-update backup).
 **Invariants:** Maintenance-tab backend (see shared note below). The connection password never
 reaches a command line; backup files are readable by the Charon account only. A backup covers
-the database only — firmware images, the logo, TLS key and `.env` are not in it.
+the database only — agent installers, the logo, TLS key and `.env` are not in it.
 **When changing this:** the encrypted-backup header format is read by restore — change both;
 `tests/unit/maint_pgClientTools.test.ts`, `maint_pgEnv.test.ts`, `maintenanceSettings.test.ts`.
 

@@ -31,7 +31,6 @@ import settingsCustomizationRouter, { publicBrandingRouter } from "./routes/sett
 import settingsCredentialsRouter, { credentialsRouter } from "./routes/settings/credentials.js";
 import settingsApiTokensRouter, { apiTokensRouter } from "./routes/settings/apiTokens.js";
 import settingsHaRouter, { haRouter, haEnrollRouter } from "./routes/settings/ha.js";
-import settingsFirmwareRouter from "./routes/settings/firmware.js";
 import { agentsEnrollRouter, agentsRouter } from "./routes/agents.js";
 import { requireAuth, attachApiToken } from "./middleware/auth.js";
 import { requirePermission } from "./middleware/permissions.js";
@@ -80,7 +79,7 @@ router.use("/server-settings/maintenance", maintenanceRouter);
 for (const r of [
   settingsNtpRouter, settingsIdentificationRouter, settingsWebServerRouter,
   settingsMaintenanceRouter, settingsCustomizationRouter, settingsCredentialsRouter,
-  settingsApiTokensRouter, settingsHaRouter, settingsFirmwareRouter,
+  settingsApiTokensRouter, settingsHaRouter,
 ]) router.use("/server-settings", r);
 router.use("/credentials", credentialsRouter);
 router.use("/api-tokens", apiTokensRouter);

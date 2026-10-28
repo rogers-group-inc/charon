@@ -968,7 +968,6 @@ function credSummary(c) {
     if (mode === "bearer") return "bearer token";
     if (mode === "basic")  return escapeHtml(cfg.username || "") + " · basic";
     if (mode === "digest") return escapeHtml(cfg.username || "") + " · digest";
-    if (mode === "form")   return escapeHtml(cfg.username || "") + " · device login" + (cfg.allowReboot === true ? " · reboots allowed" : "");
     return "no authentication";
   }
   return "";
@@ -1376,7 +1375,7 @@ async function openCredUsagePanel(credId, credName) {
       bodyEl.innerHTML =
         '<div style="padding:1rem 1.25rem">' +
           '<p style="font-size:0.82rem;color:var(--color-text-secondary);margin:0 0 0.75rem">' +
-            'This shows where the credential is configured across the monitor-settings tiers, the Firmware Repository and agent installs — not a live probe trace.' +
+            'This shows where the credential is configured across the monitor-settings tiers and agent installs — not a live probe trace.' +
           '</p>' +
           '<p class="empty-state" style="padding:1rem 0">No assets use this credential, and it is not referenced by any class or integration setting.</p>' +
         '</div>';
@@ -1421,11 +1420,10 @@ async function openCredUsagePanel(credId, credName) {
       }).join("");
     }
 
-    // Operations — firmware flashes / reboots through a Repository login
-    // binding, and Polaris Agent install / upgrade / reboot opt-in.
+    // Operations — reboots and Polaris Agent install / upgrade / reboot opt-in.
     if (u.operationLevel && u.operationLevel.length) {
       var opCount = u.operationLevel.reduce(function (n, g) { return n + g.assets.length; }, 0);
-      html += _credUsageSectionHeader("Operations", opCount, "Used to act on the asset rather than poll it — firmware upgrades, reboots and agent installs. An asset can also appear under a monitoring tier above.");
+      html += _credUsageSectionHeader("Operations", opCount, "Used to act on the asset rather than poll it — reboots and agent installs. An asset can also appear under a monitoring tier above.");
       html += u.operationLevel.map(function (g) {
         return '<div style="margin:0.25rem 0 0.6rem">' +
           '<div style="font-size:0.82rem;font-weight:500;margin-bottom:0.3rem">' + escapeHtml(g.label) + '</div>' +
@@ -1545,18 +1543,10 @@ async function openCredentialModal(id, initialState) {
     var selectedType = document.getElementById("f-cred-type").value;
     var config = readCredentialForm(selectedType);
     try {
-      var saved = isNew
-        ? await api.credentials.create({ name: name, type: selectedType, config: config })
-        : await api.credentials.update(id, { name: name, config: config });
+      if (isNew) await api.credentials.create({ name: name, type: selectedType, config: config });
+      else await api.credentials.update(id, { name: name, config: config });
       closeModal();
       showToast("Credential saved");
-      // Other tabs that hold a credential picker (the Firmware repository's
-      // device-login select) refresh on this rather than a page reload.
-      try {
-        window.dispatchEvent(new CustomEvent("polaris:credentials-changed", {
-          detail: { id: (saved && saved.id) || id || null, created: isNew },
-        }));
-      } catch (e) { /* no listener is fine */ }
       await loadCredentialsTab();
     } catch (err) {
       showToast(err.message, "error");
@@ -2120,20 +2110,19 @@ function credSshForm(cfg) {
       '</label>' +
       '<p class="hint">Recommended. When off, Charon accepts whatever host key is presented, so anything answering on the target\'s address can impersonate it and receive this login. On first connection Charon pins the key it sees and refuses later connections if it changes; if a host is legitimately rebuilt or re-keyed, the refusal is logged on the Events page with the setting to clear to trust the new key.</p>' +
     '</div>' +
-    credAllowRebootHTML(cfg, "",
+    credAllowRebootHTML(cfg,
       "Lets this login run <code>execute reboot</code> on a FortiGate it is set on, restart the FortiSwitches and FortiAPs that FortiGate manages, or reboot a standalone FortiSwitch / FortiAP over its own CLI.")
   );
 }
 
 /**
- * The "Allow reboots" opt-in (business rule 115) — one box shared by the three
- * credential kinds that can reboot a FortiGate / FortiSwitch / FortiAP: SSH,
- * REST API token, and a device admin login (`http` in form mode, so it rides
- * `data-http-auth="form"`). Off by default; the server refuses it on any other
- * kind and records every flip on the credential's Event.
+ * The "Allow reboots" opt-in (business rule 115) — one box shared by the two
+ * credential kinds that can reboot a FortiGate / FortiSwitch / FortiAP: SSH
+ * and REST API token. Off by default; the server refuses it on any other kind
+ * and records every flip on the credential's Event.
  */
-function credAllowRebootHTML(cfg, httpModes, what) {
-  return '<div class="form-group"' + (httpModes ? ' data-http-auth="' + httpModes + '"' : '') + '>' +
+function credAllowRebootHTML(cfg, what) {
+  return '<div class="form-group">' +
     '<label style="display:flex;align-items:center;gap:8px;cursor:pointer">' +
       '<input type="checkbox" id="f-cred-allowreboot"' + (cfg.allowReboot === true ? " checked" : "") + '>' +
       '<span>Allow reboots</span>' +
@@ -2160,7 +2149,7 @@ function credRestApiForm(cfg) {
       '</label>' +
       '<p class="hint">Off by default to match FortiOS REST behaviour where self-signed device certs are common. Turn on when targeting a host with a real certificate.</p>' +
     '</div>' +
-    credAllowRebootHTML(cfg, "",
+    credAllowRebootHTML(cfg,
       "Lets this token reboot a FortiGate it is set on (FortiOS <code>system/os/reboot</code>), and restart the FortiSwitches and FortiAPs that FortiGate manages.")
   );
 }
@@ -2196,7 +2185,6 @@ function credHttpForm(cfg) {
         '<option value="bearer"' + (authMode === "bearer" ? " selected" : "") + '>Bearer token</option>' +
         '<option value="basic"' +  (authMode === "basic"  ? " selected" : "") + '>Basic (cleartext)</option>' +
         '<option value="digest"' + (authMode === "digest" ? " selected" : "") + '>Digest (hashed)</option>' +
-        '<option value="form"' +   (authMode === "form"   ? " selected" : "") + '>Device admin login (form)</option>' +
       '</select>' +
       // One alert per mode, all three riding the same data-http-auth mechanism
       // that shows/hides the carrier fields below — so exactly one is on screen
@@ -2217,32 +2205,17 @@ function credHttpForm(cfg) {
         '<strong>The password hash is readable</strong> unless the assets using this credential are checked over HTTPS. ' +
         'Digest sends a hash instead of the password, so anyone on the path can attack it offline or replay it until the nonce expires ' +
         '— along with the username, which travels in the clear.') +
-      // "form" is not an HTTP auth scheme: it is a switch or access point's
-      // own admin login, posted to the device's login page by a firmware
-      // upgrade (Server Settings → Repository, business rule 87). It rides the
-      // same show/hide mechanism, but its box says what it is FOR rather than
-      // warning about a check — an HTTP-check widget refuses it at save time.
-      '<div class="alert alert-info" data-http-auth="form" ' +
-        'style="padding:0.6rem 0.75rem;border-radius:6px;background:rgba(53,132,228,0.10);' +
-        'border:1px solid var(--color-info,#3584e4);color:var(--color-text-primary);' +
-        'font-size:0.82rem;margin:0.5rem 0 0.75rem">' +
-        '<strong>A device admin login.</strong> The username and password the switch or access point’s own web UI takes. ' +
-        'Used by firmware upgrades (<strong>Server Settings → Repository</strong>), which always talk HTTPS to the device. ' +
-        'Not an HTTP authentication scheme — an HTTP-check widget will not accept it.' +
-      '</div>' +
     '</div>' +
     '<div class="form-group" data-http-auth="bearer"><label>Bearer token</label>' +
       '<input type="password" id="f-http-token" value="' + escapeHtml(cfg.apiToken || "") + '">' +
       '<p class="hint">Sent as <code>Authorization: Bearer &lt;token&gt;</code>.</p>' +
     '</div>' +
-    '<div class="form-group" data-http-auth="basic digest form"><label>Username</label>' +
+    '<div class="form-group" data-http-auth="basic digest"><label>Username</label>' +
       '<input type="text" id="f-http-user" value="' + escapeHtml(cfg.username || "") + '">' +
     '</div>' +
-    '<div class="form-group" data-http-auth="basic digest form"><label>Password</label>' +
+    '<div class="form-group" data-http-auth="basic digest"><label>Password</label>' +
       '<input type="password" id="f-http-pass" value="' + escapeHtml(cfg.password || "") + '">' +
-    '</div>' +
-    credAllowRebootHTML(cfg, "form",
-      "Lets this admin login reboot a FortiGate it is set on or bound for in the Repository, and restart the FortiSwitches and FortiAPs that FortiGate manages.")
+    '</div>'
   );
 }
 
@@ -2270,7 +2243,7 @@ function _httpAuthAlert(mode, bodyHTML) {
  */
 function httpAuthModeOf(cfg) {
   var declared = cfg.authMode;
-  if (declared === "none" || declared === "bearer" || declared === "basic" || declared === "digest" || declared === "form") return declared;
+  if (declared === "none" || declared === "bearer" || declared === "basic" || declared === "digest") return declared;
   if (cfg.apiToken) return "bearer";
   if (cfg.username && cfg.password) return "basic";
   return "none";
@@ -2294,12 +2267,12 @@ function wireHttpAuthModeToggle() {
 
 function readCredentialForm(type) {
   var cfg = _readCredentialFormFields(type);
-  // Allow reboots (business rule 115) rides the SSH, REST API and device admin
-  // login forms. Sent on those types every time — an unticked box must clear
-  // a stored `true`, since the server merges config onto the stored row.
+  // Allow reboots (business rule 115) rides the SSH and REST API forms. Sent
+  // on those types every time — an unticked box must clear a stored `true`,
+  // since the server merges config onto the stored row.
   var allowReboot = document.getElementById("f-cred-allowreboot");
-  if (allowReboot && (type === "ssh" || type === "restapi" || type === "http")) {
-    cfg.allowReboot = type === "http" && cfg.authMode !== "form" ? false : allowReboot.checked;
+  if (allowReboot && (type === "ssh" || type === "restapi")) {
+    cfg.allowReboot = allowReboot.checked;
   }
   return cfg;
 }

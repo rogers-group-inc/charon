@@ -1,6 +1,6 @@
 ---
 name: charon-domain-model
-description: "Charon data model: every Prisma entity (Role, User, GroupMapping, ApiToken, Setting, Event, Integration, Credential, DirectoryObject, CustomGroup, InvitationCode, Endpoint, VerificationSession, Tag, TagSource, EndpointTag, Policy, EnforcementState, and the Server Settings registries AssetTag, AssetTypeDef, DeviceIcon, HaEnrollment, FirmwareImage, FirmwareCredentialBinding, ManufacturerAlias, MibFile, ManufacturerProfile(+Metric, +MetricOverride), ManufacturerCustomWidget), its fields, enums (EndpointStatus, PostureState, AuthMode, TagSourceKind, DirectoryObjectKind, EnforcementMode, SyncStatus) and load-bearing invariants, plus the Setting keys the code reads. Load whenever a task names a table, model, column, enum or Setting key; asks what a field means or where something is stored (bearer hash, cert pins, boundUserKey, posture, enforcementMode, desired/actual); adds a field/column/model; edits prisma/schema.prisma; or writes a migration."
+description: "Charon data model: every Prisma entity (Role, User, GroupMapping, ApiToken, Setting, Event, Integration, Credential, DirectoryObject, CustomGroup, InvitationCode, Endpoint, VerificationSession, Tag, TagSource, EndpointTag, Policy, EnforcementState, and the Server Settings registries AssetTag, AssetTypeDef, DeviceIcon, HaEnrollment, ManufacturerAlias, MibFile, ManufacturerProfile(+Metric, +MetricOverride), ManufacturerCustomWidget), its fields, enums (EndpointStatus, PostureState, AuthMode, TagSourceKind, DirectoryObjectKind, EnforcementMode, SyncStatus) and load-bearing invariants, plus the Setting keys the code reads. Load whenever a task names a table, model, column, enum or Setting key; asks what a field means or where something is stored (bearer hash, cert pins, boundUserKey, posture, enforcementMode, desired/actual); adds a field/column/model; edits prisma/schema.prisma; or writes a migration."
 ---
 
 # Charon domain model
@@ -21,7 +21,7 @@ Schema/Notes for a field.
 | InvitationCode, Endpoint, VerificationSession | [references/endpoints-agent.md](references/endpoints-agent.md) |
 | Tag, TagSource, EndpointTag, Policy, EnforcementState | [references/tags-enforcement.md](references/tags-enforcement.md) |
 | Setting (and every key the code reads), Event | [references/platform.md](references/platform.md) |
-| AssetTag, AssetTypeDef, DeviceIcon, HaEnrollment, FirmwareImage, FirmwareCredentialBinding, ManufacturerAlias, MibFile, ManufacturerProfile, ManufacturerProfileMetric, ManufacturerProfileMetricOverride, ManufacturerCustomWidget (Server Settings) | [references/server-settings.md](references/server-settings.md) |
+| AssetTag, AssetTypeDef, DeviceIcon, HaEnrollment, ManufacturerAlias, MibFile, ManufacturerProfile, ManufacturerProfileMetric, ManufacturerProfileMetricOverride, ManufacturerCustomWidget (Server Settings) | [references/server-settings.md](references/server-settings.md) |
 
 ## Rules that bind every write
 

@@ -32,7 +32,7 @@ import { logEvent } from "../../../services/eventService.js";
 import * as credentialService from "../../../services/credentials/credentialService.js";
 import * as aliasService from "../../../services/credentials/manufacturerAliasService.js";
 import { probeCredentialAgainstHost, snmpWalkRaw } from "../../../services/credentials/credentialProbeService.js";
-import { isDeviceLoginCredential, type HttpAuthConfig, type HttpProbeDiagnostics } from "../../../services/credentials/httpCheck.js";
+import { type HttpProbeDiagnostics } from "../../../services/credentials/httpCheck.js";
 import { normalizeProbeTarget } from "../../../services/credentials/probeTarget.js";
 import { resolveAllowedHost, guardedLookup } from "../../../services/credentials/netGuard.js";
 import {
@@ -311,16 +311,6 @@ credentialsRouter.post("/test", credentialTestLimiter, requirePermission("creden
         return;
       }
     }
-  }
-
-  if (input.type === "http" && isDeviceLoginCredential(config as HttpAuthConfig)) {
-    res.json({
-      success: false,
-      responseTimeMs: 0,
-      error: "Device admin logins are used by the firmware repository and are verified when an upgrade signs in to the device",
-      host,
-    });
-    return;
   }
 
   const probeOut: { diag?: HttpProbeDiagnostics } = {};

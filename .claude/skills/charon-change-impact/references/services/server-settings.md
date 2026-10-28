@@ -399,30 +399,6 @@ the major it was installed with (`charon-tech-lifecycle` → version-pin-invento
 
 ---
 
-## Repository tab
-
-## services/firmwareRepositoryService.ts
-
-**What it owns:** the firmware tree (manufacturer › type › model), `FirmwareImage` rows + their
-files under `FIRMWARE_DIR`, primary/backup rotation per platform, and
-`FirmwareCredentialBinding` resolution.
-**Public API:** `getFirmwareTree`, `listImages`, `getImage`, `registerUploadedImage`,
-`discardIncomingUpload`, `setPrimaryImage`, `deleteImage`, `purgeModelImages`,
-`resolveImagePath`, `ensureFirmwareDirs`, `listBindings`, `upsertBinding`, `deleteBinding`,
-`bindingIsLive`, `isDeviceLoginCredential`, `firmwareBindingCredentialIds`,
-`listAssetsForNode` (empty), `listRecentRuns` (empty), `getRun`, `normalizeManufacturer`, size
-limits and enums; types `FirmwareTree`, `FirmwareImageRow`, `EffectiveBinding`.
-**Cross-service deps:** `src/utils/firmwareVersion.ts`, `src/utils/paths.ts →
-FIRMWARE_DIR` / `FIRMWARE_INCOMING_DIR`, `eventService`.
-**Used by:** `src/api/routes/settings/firmware.ts`.
-**Invariants:** bytes on disk, identity in the DB; uploads stream into `.incoming` and are
-renamed atomically; at most one primary + one backup per platform; ≤ 300 MiB FortiGate,
-≤ 100 MiB switch / AP. Charon never flashes a device (no runs). Images are not in a DB backup.
-**When changing this:** the nginx firmware location's body limit must stay ≥ the largest image
-limit; `tests/unit/firmwareRepository.test.ts`, `firmwareVersion.test.ts`.
-
----
-
 ## Credentials tab — `src/services/credentials/`
 
 A self-contained port of polaris's credential store, MIB database and manufacturer profiles.

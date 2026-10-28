@@ -155,13 +155,6 @@ declares its own `requirePermission`. "sys" = `serverSettingsSystem`, "data" =
   `POST /ha/enrollments/:id/reject`, `GET /ha/teardown-script` (sys **fullwrite**; enable, disable, tokens and approve also
   `adminActionLimiter`)
 
-**Repository** (`firmware.ts`) — sys read to look, sys fullwrite to change
-- `GET /server-settings/firmware/tree`, `/assets` (always empty), `/images`, `/images/:id`,
-  `/bindings`, `/runs` (always empty), `/runs/:id` (always 404)
-- `POST /firmware/images` (multipart ≤ 300 MiB; nginx location raises the body limit),
-  `POST /images/:id/make-primary`, `DELETE /images/:id`, `POST /models/purge`,
-  `PUT /bindings`, `DELETE /bindings/:id` (fullwrite)
-
 ### Maintenance — agent installers — `serverSettingsData read` (`src/api/routes/maintenance.ts`)
 - `GET    /server-settings/maintenance/agents`, `GET …/agents/download/:file` — prebuilt installers (manifest allowlist)
 

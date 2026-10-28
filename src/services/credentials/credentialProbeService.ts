@@ -642,7 +642,6 @@ export async function probeHttp(
   };
 
   // Bearer and Basic are computable up front; Digest needs the challenge.
-  // "form" (a device admin login) deliberately sends NO header.
   let preAuth: string | null = null;
   if (authMode === "bearer" && typeof authCfg.apiToken === "string" && authCfg.apiToken) {
     preAuth = "Bearer " + authCfg.apiToken;

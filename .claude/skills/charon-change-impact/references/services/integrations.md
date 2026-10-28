@@ -44,9 +44,13 @@ encrypted, masked and preserved.
 external-abort race, transient retry with backoff, per-call TLS-verify toggle via an undici
 dispatcher.
 **Public API:** `httpRequest`, `httpJson`; type `HttpOptions`.
-**Cross-service deps:** none (undici).
+**Cross-service deps:** undici; `src/services/trustedCaService.ts → getTrustedCaPems()`
+(dynamic import) — a verifying request trusts the system roots PLUS the operator-uploaded CAs
+(Server Settings → Web Server → Trusted CAs), re-read every 60 s so an upload in the web process
+reaches worker/enforcer processes without a restart; a read failure keeps the default store
+(never disables verification).
 **Used by:** `src/services/fortigateService.ts`, `src/services/fortimanagerService.ts`,
-`src/services/entraIdService.ts`.
+`src/services/entraIdService.ts`, `src/services/ouiService.ts` (IEEE OUI download).
 **Invariants:**
 - Permanent faults (401/403/404/405) throw immediately; only transient faults (network, 5xx,
   timeout) retry.

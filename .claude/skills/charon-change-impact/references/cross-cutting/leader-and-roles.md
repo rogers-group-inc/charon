@@ -8,6 +8,8 @@
 **Writers** (code that decides what runs):
 - `src/index.ts` — migrate role runs `prisma migrate deploy` and exits; endpoint / enforcer /
   worker require `DATABASE_URL`; web/all without it start the setup wizard.
+- `src/app.ts → startSchedulers()` / `stopSchedulers()` — the leader-only in-process jobs:
+  health-check scheduler, `retentionPrune`, `ouiRefresh`, `scheduledBackup`.
 - `src/app.ts` — `runsSchedulers` → `startLeaderElection()`, schedulers start only in
   `onAcquire` and stop in `onLose`; `runsWorkers` → pg-boss consumers (health check, tag
   reconcile); `runsEnforcement` → the enforcement-sync consumer; `runsHttp || runsAgentComms` →

@@ -14,7 +14,12 @@
   (`permissions.ts → pickHighestPrivilegeRoleId()`). Unique on `(groupKey, roleId)`.
 - **ApiToken** — a long-lived bearer for external callers. `tokenHash` is SHA-384 of the raw
   token (plaintext shown once at mint); lookup is prefix-indexed then constant-time compared
-  (`src/services/apiTokenService.ts`).
+  (`src/services/apiTokenService.ts`). `roleId` binds the token to a Role whose matrix it acts
+  with (business rule 8); a role cannot be bound if it outranks the minting caller
+  (`apiTokenService.ts → grantExceedsCaller()`), and a referenced role cannot be deleted
+  (`onDelete: Restrict`). `roleId` null = a legacy token: no role-gated access. `scopes` is the
+  legacy fixed-scope list, read only for role-less tokens. `trustedHosts` (IPs / CIDRs matched
+  against `req.ip`, ≤ 64) limits source addresses; empty = any.
 
 ## Schema
 
@@ -32,6 +37,7 @@ model Role {
 
   users         User[]
   groupMappings GroupMapping[]
+  apiTokens     ApiToken[]
 
   @@map("roles")
 }
@@ -86,7 +92,15 @@ model ApiToken {
   name        String    @unique
   tokenHash   String    @map("token_hash") // SHA-384 of the raw token
   tokenPrefix String    @map("token_prefix")
-  scopes      String[]  @default([])
+  scopes      String[]  @default([]) // legacy fixed-scope list; role binding supersedes it
+  // Role whose permission matrix this token acts with (polaris port). Null only
+  // for tokens minted before role binding existed — those reach nothing gated
+  // by requirePermission. Restrict: a role referenced by a token can't be deleted.
+  roleId      String?   @map("role_id")
+  role        Role?     @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  // Source addresses (bare IPs / CIDRs, matched against req.ip) the token is
+  // accepted from. Empty = any source.
+  trustedHosts String[] @default([]) @map("trusted_hosts")
   createdBy   String    @map("created_by")
   createdAt   DateTime  @default(now())
   expiresAt   DateTime?
@@ -95,6 +109,7 @@ model ApiToken {
   revokedAt   DateTime?
   revokedBy   String?
 
+  @@index([roleId])
   @@index([tokenPrefix])
   @@index([revokedAt])
   @@map("api_tokens")

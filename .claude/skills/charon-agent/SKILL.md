@@ -1,6 +1,6 @@
 ---
 name: charon-agent
-description: "The Charon endpoint agent (Tauri: Rust core in agent/src-tauri, web GUI in agent/ui) end to end: enrollment with a one-time invitation code, the per-agent bearer, leaf-cert SHA-256 pinning instead of system roots and dual-pin rotation (stage → rotate → promote), the heartbeat + posture loop and the telemetry WebSocket, the server-dictated login GUI (local / SAML / OIDC) and the {user↔device↔IP} binding, posture collectors, how installers are built and served from the Maintenance tab, and agent/VERSION. Load for anything under agent/, the /agents/* and /agent/* routes, enrollment, invitation codes, cert pins or certificate rotation, agent bearer revocation, posture reporting, or agent install / build / upgrade."
+description: "The Charon endpoint agent (Tauri: Rust core in agent/src-tauri, web GUI in agent/ui) end to end: enrollment with a one-time invitation code, the per-agent bearer, leaf-cert SHA-256 pinning instead of system roots and dual-pin rotation (preflight → stage → swap → retire, Server Settings → Web Server), the heartbeat + posture loop and the telemetry WebSocket, the server-dictated login GUI (local / SAML / OIDC) and the {user↔device↔IP} binding, posture collectors, how installers are built and served from the Maintenance tab, and agent/VERSION. Load for anything under agent/, the /agents/* and /agent/* routes, enrollment, invitation codes, cert pins or certificate rotation, agent bearer revocation, posture reporting, or agent install / build / upgrade."
 ---
 
 # Charon agent
@@ -20,9 +20,13 @@ dictates. Its trust model is business rule 4: **pin + bearer** — never system 
 ## Invariants
 
 - **The agent trusts only the pinned leaf SHA-256** (canonical ∪ staged), not system roots
-  (`agent/src-tauri/src/client.rs`; server side `src/services/certInfo.ts → leafPin()`).
+  (`agent/src-tauri/src/client.rs`; server side the SHA-256 of the leaf DER, as
+  `src/services/certInfo.ts → leafPin()` and `src/services/webServerService.ts → certFacts()`
+  compute it).
 - **Rotating the server cert without re-enrolling agents requires staging the new pin first**
-  and letting every agent heartbeat it in, then promoting (rule 4).
+  and letting every agent poll it in, then swapping, then retiring the old pin (rule 4). The
+  swap refuses an unstaged pin; the last pin and the served cert's pin are never retired
+  (rule 4a).
 - **Bearers and invitation codes are stored hashed (SHA-384) and shown once** (rule 3).
   Revoking a bearer sets the endpoint `revoked` and locks out both WS and HTTP.
 - **A login, logout or posture-state change must reconcile tags** —

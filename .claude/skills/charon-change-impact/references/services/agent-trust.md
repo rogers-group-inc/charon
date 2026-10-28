@@ -9,6 +9,8 @@ certPinService"); each service then has its own entry. Code references are
 - **Owns:** Endpoint enrollment, bearer issue/verify/revoke, invitation codes, cert pins.
 - **Reads:** Setting `agent.cert_pins`.
 - **Used by:** routes/agents(+enroll), routes/endpoints, agentsWs, serverSettings certificates.
+  (Since the Server Settings port the certificate routes live in
+  `src/api/routes/settings/webServer.ts`, driven by `src/services/webServerService.ts`.)
 - **Invariants:** #3 (hashed storage), #4 (pin trust). Revoking a bearer sets status=revoked and
   locks WS + HTTP.
 
@@ -57,15 +59,26 @@ enroll.
 
 ## services/certPinService.ts
 
-**What it owns:** the `agent.cert_pins` Setting `{ canonical, staged[] }` and the dual-pin
-rotation API.
-**Public API:** `getAgentCertPins`, `getPinStore`, `setCanonicalPin`, `stageNewPin`,
-`promoteStagedPin`.
-**Cross-service deps:** Setting `agent.cert_pins`.
-**Used by:** `src/api/routes/agents.ts` (`GET /agents/config`), `src/api/routes/serverSettings.ts`
-(certificates, stage, promote), `src/services/agentEnrollmentService.ts`.
-**Invariants:** rule 4 — stage the new pin before rotating the cert.
-**When changing this:** see `charon-agent` → enrollment-pinning.md for the rotation order.
+**What it owns:** the `agent.cert_pins` Setting `{ canonical, staged[] }`, the dual-pin
+rotation API, and the per-Endpoint record of the pins each agent was last handed
+(`Endpoint.serverCertFingerprint` / `additionalCertFingerprints`).
+**Public API:** `getAgentCertPins`, `getPinStore`, `stageNewPin`, `swapCanonicalPin`,
+`retirePin`, `recordDeliveredPins`, `listActiveDeliveredPins`; pure `normalizePin`,
+`computeSwap`, `computeRetire`, `tallyPins`, `rowHasPin`; types `PinStore`, `RetireOutcome`,
+`DeliveredPinRow`. `setCanonicalPin` / `promoteStagedPin` are still exported but no longer
+called by any route.
+**Cross-service deps:** Setting `agent.cert_pins`; Prisma `Endpoint`.
+**Used by:** `src/api/routes/agents.ts` (`GET /agents/config` → `getAgentCertPins`,
+`recordDeliveredPins`), `src/api/routes/settings/webServer.ts` (`/agents/cert-pins/summary`,
+`bulk-add` → `stageNewPin`, `bulk-remove` → `retirePin`), `src/services/webServerService.ts`
+(`rotateCertAndKey` → `getPinStore`, `swapCanonicalPin`), `src/services/agentEnrollmentService.ts`,
+`src/services/haEnrollmentService.ts` (`getAgentCertPins` for node scripts).
+**Invariants:** rule 4 — stage the new pin before rotating the cert; rule 4a — the swap keeps the
+old pin accepted, the last pin is never retired (`computeRetire` → `last_pin`), and the route
+refuses the served cert's pin. Pins are bare lowercase-hex SHA-256. `recordDeliveredPins` writes
+only when the set changed (no write per config poll) and never fails the config response.
+**When changing this:** see `charon-agent` → enrollment-pinning.md for the rotation order;
+`tests/unit/webServerSettings.test.ts` pins swap / retire / tally.
 
 ---
 
@@ -75,8 +88,10 @@ rotation API.
 plus subject / SAN / validity for display.
 **Public API:** `parseCert`, `leafPin`, `isValidCertPem`; type `CertSummary`.
 **Cross-service deps:** none (Node `X509Certificate`).
-**Used by:** `src/api/routes/serverSettings.ts` (certificates).
-**Invariants:** uploading a cert sets the canonical agent pin. The pin is the fingerprint, not
+**Used by:** `src/services/haEnrollmentService.ts` (`leafPin` — the pin the HA node scripts
+check). Server Settings → Web Server computes the same fingerprint itself
+(`src/services/webServerService.ts → certFacts()`).
+**Invariants:** the first cert's swap sets the canonical agent pin. The pin is the fingerprint, not
 the key type, so it survives a classical → PQC certificate transition.
 **When changing this:** the agent compares the same value (`agent/src-tauri/src/client.rs`).
 
@@ -89,7 +104,8 @@ the key type, so it survives a classical → PQC certificate transition.
 **Public API:** `getManifest`, `resolveInstaller`, `listInstallers`; types `AgentFile`,
 `AgentManifest`.
 **Cross-service deps:** `src/utils/paths.ts → AGENT_DIST_DIR`.
-**Used by:** `src/api/routes/maintenance.ts` (`/server-settings/maintenance/agents`).
+**Used by:** `src/api/routes/maintenance.ts` (`/server-settings/maintenance/agents`),
+`src/services/platformLifecycleService.ts` (agent version facts).
 **Invariants:** agent installers are served strictly from the manifest allowlist (no path
 traversal).
 **When changing this:** the CI release job that writes the manifest must agree on its shape.

@@ -5,8 +5,18 @@
 - **Session** (UI / browser): cookie-bearing requests via `express-session` +
   `connect-pg-simple`. RBAC enforced by `requirePermission(functionKey, level)`.
 - **API bearer** (external): `Authorization: Bearer charon_<…>` from a long-lived ApiToken,
-  resolved by `attachApiToken` before any gate and scoped to a fixed list of capabilities
-  (`ApiToken.scopes`). Verified by `src/services/apiTokenService.ts → verifyToken()`.
+  resolved by `attachApiToken` before any gate and verified by
+  `src/services/apiTokenService.ts → verifyToken()`. The token acts with its **bound role's**
+  matrix: `requirePermission` → `resolveSnapshot()` reads `ApiToken.roleId` fresh per request
+  (no session to cache in), and a presented, verified token wins over any ambient session. A
+  legacy token with no role resolves to no snapshot → 403 on every role gate; only
+  `requireSessionOrTokenPermission` still honours its fixed `scopes` (business rule 8).
+  `attachApiToken` refuses ONE case itself: a real token presented from outside its
+  `trustedHosts` → 403 naming the address Charon saw (behind a proxy with `trust proxy` unset,
+  that is the proxy's address). Unknown / revoked / expired tokens fall through as "no token"
+  and the downstream guard answers 401. Minting a token bound to a role that outranks the
+  caller on any key is refused (`grantExceedsCaller()`); an admin-equivalent binding is allowed
+  but logs an `api_token.admin_equivalent` warning Event.
 - **Agent bearer**: the per-endpoint bearer, `requireAgentBearer`, verified against the Endpoint
   bearer store (`src/services/agentTokenService.ts → verifyBearer()`); 401 when missing,
   invalid or revoked.
@@ -34,6 +44,29 @@ Synchronizer token per session, mirrored into a readable cookie so same-origin p
 in `X-CSRF-Token` on state-changing requests (`public/js/api.js` threads it). Agent paths
 (`/api/v1/agents/`) are exempt (`EXEMPT_PATH_PREFIXES`). Defense-in-depth on top of
 `SameSite=Lax` + strict JSON content types.
+
+Two more exemptions:
+- **`/api/v1/ha/enroll`** (and `/api/v1/ha/enroll/<x>`) — matched EXACTLY, never as a prefix
+  (`isHaEnrollPath()`): `/api/v1/ha/enrollments/:id/approve` is a session route that keeps its
+  check. The single-use token in the body is that route's defense.
+- **Session-less bearer requests** (`isSessionlessBearer()`): an `Authorization: Bearer …`
+  request with NO logged-in session skips the check — a browser cannot attach that header
+  cross-origin without a CORS preflight Charon never grants. With a session present the normal
+  check still runs.
+
+## Other request-path gates
+
+- **Local Login Access** (`src/api/routes/auth.ts → assertLoginSourceAllowed()`): when the
+  `loginAccessConfig` Setting is enabled, `POST /auth/login` and `/auth/login/totp` answer 403
+  from outside its IP scope (`src/services/webAccessSettingsService.ts →
+  isLoginSourceAllowed()`). SAML/OIDC are never restricted; the gate fails OPEN on a settings
+  read error so a DB blip is never a lockout.
+- **Credential ownership** (`src/api/routes/settings/credentials.ts →
+  assertCredentialOwnership()`): on the `credentials` key, write reaches only rows whose
+  `createdBy` is the caller, fullwrite any row; an unowned (null) row is fullwrite-only.
+- Settings-route limiters (`makeRateLimiter()`): `haEnrollLimiter` (`/ha/enroll`),
+  `credentialTestLimiter` (`POST /credentials/test`), `maintenanceLimiter` (database / backup /
+  advisor reads), `logoLimiter` (branding logo).
 
 ## Rate limits (`src/api/middleware/rateLimits.ts`)
 

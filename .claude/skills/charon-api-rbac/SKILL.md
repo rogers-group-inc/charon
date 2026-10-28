@@ -1,6 +1,6 @@
 ---
 name: charon-api-rbac
-description: "Charon REST API under /api/v1 and its permission model: every route file and mount, which surfaces are public (operator login, agent auth-config, agent enroll + bearer-guarded telemetry, the agent WebSocket) and which sit behind requireAuth, Zod schema placement, the 15 function keys (endpoints, invitationCodes, tags, policies, groups, integrations, enforcement, directory, credentials, events, apiTokens, users, roles, serverSettingsSystem, serverSettingsData), requirePermission levels (none/read/write/fullwrite), built-in roles (Administrator / Operator / Read-Only), session role snapshots, SSO group mapping (highest privilege wins), API tokens and agent bearers, CSRF, and the login / enroll rate limiters. Load when adding or changing an endpoint or route gate, adding a permission key, debugging a 401/403 or CSRF failure, asking who can do X, minting tokens, anything about login, TOTP, SAML/OIDC, or touching src/api/."
+description: "Charon REST API under /api/v1 and its permission model: every route file and mount, which surfaces are public (operator login, agent auth-config, agent enroll + bearer-guarded telemetry, the agent WebSocket, HA node enrollment /ha/enroll), the Server Settings tab routers (src/api/routes/settings/*) and their per-route gates and which sit behind requireAuth, Zod schema placement, the 15 function keys (endpoints, invitationCodes, tags, policies, groups, integrations, enforcement, directory, credentials, events, apiTokens, users, roles, serverSettingsSystem, serverSettingsData), requirePermission levels (none/read/write/fullwrite), built-in roles (Administrator / Operator / Read-Only), session role snapshots, SSO group mapping (highest privilege wins), role-bound API tokens with trusted hosts and agent bearers, CSRF (incl. session-less bearer exemption), the Local Login Access IP gate, and the login / enroll rate limiters. Load when adding or changing an endpoint or route gate, adding a permission key, debugging a 401/403 or CSRF failure, asking who can do X, minting tokens, anything about login, TOTP, SAML/OIDC, or touching src/api/."
 ---
 
 # Charon API and RBAC
@@ -23,7 +23,13 @@ applies its own `requirePermission(functionKey, level)`. Handlers are thin: vali
 
 - **Declare the gate on the route.** The mount gives `read`; each mutating route adds its own
   `requirePermission(key, "write" | "fullwrite")`. An unknown key throws at boot
-  (`requirePermission` validates against `FUNCTION_KEYS`).
+  (`requirePermission` validates against `FUNCTION_KEYS`). Exception: the Server Settings tab
+  routers (`src/api/routes/settings/*.ts`) share the `/server-settings` mount with NO mount
+  gate — every route there, reads included, declares its own `requirePermission`; never add a
+  `router.use()` gate inside one (it would fire for every `/server-settings` path).
+- **Public surfaces are few and named**: `/auth`, `/agent`, `/agents/enroll`, `/agents`
+  (bearer), and `/ha/enroll` (single-use HA token; business rule 9). API tokens act through
+  their bound role (business rule 8).
 - **`enforcement` is its own key** — live Fortinet writes are fullwrite-only and need human
   review (business rule 2). Never fold it into `integrations`.
 - **Coerce `req.params.id` with `String()`** — Express 5 types it `string | string[]`. Express 5

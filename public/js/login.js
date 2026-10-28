@@ -15,24 +15,33 @@
   var btn = document.getElementById("loginBtn");
   var mfaPending = false;
 
-  // Branding (Server Settings → Customization): name, subtitle and — when
-  // "show on login page" is on — the custom logo. Public endpoint; a failure
-  // just leaves the built-in Charon text.
+  // Branding (Server Settings → Customization): name, subtitle and the mark —
+  // brand-logo.js picks the custom logo (when "show on login page" is on), else
+  // the shipped theme-paired art, else none and the name shows as text. Public
+  // endpoint; a failure just leaves the built-in Charon text.
+  var brandLogo = window.CharonBrandLogo;
+  var logoImg = document.getElementById("loginLogo");
+  var appNameEl = document.getElementById("loginAppName");
+  var loginBranding = {};
+  function paintBrand(b) {
+    if (!brandLogo) return;
+    var r = brandLogo.applyTo(logoImg, b, "login");
+    appNameEl.hidden = !r.showName;
+    if (r.custom) brandLogo.setFavicon(r.src);
+  }
+  paintBrand(loginBranding);
+  if (brandLogo) brandLogo.onThemeChange(function () { paintBrand(loginBranding); });
   fetch("/api/v1/branding", { credentials: "same-origin" })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (b) {
       if (!b) return;
+      loginBranding = b;
       if (b.appName) {
-        document.getElementById("loginAppName").textContent = b.appName;
+        appNameEl.textContent = b.appName;
         document.title = b.appName + " — Sign in";
       }
       document.getElementById("loginSubtitle").textContent = b.subtitle || "";
-      if (b.logoUrl) {
-        var img = document.getElementById("loginLogo");
-        img.src = b.logoUrl + (b.logoVersion ? "?v=" + encodeURIComponent(b.logoVersion) : "");
-        img.alt = b.appName || "";
-        img.hidden = false;
-      }
+      paintBrand(b);
     })
     .catch(function () {});
 

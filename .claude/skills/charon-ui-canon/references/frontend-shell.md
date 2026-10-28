@@ -22,6 +22,16 @@ without a flash; only Charon's fixed `/uploads/custom-logo.(png|jpg|webp)` URLs 
 logo (`app.js → brandHtml()`). The login page (`login.js`) reads the public trimmed view at
 `GET /branding` before sign-in: name, subtitle, and the logo only when "show on login page" is on.
 
+Which mark a surface paints is `public/js/brand-logo.js`'s call (`window.CharonBrandLogo`,
+ported from polaris; loaded before `app.js` / `login.js`): a custom upload (per-surface flag)
+→ shipped theme-paired art → none, in which case the name shows as text. Charon ships **no art
+yet** — `ART` is null. To add it, drop light/dark files into `public/img/brand/` and fill `ART`
+(login = horizontal, sidebar = vertical, favicon = symbol; the shape is in the file's
+comment); the sidebar, login and favicon pick it up, swapping on a theme-family flip
+(`onThemeChange` swaps the `<img>` only — never `renderNav`, which would snap the band).
+An uploaded logo also becomes the favicon. `tests/unit/brandLogo.test.ts` covers the resolver
+and fails if `ART` names a missing file.
+
 ## Theme system (polaris's, ported whole)
 
 Three selectable themes — `morning`, `noon` (daylight family) and `nightfall` (dark, the

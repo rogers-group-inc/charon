@@ -447,18 +447,39 @@
     branding = b;
     try { localStorage.setItem(BRAND_CACHE_KEY, JSON.stringify(b)); } catch (e) { /* storage blocked */ }
     renderNav();
+    applyFavicon();
   }
+  // The mark itself is brand-logo.js's call (custom upload → shipped
+  // theme-paired art → none); this only lays the block out.
   function brandHtml() {
     var b = branding || {};
     var name = typeof b.appName === "string" ? b.appName : "Charon";
     var sub = typeof b.subtitle === "string" ? b.subtitle : "Zero Trust Network Access";
     // Only our own fixed upload names (server: brandingService.hasCustomLogo).
-    var logo = b.customLogo && b.logoOnSidebar !== false && /^\/uploads\/custom-logo\.(png|jpg|webp)$/.test(b.logoUrl || "")
-      ? b.logoUrl + (b.logoVersion ? "?v=" + encodeURIComponent(b.logoVersion) : "")
-      : "";
-    return (logo ? '<img class="sidebar-logo" src="' + escapeHtml(logo) + '" alt="">' : "") +
-      (name ? '<h1 style="font-size:1.15rem;font-weight:700;margin:0.5rem 0 0;color:var(--color-text-primary);text-align:center;letter-spacing:1px;text-transform:uppercase">' + escapeHtml(name) + "</h1>" : "") +
+    var safe = b.logoUrl && !/^\/uploads\/custom-logo\.(png|jpg|webp)$/.test(b.logoUrl) ? Object.assign({}, b, { logoUrl: "" }) : b;
+    var r = window.CharonBrandLogo
+      ? window.CharonBrandLogo.resolve(safe, "sidebar")
+      : { src: null, custom: false, showName: true };
+    var mark = r.src && !r.custom ? " brand-mark brand-mark-sidebar" : "";
+    return (r.src ? '<img class="sidebar-logo' + mark + '" src="' + escapeHtml(r.src) + '" alt="' + escapeHtml(r.custom ? name : "Charon") + '">' : "") +
+      (name && r.showName ? '<h1 style="font-size:1.15rem;font-weight:700;margin:0.5rem 0 0;color:var(--color-text-primary);text-align:center;letter-spacing:1px;text-transform:uppercase">' + escapeHtml(name) + "</h1>" : "") +
       (sub ? '<p style="font-size:0.72rem;color:var(--color-text-tertiary);margin:0.15rem 0 0;text-align:center;letter-spacing:0.5px">' + escapeHtml(sub) + "</p>" : "");
+  }
+
+  // Theme-paired art follows a family flip by swapping the <img> only — never a
+  // renderNav, which would rebuild the band mid-travel and snap it. A custom
+  // upload is not theme-paired, so applyTo leaves its src unchanged.
+  if (window.CharonBrandLogo) {
+    window.CharonBrandLogo.onThemeChange(function () {
+      var img = document.querySelector(".sidebar-brand img.sidebar-logo");
+      if (img) window.CharonBrandLogo.applyTo(img, branding || {}, "sidebar");
+    });
+  }
+  // An uploaded logo stands in as the favicon too (polaris applyBranding).
+  function applyFavicon() {
+    if (window.CharonBrandLogo && branding && window.CharonBrandLogo.isCustom(branding)) {
+      window.CharonBrandLogo.setFavicon(window.CharonBrandLogo.resolve(Object.assign({}, branding, { logoOnSidebar: true }), "sidebar").src);
+    }
   }
 
   function renderNav() {
@@ -587,4 +608,5 @@
   // the marker right after this script (<link rel="expect" blocking="render">
   // in its <head>), so the page-change snapshot always has a finished rail.
   if (document.getElementById("sidebar")) renderNavFromCache();
+  applyFavicon();
 })();

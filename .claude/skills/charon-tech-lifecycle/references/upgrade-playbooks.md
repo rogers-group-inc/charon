@@ -7,6 +7,9 @@ it with `npm run check:versions`, and have a human review before merge.
 
 1. Read the new major's breaking changes for the dependencies that matter here: Prisma 7 +
    `@prisma/adapter-pg`, `pg-boss`, `@node-rs/argon2` (native), `undici`, Express 5.
+   Dependencies already set a floor above Node 20: `pg-boss` 12 requires `>=22.12.0` (installed
+   today, so Node 20 is running it unsupported) and `undici` 8 requires `>=22.19.0`. The target
+   is therefore ≥ 22.19, or 24.
 2. Move every site in version-pin-inventory.md → Node.js, including the not-checked prose.
    Move the floor (`engines.node`, `@types/node`, the installer's `-lt N` check) in the same
    change unless a deliberate floor/pin gap is the point.

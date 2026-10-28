@@ -40,8 +40,21 @@ theme (delegated listener — never wire a second one). Branch on `Charon.isLigh
 `window.isLightTheme`), never on an id; anything that caches colours listens for
 `themechange`. Adding a theme = add it in polaris first, re-copy `styles.css`, then one entry in
 `THEMES` + `THEME_BAND_POS` + `KNOWN`. `tests/unit/themeSystem.test.ts` fails when the three
-lists disagree. Not ported: polaris's `page-transitions.css` (cross-page crossfade) and
-`brand-logo.js` (theme-paired Polaris logo art, which Charon does not use).
+lists disagree. Login and setup paint no wrapper fill, so the theme's sky glow shows behind
+the card as on the app pages.
+
+## Page-change crossfade (polaris's, ported whole)
+
+`public/css/page-transitions.css` (verbatim polaris) opts the app pages into a cross-document
+view transition with the sidebar held still. It needs, on every page that loads `app.js`:
+`theme-init.js` in `<head>`; `<link rel="expect" href="#polaris-nav-ready" blocking="render">`
+in `<head>`; the stylesheet link; and `<span id="polaris-nav-ready" hidden></span>`
+immediately after the `app.js` script tag. The marker id keeps polaris's name so the copied
+CSS's comments stay true. `app.js` draws the rail before first paint from the cached user
+(`charon-user` in localStorage: name, role, permissions, version — UX only, cleared on logout
+and on a failed `/auth/me`) via `renderNavFromCache()` at the end of the file. Login and setup
+must never link `page-transitions.css` (logging in would crossfade).
+`tests/unit/pageTransitionWiring.test.ts` checks every app page — a new page needs all four.
 
 ## `window.Charon`
 
@@ -61,3 +74,10 @@ then redirects to login (`charon-deploy` → cross-cutting-deployment.md → Fir
 
 `agent/ui/` (vanilla JS, `index.html` + `app.js`) reuses the Charon stylesheet so the agent
 matches the server: an enrollment view → the server-dictated login view. See `charon-agent`.
+`agent/ui/css/styles.css`, `agent/ui/css/charon.css` and `agent/ui/js/theme-init.js` are
+byte-for-byte copies of the `public/` files (`tests/unit/agentUiSync.test.ts`); the agent's
+own layout is `agent/ui/css/agent.css`. The agent has no theme band — it follows the OS
+(morning / nightfall). After re-copying `styles.css` from polaris, copy it on into
+`agent/ui/css/` too and bump `agent/VERSION`. Use `type="text"` (with `inputmode`) rather than
+`type="url"` / `type="email"`: the polaris stylesheet styles only text, password, number and
+datetime-local inputs.

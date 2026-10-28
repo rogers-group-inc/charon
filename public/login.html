@@ -10,7 +10,9 @@
   <link rel="stylesheet" href="/css/styles.css">
   <link rel="stylesheet" href="/css/charon.css">
   <style>
-    .login-wrapper { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--color-bg-secondary); }
+    /* No fill: a fill here hid the theme's sky glow (html::before), which the
+       app pages show (as polaris login.html). */
+    .login-wrapper { min-height: 100vh; min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 1rem 0; }
     .login-card {
       background: var(--color-bg-primary); border: 1px solid var(--color-border);
       border-radius: var(--radius-lg); padding: 2rem 2.5rem; width: 100%; max-width: 380px; box-shadow: var(--shadow-md);

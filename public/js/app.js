@@ -497,11 +497,41 @@
     var lo = document.getElementById("btn-logout");
     if (lo) lo.addEventListener("click", function (e) {
       e.preventDefault();
+      clearUserCache();
       fetch("/api/v1/auth/logout", { method: "POST", headers: csrfHeaders() }).finally(function () { location.href = "/login.html"; });
     });
 
     var v = document.getElementById("sidebar-version");
     if (v && currentUser && currentUser._version) v.textContent = "v" + currentUser._version;
+  }
+
+  // ─── Cached user (the pre-paint rail) ───────────────────────────────────────
+  // What the sidebar needs to draw itself before /auth/me answers: the
+  // page-change crossfade (page-transitions.css) snapshots the new page's FIRST
+  // paint, so a rail drawn empty and filled later would fade to blank and pop
+  // back. UX only — every route still checks its own permission. Cleared on
+  // logout and on a failed /auth/me.
+  var USER_CACHE_KEY = "charon-user";
+  function saveUserCache() {
+    if (!currentUser) return;
+    try {
+      localStorage.setItem(USER_CACHE_KEY, JSON.stringify({
+        username: currentUser.username, displayName: currentUser.displayName, role: currentUser.role,
+        permissions: currentUser.permissions, _version: currentUser._version,
+      }));
+    } catch (e) { /* storage blocked — the rail waits for /auth/me */ }
+  }
+  function clearUserCache() {
+    try { localStorage.removeItem(USER_CACHE_KEY); } catch (e) { /* storage blocked */ }
+  }
+  function renderNavFromCache() {
+    try {
+      var cached = JSON.parse(localStorage.getItem(USER_CACHE_KEY) || "null");
+      if (!cached || !cached.username) return false;
+      currentUser = cached;
+      renderNav();
+      return true;
+    } catch (e) { return false; }
   }
 
   // ─── Lifecycle ───────────────────────────────────────────────────────────────
@@ -510,13 +540,17 @@
     return fetch("/api/v1/auth/me", { credentials: "same-origin" })
       .then(function (r) { if (!r.ok) throw new Error("unauth"); return r.json(); })
       .then(function (user) {
+        // Keep the cached version stamp until the fresh one lands, so the rail
+        // does not blink it out.
+        if (currentUser && currentUser._version && !user._version) user._version = currentUser._version;
         currentUser = user;
+        saveUserCache();
         renderNav();
         renderUserBadge();
         // Best-effort version stamp for the sidebar.
         fetch("/api/v1/server-settings/identification", { credentials: "same-origin" })
           .then(function (r) { return r.ok ? r.json() : null; })
-          .then(function (d) { if (d && d.version) { currentUser._version = d.version; var v = document.getElementById("sidebar-version"); if (v) v.textContent = "v" + d.version; } })
+          .then(function (d) { if (d && d.version) { currentUser._version = d.version; saveUserCache(); var v = document.getElementById("sidebar-version"); if (v) v.textContent = "v" + d.version; } })
           .catch(function () {});
         // Saved branding (name / subtitle / logo) — repaints only if it changed.
         fetch("/api/v1/server-settings/branding", { credentials: "same-origin" })
@@ -526,7 +560,10 @@
         if (typeof opts.onUser === "function") opts.onUser(user);
         return user;
       })
-      .catch(function () { if (location.pathname !== "/login.html") location.href = "/login.html"; });
+      .catch(function () {
+        clearUserCache();
+        if (location.pathname !== "/login.html") location.href = "/login.html";
+      });
   }
 
   window.Charon = {
@@ -543,4 +580,11 @@
   // Polaris's global names, for code ported from it.
   window.isLightTheme = isLightTheme;
   window.advanceTheme = advanceTheme;
+
+  // ─── Build the rail before first paint ──────────────────────────────────────
+  // app.js loads at the end of <body>, so #sidebar is already in the DOM. Each
+  // app page holds its first paint until the parser reaches #polaris-nav-ready,
+  // the marker right after this script (<link rel="expect" blocking="render">
+  // in its <head>), so the page-change snapshot always has a finished rail.
+  if (document.getElementById("sidebar")) renderNavFromCache();
 })();

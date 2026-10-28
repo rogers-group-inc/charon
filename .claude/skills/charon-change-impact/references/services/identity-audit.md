@@ -65,7 +65,7 @@ boundUserKey).
 **Used by:** nearly every writer — `src/api/routes/auth.ts`, `endpoints.ts`, `maintenance.ts`,
 `serverSettings.ts`, every `src/api/routes/settings/*.ts` mutation; services agentEnrollment,
 apiToken, assetTag, backup, customGroup, firmwareRepository, fortinetEnforcement, integration,
-invitationCode, policy, rebootSettings, reservationMac, tagReconciler, tag, update,
+invitationCode, policy, rebootSettings, tagReconciler, tag, update,
 verification.
 **Invariants:** best-effort — a failed write never breaks the underlying operation. Every
 audit-worthy mutation writes one.

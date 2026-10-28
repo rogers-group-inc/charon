@@ -1,8 +1,8 @@
 /**
  * src/services/deviceIconService.ts — operator-uploaded device icons
  *
- * Used by the Device Map's topology graph to overlay vendor-specific
- * imagery on each node's colored status circle. Every icon is keyed
+ * Vendor logos for Charon's device views (endpoints of a matching
+ * manufacturer and type or model). Every icon is keyed
  * to a manufacturer plus either a specific model or an asset type —
  * standalone "just a type" / "just a model" / "just a manufacturer"
  * uploads are intentionally not supported (a logo for "firewall"
@@ -11,11 +11,7 @@
  *
  *   1. scope="manufacturer-model" key="<manufacturer>/<model>"     — specific chassis
  *   2. scope="manufacturer-type"  key="<manufacturer>/<assetType>" — vendor + role
- *   3. no row → null (frontend leaves the node as a plain status circle)
- *
- * The topology renderer overlays the resolved icon at ~70% of the node
- * size so the operator sees BOTH the asset status (color of the ring)
- * AND the vendor logo (inset image) at a glance.
+ *   3. no row → null (the view falls back to its generic device glyph)
  *
  * Manufacturer keys are canonicalized through the same alias map as
  * Asset.manufacturer (Fortinet, Inc. → Fortinet) so the picker and the
@@ -24,7 +20,7 @@
  * Storage is bytes-in-DB (image data column on the row) plus a dedicated
  * /api/v1/device-icons/:id/image route that serves the raw bytes with
  * Content-Type + Cache-Control headers. Browser caches via standard HTTP
- * cache so a topology re-render doesn't re-fetch the image.
+ * cache so a re-render doesn't re-fetch the image.
  *
  * Validation at upload time:
  *   - mimeType in the allowed set (PNG / JPEG / WebP / SVG).
@@ -47,8 +43,8 @@
 //     defense-in-depth branch). Every upload-time reject pattern is unchanged.
 //   - Asset-type keys are checked against the AssetTypeDef table directly
 //     (charon keeps no in-memory registry cache).
-//   - Charon has no Device Map yet; the resolver helpers below are kept for
-//     when charon Endpoints render with vendor icons.
+//   - Polaris's Device Map is not part of Charon; the resolver helpers below
+//     are kept for when Charon's endpoint views render vendor icons.
 
 import { prisma } from "../db.js";
 import { AppError } from "../utils/errors.js";

@@ -255,6 +255,11 @@ function startSchedulers(cfg: RoleConfig): void {
   void import("./jobs/ouiRefresh.js").then((m) => m.scheduleOuiRefresh());
   // Scheduled database backups (Server Settings → Maintenance; default off).
   void import("./jobs/scheduledBackup.js").then((m) => m.scheduleScheduledBackups());
+  // Fresh install: adopt the bootstrap cert's pin as the canonical agent pin
+  // (no-op once any canonical pin exists).
+  void import("./services/webServerService.js")
+    .then((m) => m.adoptBootstrapAgentPin())
+    .catch((err) => logger.warn({ err: err?.message }, "bootstrap agent pin adoption failed"));
 }
 
 function stopSchedulers(): void {

@@ -28,6 +28,7 @@ import {
   LOGO_MAX_BYTES,
   clearCustomLogo,
   getBranding,
+  getPublicBranding,
   setCustomLogo,
   updateBranding,
 } from "../../../services/brandingService.js";
@@ -151,3 +152,21 @@ router.put("/reboot", requirePermission("serverSettingsSystem", "write"), async 
 });
 
 export default router;
+
+/**
+ * Mounted at /api/v1/branding BEFORE requireAuth (router.ts): the login page
+ * reads the app name, subtitle and — when "show on login page" is on — the
+ * custom logo before anyone signs in, as polaris's login page does. Returns
+ * the trimmed PublicBranding view only (no app version, no sidebar flags).
+ * Rate-limited because it is unauthenticated.
+ */
+export const publicBrandingRouter = Router();
+const publicBrandingLimiter = makeRateLimiter({ windowMs: 60_000, max: 120, message: "Too many requests — try again in a minute" });
+
+publicBrandingRouter.get("/", publicBrandingLimiter, async (_req, res, next) => {
+  try {
+    res.json(await getPublicBranding());
+  } catch (err) {
+    next(err);
+  }
+});

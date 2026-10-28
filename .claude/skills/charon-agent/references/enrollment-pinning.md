@@ -43,6 +43,12 @@ each logs an Event):
 Skipping step 2 (or swapping before agents have polled) strands every agent that has not seen
 the new pin: it refuses the new certificate and must be re-enrolled. Business rules 4, 4a.
 
+**Fresh install:** until the first rotation there is no canonical pin. When the leader acquires
+(`app.ts startSchedulers`) it runs `webServerService.adoptBootstrapAgentPin()`: if no canonical
+pin exists and nginx's served (bootstrap) cert can be read, that cert's pin becomes canonical and
+a warning `cert.pin.bootstrap` Event is written. An existing canonical pin is never replaced
+(`certPinService.computeBootstrap()`).
+
 `setCanonicalPin()` / `promoteStagedPin()` remain exported but no route calls them since the
 old `/server-settings/certificates{,/stage,/promote}` routes were removed.
 

@@ -298,9 +298,6 @@ export async function tagFilterSchema() {
       assetTypes: assetTypes.map((t) => ({ name: t.name, label: t.label || t.name })),
       tags: tags.map((t) => t.name),
     },
-    // Charon adaptation: charon has no Device Map, so no category is
-    // region-managed (the page reads null as "none").
-    regionCategory: null,
   };
 }
 

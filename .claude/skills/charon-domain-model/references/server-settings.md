@@ -64,7 +64,7 @@ model — see tags-enforcement.md.
 // asset/device classification registries behind the Identification tab.
 // Charon has no asset inventory yet, so nothing references these rows; the
 // registries are kept so charon Endpoints can be classified by them later.
-// DNS / OUI / placeholder-MAC config lives in the Setting table (as polaris).
+// DNS / OUI config lives in the Setting table (as polaris).
 
 // Asset-tag registry. `assetCondition` is the auto-assign device filter (the
 // shared condition-builder tree); NULL = an ordinary manual tag. An empty
@@ -365,7 +365,7 @@ model ManufacturerCustomWidget {
 
 #### What lives in the Setting table instead
 
-DNS, the OUI database + overrides, the placeholder-MAC prefix, NTP, branding, proxy controls,
+DNS, the OUI database + overrides, NTP, branding, proxy controls,
 HA config and the other Server Settings scalars are `Setting` rows — see platform.md → Setting
 keys in use.
 

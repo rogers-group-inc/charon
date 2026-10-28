@@ -110,6 +110,25 @@ export async function swapCanonicalPin(newPin: string): Promise<PinStore> {
   return next;
 }
 
+/**
+ * Pure: a fresh install has no canonical pin until the first rotation. Adopt
+ * the served (bootstrap) cert's pin as canonical so the first agents can
+ * enroll and pin it. Returns null — change nothing — whenever a canonical pin
+ * already exists: this never replaces an operator's pin (business rule 4a).
+ */
+export function computeBootstrap(store: PinStore, servedPin: string): PinStore | null {
+  if (store.canonical) return null;
+  return { canonical: servedPin, staged: store.staged.filter((p) => p !== servedPin) };
+}
+
+/** Apply computeBootstrap; the pin adopted, or null when nothing changed. */
+export async function adoptBootstrapPin(servedPin: string): Promise<string | null> {
+  const next = computeBootstrap(await read(), servedPin);
+  if (!next) return null;
+  await write(next);
+  return servedPin;
+}
+
 export async function retirePin(pin: string): Promise<RetireOutcome> {
   const { outcome, store } = computeRetire(await read(), pin);
   if (outcome === "retired") await write(store);

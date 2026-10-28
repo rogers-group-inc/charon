@@ -1522,9 +1522,6 @@ const api = {
     uploadCert:  (category, file) => uploadFile("/server-settings/certificates", category, file),
     deleteCert:  (id)     => request("DELETE", `/server-settings/certificates/${id}`),
     getHttps:    ()       => request("GET", "/server-settings/https"),
-    // Dash wallboard (unauthenticated read-only /dash surface) toggle + IP scope.
-    dashGet:              ()      => request("GET",  "/server-settings/dash"),
-    dashPut:              (body)  => request("PUT",  "/server-settings/dash", body),
     // IPv6 switch (rule 128): set at install from the host, then { enabled } toggles it.
     ipv6Get:              ()      => request("GET",  "/server-settings/ipv6"),
     ipv6Put:              (body)  => request("PUT",  "/server-settings/ipv6", body),
@@ -1635,8 +1632,6 @@ const api = {
     getOuiOverrides:()       => request("GET", "/server-settings/oui/overrides"),
     addOuiOverride: (body)   => request("POST", "/server-settings/oui/overrides", body),
     deleteOuiOverride:(pfx)  => request("DELETE", `/server-settings/oui/overrides/${encodeURIComponent(pfx)}`),
-    getPlaceholderMac:()     => request("GET", "/server-settings/reservation-mac"),
-    setPlaceholderMac:(body) => request("PUT", "/server-settings/reservation-mac", body),
     listMibs: (params) => request("GET", "/server-settings/mibs" + toQuery(params)),
     getMibFacets: () => request("GET", "/server-settings/mibs/facets"),
     uploadMib: (file, fields) => {

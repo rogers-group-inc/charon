@@ -25,7 +25,7 @@ import {
   validateProxyConfig,
 } from "../../src/services/proxyConfigService.ts";
 import { renderNginxConfig, renderHstsHeader, renderMetricsAllow } from "../../src/services/nginxRenderer.ts";
-import { computeRetire, computeSwap, normalizePin, tallyPins } from "../../src/services/certPinService.ts";
+import { computeBootstrap, computeRetire, computeSwap, normalizePin, tallyPins } from "../../src/services/certPinService.ts";
 import { mergeScopedAccess, parseScopedAccess, loginSourceAllowed, isRoutableIpv6 } from "../../src/services/webAccessSettingsService.ts";
 import { certFacts, parseLiveCertPaths, validateCertKeyPair } from "../../src/services/webServerService.ts";
 
@@ -169,6 +169,14 @@ describe("agent cert pins", () => {
   it("swap keeps the old canonical accepted", () => {
     expect(computeSwap({ canonical: A, staged: [B] }, B)).toEqual({ canonical: B, staged: [A] });
     expect(computeSwap({ canonical: null, staged: [B] }, B)).toEqual({ canonical: B, staged: [] });
+  });
+
+  it("bootstrap adopts the served pin only when no canonical pin exists", () => {
+    expect(computeBootstrap({ canonical: null, staged: [] }, A)).toEqual({ canonical: A, staged: [] });
+    expect(computeBootstrap({ canonical: null, staged: [A, B] }, A)).toEqual({ canonical: A, staged: [B] });
+    // Never replaces an operator's pin, even when the served cert differs.
+    expect(computeBootstrap({ canonical: B, staged: [] }, A)).toBeNull();
+    expect(computeBootstrap({ canonical: A, staged: [] }, A)).toBeNull();
   });
 
   it("retire promotes, refuses the last pin, and reports absence", () => {

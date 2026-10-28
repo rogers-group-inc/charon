@@ -19,7 +19,8 @@ when `can(permKey, "read")`, and shows Server Settings when either `serverSettin
 The sidebar brand (name, subtitle, optional logo) comes from `GET /server-settings/branding`
 (Server Settings → Customization), cached in localStorage (`charon-branding`) so it paints
 without a flash; only Charon's fixed `/uploads/custom-logo.(png|jpg|webp)` URLs render as a
-logo (`app.js → brandHtml()`).
+logo (`app.js → brandHtml()`). The login page (`login.js`) reads the public trimmed view at
+`GET /branding` before sign-in: name, subtitle, and the logo only when "show on login page" is on.
 
 ## `window.Charon`
 

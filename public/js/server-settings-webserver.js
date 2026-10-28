@@ -10,7 +10,6 @@ var _certsLoaded = false;
 var _certData = { trustedCAs: [], serverCerts: [] };
 var _httpsSettings = { fingerprint: null, cn: null, dnsSans: [], ipSans: [], expiresAt: null, certPath: null };
 var _proxyData = null;
-var _dashSettings = null; // { enabled, rfc1918Only } | null while loading/failed
 var _ipv6Settings = null; // { mode, hostAddresses, enabled } | null while loading/failed
 var _loginAccess = null;  // { settings, callerIp } | null while loading/failed
 
@@ -19,9 +18,7 @@ var _loginAccess = null;  // { settings, callerIp } | null while loading/failed
 // one as the window narrows; the min column width lives in styles.css):
 // HTTPS Certificate (read-only metadata + Rotate button), nginx Proxy (the
 // six operator-settable directives: HTTPS port, HTTP/3, TLS protocols, HSTS,
-// Prometheus allow-list, with a Save & Apply button), Dash Wallboard (the
-// unauthenticated read-only /dash surface: on/off toggle + source-IP scope),
-// Local Login Access (READ-ONLY here since 2026-09 — the editor moved to Users →
+// Prometheus allow-list, with a Save & Apply button), IPv6, Local Login Access (READ-ONLY here since 2026-09 — the editor moved to Users →
 // Authentication → Settings, where it sits with the password and passkey
 // policies; this card states the current scope and points there), and Trusted CAs.
 // A drift banner appears above the deck, full width, when proxyConfig.managedMode
@@ -165,48 +162,6 @@ function renderCertsTab(container) {
       '</div>' +
     '</div>';
 
-  // Dash Wallboard card — controls the unauthenticated read-only /dash
-  // surface (own process; src/dash/dashServer.ts). The dash listener re-reads
-  // the setting within ~10s, no restart needed. PUT is serverSettingsSystem
-  // fullwrite-gated server-side.
-  var d = _dashSettings; // null = load failed (endpoint gated or older server)
-  var dScope = (d && d.ipScope) || "rfc1918";
-  var dCidrs = (d && Array.isArray(d.allowedCidrs)) ? d.allowedCidrs.join(", ") : "";
-  var dashCardHtml =
-    '<div class="settings-card">' +
-      '<h4>Dash Wallboard</h4>' +
-      '<p style="font-size:0.82rem;color:var(--color-text-secondary);margin-bottom:1rem">' +
-        'A read-only, no-login duplicate of the Dashboard at <code>/dash</code> for NOC wallboards and kiosks. ' +
-        'It answers with the built-in <code>readonly</code> role\'s permissions; widget layout is saved in each ' +
-        'viewer\'s browser. Requests from disallowed source IPs are dropped (no response). Changes take effect within ~10 seconds.' +
-      '</p>' +
-      (d === null
-        ? '<p style="font-size:0.85rem;color:var(--color-text-secondary)">Unavailable — could not load the Dash settings.</p>'
-        : '<div class="form-group">' +
-            '<label><input type="checkbox" id="dash-enabled"' + (d.enabled ? " checked" : "") + '> Enable the Dash wallboard</label>' +
-          '</div>' +
-          '<div class="form-group">' +
-            '<label>Allowed source IPs</label>' +
-            '<div style="display:flex;flex-direction:column;gap:0.3rem;margin-top:0.3rem">' +
-              '<label><input type="radio" name="dash-ip-scope" value="rfc1918"' + (dScope === "rfc1918" ? " checked" : "") + '> Private networks only (RFC1918 + loopback)</label>' +
-              '<label><input type="radio" name="dash-ip-scope" value="all"' + (dScope === "all" ? " checked" : "") + '> All source IPs</label>' +
-              '<label><input type="radio" name="dash-ip-scope" value="custom"' + (dScope === "custom" ? " checked" : "") + '> Custom networks</label>' +
-            '</div>' +
-            '<div id="dash-custom-cidrs" style="margin-top:0.4rem;' + (dScope === "custom" ? "" : "display:none") + '">' +
-              '<textarea id="dash-allowed-cidrs" rows="3" placeholder="10.0.0.0/8, 192.168.10.0/24, 203.0.113.5" ' +
-                'style="width:100%;font-family:monospace">' + escapeHtml(dCidrs) + '</textarea>' +
-              '<div style="font-size:0.78rem;color:var(--color-text-secondary);margin-top:0.2rem">Comma- or newline-separated IPv4 networks (CIDR) or addresses. A bare address is treated as /32. Only these sources are served.</div>' +
-            '</div>' +
-            '<div id="dash-allip-warning" style="font-size:0.78rem;color:#f59e0b;margin-top:0.3rem;' + (dScope === "all" ? "" : "display:none") + '">' +
-              'All-IPs means ANY host that can reach this server can view the wallboard (asset names, IPs, alert feeds) without logging in.' +
-            '</div>' +
-          '</div>' +
-          '<div style="margin-top:0.5rem">' +
-            '<button class="btn btn-sm btn-primary" id="dash-save-btn">Save</button>' +
-            '<span style="font-size:0.82rem;color:var(--color-text-secondary);margin-left:0.8rem">Wallboard URL: <code>' + escapeHtml(window.location.origin) + '/dash</code></span>' +
-          '</div>') +
-    '</div>';
-
   // IPv6 card — business rule 128. Off means no IPv6 is discovered, collected,
   // stored or shown anywhere. Set once at install from whether this server had
   // a routable IPv6 address; a plain toggle from then on. PUT is
@@ -311,27 +266,14 @@ function renderCertsTab(container) {
 
   container.innerHTML = bannerHtml +
     '<div class="settings-cards-flow">' +
-      certCardHtml + proxyCardHtml + dashCardHtml + ipv6CardHtml + loginCardHtml + caCardHtml +
+      certCardHtml + proxyCardHtml + ipv6CardHtml + loginCardHtml + caCardHtml +
     '</div>';
 
   var adoptBtn = document.getElementById("proxy-adopt-btn");
   if (adoptBtn) adoptBtn.addEventListener("click", handleProxyAdopt);
 
-  var dashSaveBtn = document.getElementById("dash-save-btn");
-  if (dashSaveBtn) dashSaveBtn.addEventListener("click", handleDashSave);
-
   var ipv6SaveBtn = document.getElementById("ipv6-save-btn");
   if (ipv6SaveBtn) ipv6SaveBtn.addEventListener("click", function () { handleIpv6Save(container); });
-
-  document.querySelectorAll('input[name="dash-ip-scope"]').forEach(function (radio) {
-    radio.addEventListener("change", function () {
-      if (!this.checked) return;
-      var warn = document.getElementById("dash-allip-warning");
-      if (warn) warn.style.display = this.value === "all" ? "" : "none";
-      var custom = document.getElementById("dash-custom-cidrs");
-      if (custom) custom.style.display = this.value === "custom" ? "" : "none";
-    });
-  });
 
   var rotateBtn = document.getElementById("proxy-rotate-cert-btn");
   if (rotateBtn) rotateBtn.addEventListener("click", openRotateCertModal);
@@ -374,35 +316,6 @@ async function handleIpv6Save(container) {
     renderCertsTab(container);
   } catch (err) {
     showToast("Failed to save the IPv6 setting: " + (err.message || err), "error");
-  }
-}
-
-async function handleDashSave() {
-  var enabled = !!document.getElementById("dash-enabled").checked;
-  var scopeEl = document.querySelector('input[name="dash-ip-scope"]:checked');
-  var ipScope = scopeEl ? scopeEl.value : "rfc1918";
-
-  var allowedCidrs = [];
-  if (ipScope === "custom") {
-    var raw = (document.getElementById("dash-allowed-cidrs") || {}).value || "";
-    allowedCidrs = raw.split(/[\s,]+/).map(function (s) { return s.trim(); }).filter(Boolean);
-    if (enabled && allowedCidrs.length === 0) {
-      showToast("Add at least one network, or an empty list would block every viewer.", "error");
-      return;
-    }
-  }
-
-  if (enabled && ipScope === "all" &&
-      !(await showConfirm("Allow ALL source IPs to view the Dash wallboard without logging in?"))) {
-    return;
-  }
-
-  try {
-    var result = await api.serverSettings.dashPut({ enabled: enabled, ipScope: ipScope, allowedCidrs: allowedCidrs });
-    _dashSettings = (result && result.dash) || { enabled: enabled, ipScope: ipScope, allowedCidrs: allowedCidrs };
-    showToast(enabled ? "Dash wallboard enabled" : "Dash wallboard disabled");
-  } catch (err) {
-    showToast("Failed to save Dash settings: " + (err.message || err), "error");
   }
 }
 
@@ -637,11 +550,6 @@ async function loadCertificates() {
   try {
     _proxyData = await api.serverSettings.proxyGet();
   } catch (_) { _proxyData = null; }
-
-  try {
-    var dashResp = await api.serverSettings.dashGet();
-    _dashSettings = (dashResp && dashResp.dash) || null;
-  } catch (_) { _dashSettings = null; }
 
   try {
     var v6Resp = await api.serverSettings.ipv6Get();

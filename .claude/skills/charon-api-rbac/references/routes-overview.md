@@ -12,6 +12,7 @@ Order inside `router.ts` matters:
 | 0 | (all) | — | `attachApiToken` resolves any bearer first |
 | 1 | `/auth` | `src/api/routes/auth.ts` | public |
 | 2 | `/agent` | `src/api/routes/agent.ts` | public |
+| 2a | `/branding` | `src/api/routes/settings/customization.ts` (`publicBrandingRouter`) | public (login-page branding; rate-limited; trimmed view) |
 | 3 | `/agents/enroll` | `src/api/routes/agents.ts` (`agentsEnrollRouter`) | public (invitation code; `enrollLimiter`) |
 | 4 | `/agents` | `src/api/routes/agents.ts` (`agentsRouter`) | agent bearer |
 | 4a | `/ha/enroll` | `src/api/routes/settings/ha.ts` (`haEnrollRouter`) | public (single-use HA enrollment token; `haEnrollLimiter`; CSRF-exempt at exactly this path) |

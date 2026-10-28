@@ -35,8 +35,8 @@ src/
 │       ├── events.ts         # audit log
 │       └── settings/         # Server Settings tabs ported from polaris; each route declares its own requirePermission
 │           ├── ntp.ts            # /server-settings/ntp (+test)
-│           ├── identification.ts # tags (asset), dns, oui, reservation-mac; deviceIconsRouter (/device-icons), assetTypesRouter (/asset-types)
-│           ├── webServer.ts      # trusted CAs, https, proxy (+apply), cert preflight/rotate, agent cert-pins, dash, ipv6, login-access
+│           ├── identification.ts # tags (asset), dns, oui; deviceIconsRouter (/device-icons), assetTypesRouter (/asset-types)
+│           ├── webServer.ts      # trusted CAs, https, proxy (+apply), cert preflight/rotate, agent cert-pins, ipv6, login-access
 │           ├── maintenance.ts    # database/backups/restore/schedule, capacity-advisor, pg-tuning, platform-lifecycle, updates, restart, retention, agent-event-log
 │           ├── customization.ts  # branding (+logo), reboot
 │           ├── credentials.ts    # credentialsRouter (/credentials); mibs, manufacturer-aliases, manufacturer-profiles
@@ -53,7 +53,7 @@ src/
 │   │                         updateService, agentDistService
 │   ├── settings (web):       webServerService, proxyConfigService, trustedCaService, webAccessSettingsService
 │   ├── settings (system):    ntpService, brandingService, rebootSettingsService, apiDocsAccessService
-│   ├── settings (ident):     assetTagService, assetTypeService, deviceIconService, dnsService, ouiService, reservationMacService
+│   ├── settings (ident):     assetTagService, assetTypeService, deviceIconService, dnsService, ouiService
 │   ├── settings (maint):     backupScheduleService, capacityAdvisorService, pgTuningService, dbSizeService,
 │   │                         platformLifecycleService, sampleRetentionService, agentEventLogService
 │   ├── settings (ha/fw):     haService, haEnrollmentService, firmwareRepositoryService
@@ -84,7 +84,7 @@ src/
 │   ├── backupPassword.ts     # strength floor for backup passphrases
 │   ├── imageRegistry.ts      # read a published image's build facts from its OCI registry (Docker update check)
 │   ├── ipAllowlist.ts        # IP / CIDR validation + matching (API token trusted hosts, API-docs scope)
-│   ├── ipScope.ts            # source-IP scope matching (Local Login Access, Dash)
+│   ├── ipScope.ts            # source-IP scope matching (Local Login Access)
 │   ├── haAdvisories.ts       # HA guidance arithmetic (RTT bands, WAL rate, RPO/RTO, install shape)
 │   ├── firmwareVersion.ts    # firmware version + image identity parsing (pure)
 │   ├── assetTypeMatch.ts     # device-type inference rules (pure; AssetTypeDef.matchRules)

@@ -64,7 +64,9 @@ rotation API, and the per-Endpoint record of the pins each agent was last handed
 (`Endpoint.serverCertFingerprint` / `additionalCertFingerprints`).
 **Public API:** `getAgentCertPins`, `getPinStore`, `stageNewPin`, `swapCanonicalPin`,
 `retirePin`, `recordDeliveredPins`, `listActiveDeliveredPins`; pure `normalizePin`,
-`computeSwap`, `computeRetire`, `tallyPins`, `rowHasPin`; types `PinStore`, `RetireOutcome`,
+`computeSwap`, `computeRetire`, `computeBootstrap`, `tallyPins`, `rowHasPin`; `adoptBootstrapPin`
+(fresh install only — never replaces a canonical pin; called via
+`webServerService.adoptBootstrapAgentPin()` when the leader acquires); types `PinStore`, `RetireOutcome`,
 `DeliveredPinRow`. `setCanonicalPin` / `promoteStagedPin` are still exported but no longer
 called by any route.
 **Cross-service deps:** Setting `agent.cert_pins`; Prisma `Endpoint`.

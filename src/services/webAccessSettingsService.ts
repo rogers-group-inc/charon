@@ -1,10 +1,9 @@
 /**
  * src/services/webAccessSettingsService.ts — Server Settings → Web Server:
- * the source-IP-scoped settings (Local Login Access, Dash wallboard) and the
- * IPv6 switch.
+ * the source-IP-scoped Local Login Access setting and the IPv6 switch.
  *
- * Ported from polaris loginAccessService / dashSettingsService /
- * ipv6GateService. Each is one Setting row (JSON blob) behind a short TTL
+ * Ported from polaris loginAccessService / ipv6GateService. (Polaris's Dash
+ * wallboard setting was dropped: Charon has no /dash surface.) Each is one Setting row (JSON blob) behind a short TTL
  * cache so the request-path gate (login) costs ~one DB read per 10s.
  *
  *   loginAccessConfig — { enabled, ipScope, allowedCidrs }. enabled=false (the
@@ -12,8 +11,6 @@
  *     login (POST /auth/login + /auth/login/totp — src/api/routes/auth.ts).
  *     SAML/OIDC are never restricted. The gate FAILS OPEN on a settings read
  *     error so a DB blip can never become a lockout.
- *   dashConfig — same shape, polaris's unauthenticated /dash wallboard. Charon
- *     has no /dash surface yet: persisted only, nothing consumes it.
  *   ipv6Config — { enabled, setBy, installHostAddresses }. Polaris uses it to
  *     gate IPv6 discovery/monitoring; charon persists it and reports the host's
  *     routable IPv6, but nothing consumes it yet.
@@ -60,7 +57,7 @@ export function defaultScopedAccess(): ScopedAccessSettings {
   return { enabled: false, ipScope: "rfc1918", allowedCidrs: [] };
 }
 
-/** Parse a stored row; legacy polaris dash rows carry `rfc1918Only`. */
+/** Parse a stored row; the legacy polaris shape carries `rfc1918Only`. */
 export function parseScopedAccess(raw: unknown): ScopedAccessSettings {
   const fb = defaultScopedAccess();
   if (raw == null || typeof raw !== "object") return fb;
@@ -148,24 +145,6 @@ export async function previewLoginAccessSettings(input: Partial<ScopedAccessSett
     input,
     "Custom source-IP scope needs at least one network — an empty list would block local login from everywhere",
   );
-}
-
-// ─── Dash wallboard (persist-only in charon) ─────────────────────────────────
-
-export const DASH_SETTING_KEY = "dashConfig";
-const dashStore = settingStore(DASH_SETTING_KEY, 10_000, parseScopedAccess);
-
-export async function getDashSettings(): Promise<ScopedAccessSettings> {
-  return dashStore.get();
-}
-
-export async function saveDashSettings(input: Partial<ScopedAccessSettings>): Promise<ScopedAccessSettings> {
-  const merged = mergeScopedAccess(
-    await getDashSettings(),
-    input,
-    "Custom source-IP scope needs at least one network — an empty list would block every viewer",
-  );
-  return dashStore.save(merged);
 }
 
 // ─── IPv6 switch (persist-only in charon) ────────────────────────────────────

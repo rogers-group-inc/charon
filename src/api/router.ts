@@ -27,7 +27,7 @@ import settingsNtpRouter from "./routes/settings/ntp.js";
 import settingsIdentificationRouter, { deviceIconsRouter, assetTypesRouter } from "./routes/settings/identification.js";
 import settingsWebServerRouter from "./routes/settings/webServer.js";
 import settingsMaintenanceRouter from "./routes/settings/maintenance.js";
-import settingsCustomizationRouter from "./routes/settings/customization.js";
+import settingsCustomizationRouter, { publicBrandingRouter } from "./routes/settings/customization.js";
 import settingsCredentialsRouter, { credentialsRouter } from "./routes/settings/credentials.js";
 import settingsApiTokensRouter, { apiTokensRouter } from "./routes/settings/apiTokens.js";
 import settingsHaRouter, { haRouter, haEnrollRouter } from "./routes/settings/ha.js";
@@ -45,6 +45,8 @@ router.use(attachApiToken);
 // Operator auth (login/logout/me) and the agent's public auth-config probe.
 router.use("/auth", authRouter);
 router.use("/agent", agentRouter);
+// Login-page branding (name, subtitle, opt-in logo) — read before sign-in.
+router.use("/branding", publicBrandingRouter);
 
 // Agent protocol — enrollment (invitation code) + bearer-guarded telemetry.
 // Mounted BEFORE requireAuth: agents present a one-shot code or a per-agent

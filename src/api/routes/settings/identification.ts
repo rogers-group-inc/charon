@@ -1,8 +1,8 @@
 /**
  * src/api/routes/settings/identification.ts — Server Settings: Identification tab (DNS, OUI, tags, device icons, device types).
  *
- * Ported from polaris (src/api/routes/serverSettings.ts /tags* /dns* /oui*
- * /reservation-mac, plus api/routes/deviceIcons.ts and assetTypes.ts) to back
+ * Ported from polaris (src/api/routes/serverSettings.ts /tags* /dns* /oui*,
+ * plus api/routes/deviceIcons.ts and assetTypes.ts) to back
  * the ported public/js/server-settings-identification.js module at the exact
  * paths public/js/settings-api.js calls. Mounted WITHOUT a router-level gate
  * (router.ts) — every route declares its own requirePermission(), because a
@@ -40,7 +40,6 @@ import {
   deleteOuiOverride,
   lookupOuiDetailed,
 } from "../../../services/ouiService.js";
-import { getReservationMacSettings, saveReservationMacSettings } from "../../../services/reservationMacService.js";
 import {
   listAssetTags,
   createAssetTag,
@@ -102,8 +101,6 @@ const TagPreviewSchema = z.object({
   assetCondition: z.unknown().optional(),
   criteria: z.unknown().optional(),
 });
-
-const ReservationMacSchema = z.object({ prefix: z.unknown().optional() });
 
 // PUT /device-icons/:id — re-key an icon; the image is untouched.
 const UpdateIconKeySchema = z.object({
@@ -423,21 +420,6 @@ router.delete("/oui/overrides/:prefix", WRITE, async (req, res, next) => {
       message: `OUI override removed for ${prefix}`,
     });
     res.status(204).send();
-  } catch (err) { next(err); }
-});
-
-// ─── Placeholder MAC prefix ────────────────────────────────────────────────
-
-router.get("/reservation-mac", READ, async (_req, res, next) => {
-  try {
-    res.json(await getReservationMacSettings());
-  } catch (err) { next(err); }
-});
-
-router.put("/reservation-mac", WRITE, async (req, res, next) => {
-  try {
-    const body = parseOr400(ReservationMacSchema, req.body ?? {});
-    res.json(await saveReservationMacSettings(body, actorOf(req)));
   } catch (err) { next(err); }
 });
 

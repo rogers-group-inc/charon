@@ -44,10 +44,8 @@ comment line. `deploy/install-rhel.sh` substitutes the same tokens with defaults
 `proxyConfigService.ts → defaultProxyConfig()` — change both together.
 
 Locations beyond `/` and the endpoint upstream: `location = /metrics` (source-IP allow-list from
-`{{METRICS_ALLOW}}`, empty = `deny all`; `METRICS_TOKEN` still gates the app) and
-`location = /api/v1/server-settings/firmware/images` (`client_max_body_size 300m`,
-`proxy_request_buffering off`, 600 s timeouts — the Repository upload; the server-wide limit
-stays 12m).
+`{{METRICS_ALLOW}}`, empty = `deny all`; `METRICS_TOKEN` still gates the app). The server-wide
+body limit is 12m.
 
 The leaf certificate is rotated from Server Settings → Web Server
 (`src/services/webServerService.ts → rotateCertAndKey()`): the new pair is written in place, the
@@ -76,8 +74,8 @@ the sudoers line and `CHARON_NGINX_APPLY_SCRIPT` / `CHARON_CHRONY_APPLY_SCRIPT` 
 `src/services/backupService.ts` streams `pg_dump` (client picked by server MAJOR,
 `src/utils/pgClientTools.ts`; credentials via PG* env, never argv, `src/utils/pgEnv.ts`) to
 `data/backups/` with owner-only modes (`src/utils/privateFiles.ts`), optionally AES-256-GCM
-under a passphrase. A database backup covers the **database only**: firmware images
-(`data/firmware/`), the uploaded logo (`public/uploads/`), the TLS key and `.env`
+under a passphrase. A database backup covers the **database only**: agent installers
+(`data/agents/`), the uploaded logo (`public/uploads/`), the TLS key and `.env`
 (`CHARON_DATA_KEY`) are files under the state dir and need a file-level backup. Device icons and
 MIB files are in the DB and are covered. Scheduled backups (`src/jobs/scheduledBackup.ts`,
 leader-only, default off) can copy each finished backup to an off-host directory.

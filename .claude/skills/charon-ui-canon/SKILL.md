@@ -48,7 +48,6 @@ commit (`/charon-docs-sync`).
 |---|---|---|
 | Identification (`identification`) | `server-settings-identification.js` | `serverSettingsSystem` |
 | Credentials (`credentials`) | `server-settings-credentials.js` | `credentials` |
-| Repository (`firmware`) | `server-settings-firmware.js` | `serverSettingsSystem` |
 | Customization (`customization`) | `server-settings-customization.js` | `serverSettingsSystem` |
 | Time & NTP (`ntp`) | `server-settings-ntp.js` | `serverSettingsSystem` |
 | Web Server (`certificates`) | `server-settings-webserver.js` (+ `pinned-tls-certs.js`) | `serverSettingsSystem` |

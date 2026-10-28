@@ -1392,7 +1392,7 @@ async function loadDatabaseInfo() {
       // ── Backup Card ──
       '<div class="settings-card">' +
         '<h4>Backup</h4>' +
-        '<p class="hint" style="margin-bottom:0.75rem">Create a compressed backup of the database. Optionally encrypt with a password for secure storage or transfer. Database only — firmware images and branding uploads under the state directory are not included; back those up with the host.</p>' +
+        '<p class="hint" style="margin-bottom:0.75rem">Create a compressed backup of the database. Optionally encrypt with a password for secure storage or transfer. Database only — agent installers and branding uploads under the state directory are not included; back those up with the host.</p>' +
         '<div class="form-row" style="align-items:flex-end;gap:12px;flex-wrap:wrap">' +
           '<div style="flex:1;min-width:200px">' +
             '<label for="backup-password">Encryption password <span style="color:var(--color-text-tertiary)">(optional)</span></label>' +

@@ -349,13 +349,10 @@ function validateHttpConfig(config: Record<string, unknown>): void {
   if (authMode === "bearer" && !(typeof config.apiToken === "string" && config.apiToken.length > 0)) {
     throw new AppError(400, "HTTP credential bearer auth needs an API token");
   }
-  // "form" is the device admin login the firmware repository posts to a
-  // switch or AP's own login page (business rule 87) — the same two carriers
-  // as basic / digest, and the same requirement that both be present.
-  if ((authMode === "basic" || authMode === "digest" || authMode === "form") && !(hasUser && hasPass)) {
+  if ((authMode === "basic" || authMode === "digest") && !(hasUser && hasPass)) {
     // Named per mode: "basic auth needs..." on a digest credential sends the
     // operator looking for a field that isn't the one they got wrong.
-    throw new AppError(400, `HTTP credential ${authMode} ${authMode === "form" ? "login" : "auth"} needs both a username and a password`);
+    throw new AppError(400, `HTTP credential ${authMode} auth needs both a username and a password`);
   }
 
   // Drop the carriers this mode does not send, and every field left over from
@@ -366,7 +363,7 @@ function validateHttpConfig(config: Record<string, unknown>): void {
   // merge, so a client-side clear would preserve the very credential it appears
   // to delete.
   if (authMode !== "bearer") delete config.apiToken;
-  if (authMode !== "basic" && authMode !== "digest" && authMode !== "form") {
+  if (authMode !== "basic" && authMode !== "digest") {
     delete config.username;
     delete config.password;
   }
@@ -468,37 +465,32 @@ export function validateConfig(type: CredentialType, config: Record<string, unkn
 
 /**
  * The credential kinds that can reboot a FortiGate, FortiSwitch or FortiAP
- * (business rule 115): an SSH login (`execute reboot`), a REST API token
- * (FortiOS `system/os/reboot`), and a device admin login (`http` in `form`
- * mode — the firmware repository's login, rule 87). Pure; shared by the
- * validator, the reboot resolver and the form.
+ * (business rule 115): an SSH login (`execute reboot`) and a REST API token
+ * (FortiOS `system/os/reboot`). Pure; shared by the validator, the reboot
+ * resolver and the form.
  */
-export function credentialCanReboot(type: string, config: Record<string, unknown> | null | undefined): boolean {
-  if (type === "ssh" || type === "restapi") return true;
-  return type === "http" && (config ?? {}).authMode === "form";
+export function credentialCanReboot(type: string): boolean {
+  return type === "ssh" || type === "restapi";
 }
 
 /** `allowReboot` is on, on a kind that can carry it. Pure. */
 export function credentialAllowsReboot(type: string, config: Record<string, unknown> | null | undefined): boolean {
-  return credentialCanReboot(type, config) && (config ?? {}).allowReboot === true;
+  return credentialCanReboot(type) && (config ?? {}).allowReboot === true;
 }
 
 /**
  * `allowReboot` (rule 115) is a boolean, and only on a kind that can reboot.
- * Runs on the MERGED config after the per-type validator, so an http
- * credential switched away from form login loses the flag with the login it
- * belonged to instead of 400-ing; `true` sent on a kind that can never reboot
- * (SNMP, WinRM) is refused so the operator does not believe it did something.
- * A `false` is not stored — absence is the default.
+ * `true` sent on a kind that can never reboot (SNMP, WinRM, HTTP) is refused
+ * so the operator does not believe it did something. A `false` is not stored
+ * — absence is the default.
  */
 function validateAllowReboot(type: CredentialType, config: Record<string, unknown>): void {
   const v = config.allowReboot;
   if (v === undefined || v === null) { delete config.allowReboot; return; }
   if (typeof v !== "boolean") throw new AppError(400, "allowReboot must be a boolean");
   if (!v) { delete config.allowReboot; return; }
-  if (credentialCanReboot(type, config)) return;
-  if (type === "http") { delete config.allowReboot; return; }
-  throw new AppError(400, `A ${type} credential cannot reboot a device — Allow reboots applies to SSH, REST API and device admin login credentials`);
+  if (credentialCanReboot(type)) return;
+  throw new AppError(400, `A ${type} credential cannot reboot a device — Allow reboots applies to SSH and REST API credentials`);
 }
 
 /**
@@ -651,7 +643,7 @@ export async function updateCredential(id: string, input: UpdateCredentialInput)
 // ─── Credential usage ("where is this credential wired?") ───────────────────
 //
 // Polaris resolves usage through the monitor-settings tiers (asset / class /
-// integration) plus the Firmware Repository binding and agent installs, all of
+// integration) plus its firmware-repository binding and agent installs, all of
 // which hang off its Asset inventory. Charon has no assets, so every usage
 // answer is the empty one — the same shapes, so the table's Assets column
 // reads 0 and the usage slide-in renders its empty state.
@@ -681,7 +673,7 @@ export interface CredentialUsageIntegrationGroup {
 }
 
 export interface CredentialUsageOperationGroup {
-  kind: "firmware" | "agent";
+  kind: "agent";
   label: string;
   assets: CredentialUsageAsset[];
 }
@@ -717,7 +709,7 @@ export async function deleteCredential(id: string): Promise<void> {
   await findTabRow(id); // 404 if missing or not this tab's
   // Nothing in Charon blocks the delete: a manufacturer custom widget that
   // authenticates with it is SET NULL (the check survives and fails loudly,
-  // as in polaris), and a firmware login binding names it loosely.
+  // as in polaris).
   try {
     await prisma.credential.delete({ where: { id } });
   } catch (err: any) {

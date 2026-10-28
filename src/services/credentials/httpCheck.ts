@@ -130,7 +130,7 @@ export interface HttpCheckConfig {
  * cleartext to any device that answers a Digest challenge, which is precisely
  * the exposure Digest exists to avoid.
  */
-export type HttpAuthMode = "none" | "bearer" | "basic" | "digest" | "form";
+export type HttpAuthMode = "none" | "bearer" | "basic" | "digest";
 
 /**
  * Modes an `http` CREDENTIAL may be saved with. "none" is deliberately absent:
@@ -138,32 +138,15 @@ export type HttpAuthMode = "none" | "bearer" | "basic" | "digest" | "form";
  * nothing is an empty row that reads as configuration. Unauthenticated checks
  * are expressed by a widget selecting NO credential at all, which is the same
  * outcome without the misleading artefact.
- *
- * "form" (2026-09) is a DEVICE ADMIN LOGIN — the username and password a
- * switch or access point's own web UI takes on its login form. It is not an
- * HTTP authentication scheme and never becomes an `Authorization` header: the
- * firmware repository (business rule 87) posts it to the device's login
- * endpoint and nothing else consumes it. An HTTP-check widget refuses a form
- * credential at save time, and the probe treats one as unauthenticated rather
- * than guessing Basic, which would send the device's admin password in a
- * header to whatever answered.
  */
-export const HTTP_CREDENTIAL_AUTH_MODES: readonly HttpAuthMode[] = ["bearer", "basic", "digest", "form"];
+export const HTTP_CREDENTIAL_AUTH_MODES: readonly HttpAuthMode[] = ["bearer", "basic", "digest"];
 
 /**
  * Every mode the PROBE can execute. "none" stays here because it is the state
  * of a widget with no credential attached — the probe must be able to express
- * "send no Authorization header". "form" is listed so `resolveHttpAuthMode`
- * returns a declared form credential AS a form credential (and the probe then
- * declines to use it), instead of inferring Basic from the username/password
- * pair it happens to carry.
+ * "send no Authorization header".
  */
-export const HTTP_AUTH_MODES: readonly HttpAuthMode[] = ["none", "bearer", "basic", "digest", "form"];
-
-/** True for the device-admin-login mode that only the firmware repository may use. */
-export function isDeviceLoginCredential(config: HttpAuthConfig | null | undefined): boolean {
-  return !!config && config.authMode === "form";
-}
+export const HTTP_AUTH_MODES: readonly HttpAuthMode[] = ["none", "bearer", "basic", "digest"];
 
 /**
  * Resolve the effective auth mode, defaulting a credential saved before the

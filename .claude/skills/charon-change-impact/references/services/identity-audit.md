@@ -64,7 +64,7 @@ boundUserKey).
 **Cross-service deps:** none.
 **Used by:** nearly every writer — `src/api/routes/auth.ts`, `endpoints.ts`, `maintenance.ts`,
 `serverSettings.ts`, every `src/api/routes/settings/*.ts` mutation; services agentEnrollment,
-apiToken, assetTag, backup, customGroup, firmwareRepository, fortinetEnforcement, integration,
+apiToken, assetTag, backup, customGroup, fortinetEnforcement, integration,
 invitationCode, policy, rebootSettings, tagReconciler, tag, update,
 verification.
 **Invariants:** best-effort — a failed write never breaks the underlying operation. Every

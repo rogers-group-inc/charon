@@ -70,7 +70,7 @@
     "@vitest/coverage-v8": "^5.0.5",
     "eslint": "^10.13.0",
     "prisma": "^7.10.1",
-    "selfsigned": "^2.4.1",
+    "selfsigned": "^5.5.0",
     "supertest": "^7.3.1",
     "tsx": "^4.23.15",
     "typescript": "^6.0.3",
